@@ -1,4 +1,4 @@
-import { CalendarDays, Paperclip, Pause, Play, Timer } from 'lucide-react';
+import { CalendarDays, PackageCheck, Paperclip, Pause, Play, Timer } from 'lucide-react';
 import { api, type Activity, type TaskView } from '../api';
 import { dueInfo, elapsed } from '../time';
 import type { Run } from '../useTasks';
@@ -11,8 +11,10 @@ export function TaskCard(props: {
   selected: boolean;
   live?: Activity;
   onOpen: () => void;
+  /** Called once the task has been marked done here. */
+  onDone: (task: TaskView) => void;
 }) {
-  const { task, run, now, selected, live, onOpen } = props;
+  const { task, run, now, selected, live, onOpen, onDone } = props;
   const done = task.status === 'done';
   const due = done ? null : dueInfo(task, now);
 
@@ -28,7 +30,11 @@ export function TaskCard(props: {
       <CheckButton
         done={done}
         title={task.title}
-        onToggle={() => void run(() => api.update(task.id, { status: done ? 'todo' : 'done' }))}
+        onToggle={() =>
+          void run(() => api.update(task.id, { status: done ? 'todo' : 'done' })).then(
+            (ok) => ok && !done && onDone(task),
+          )
+        }
       />
 
       <div className="card-body">
@@ -52,6 +58,11 @@ export function TaskCard(props: {
           {task.attachments.length > 0 && (
             <span className="meta" title={task.attachments.map((a) => a.name).join('\n')}>
               <Paperclip size={12} /> {task.attachments.length}
+            </span>
+          )}
+          {task.deliverables > 0 && (
+            <span className="meta" title={`${task.deliverables} handed in`}>
+              <PackageCheck size={12} /> {task.deliverables}
             </span>
           )}
         </span>

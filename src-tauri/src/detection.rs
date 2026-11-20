@@ -302,6 +302,7 @@ mod tests {
             started_at: in_progress.then_some(now),
             in_progress_on: if in_progress { vec!["pc".into()] } else { Vec::new() },
             started_on_name: None,
+            deliverables: 0,
             attachments: attachments
                 .into_iter()
                 .map(|(kind, name, target)| Attachment {

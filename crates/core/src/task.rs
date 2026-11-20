@@ -92,6 +92,8 @@ pub struct TaskView {
     /// The devices it's in progress on, so other computers can show where.
     pub in_progress_on: Vec<crate::DeviceId>,
     pub attachments: Vec<crate::Attachment>,
+    /// How many pieces of work have been handed in for it.
+    pub deliverables: u32,
 }
 
 /// Trims text and turns blank into `None`.

@@ -1,0 +1,15 @@
+[package]
+name = "multitasker-deliverables"
+description = "Copies of the work handed in for a task, kept with every revision"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+multitasker-core.workspace = true
+chrono.workspace = true
+serde.workspace = true
+rusqlite.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+sha2 = "0.11"
+hex = "0.4"

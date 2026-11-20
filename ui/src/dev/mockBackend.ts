@@ -10,6 +10,7 @@ import type {
   SyncStatus,
   SyncTarget,
   TaskChanges,
+  Deliverable,
   TaskSource,
   TaskView,
 } from '../api';
@@ -62,12 +63,18 @@ function task(title: string, extra: Partial<TaskView> = {}): TaskView {
     in_progress_on: [],
     started_on_name: null,
     attachments: [],
+    deliverables: 0,
     ...extra,
   };
 }
 
 let widgetVisible = true;
 const DEVICE = { id: 'preview-device', name: 'PREVIEW-PC' };
+
+let deliverables: Deliverable[] = [];
+const countDeliverables = () => {
+  for (const t of tasks) t.deliverables = deliverables.filter((d) => d.task_id === t.id).length;
+};
 
 const KINDS: [RegExp, AttachmentKind][] = [
   [/\.pdf$/i, 'pdf'],
@@ -110,6 +117,11 @@ function attachment(taskId: string, item: NewAttachment): Attachment {
   const kind = KINDS.find(([re]) => re.test(name))?.[1] ?? (name.includes('.') ? 'file' : 'folder');
   return { ...base, kind, name, target: item.path, device: DEVICE.id };
 }
+
+// One unfinished task has a document attached, to try handing work in.
+tasks[2].attachments.push(
+  attachment(tasks[2].id, { type: 'path', path: 'C:\\Users\\you\\School\\Proposal draft.docx' }),
+);
 
 tasks[0].attachments = [
   attachment(tasks[0].id, { type: 'path', path: 'C:\\Users\\you\\Documents\\School\\GS module notes.pdf' }),
@@ -266,6 +278,46 @@ mockIPC(
       case 'open_attachment':
       case 'reveal_attachment':
         console.info(`[preview] ${cmd}`, a.id);
+        return null;
+
+      case 'list_deliverables':
+        return deliverables.filter((d) => d.task_id === a.taskId);
+
+      case 'hand_in': {
+        const t = find(a.taskId as string);
+        const result = (a.paths as string[]).map((path) => {
+          const name = path.split(/[\\/]/).pop() ?? path;
+          let d = deliverables.find((x) => x.task_id === t.id && x.name.toLowerCase() === name.toLowerCase());
+          if (!d) {
+            d = { id: crypto.randomUUID(), task_id: t.id, name, revisions: [] };
+            deliverables.push(d);
+          }
+          const number = (d.revisions[0]?.number ?? 0) + 1;
+          d.revisions.unshift({
+            id: crypto.randomUUID(),
+            number,
+            size: 20_000 + Math.round(Math.random() * 2_000_000),
+            sha256: crypto.randomUUID(),
+            source: path,
+            device: DEVICE.id,
+            added_at: new Date().toISOString(),
+          });
+          return { name, number, unchanged: false };
+        });
+        countDeliverables();
+        changed();
+        return result;
+      }
+
+      case 'remove_deliverable':
+        deliverables = deliverables.filter((d) => d.id !== a.id);
+        countDeliverables();
+        changed();
+        return null;
+
+      case 'open_deliverable':
+      case 'export_deliverable':
+        console.info(`[preview] ${cmd}`, a.revisionId, a.dest ?? '');
         return null;
 
       case 'this_device':

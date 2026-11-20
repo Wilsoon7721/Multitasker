@@ -34,6 +34,8 @@ pub struct AppState {
     pub sign_in_cancel: Arc<AtomicBool>,
     /// A WilsoonID sign-in waiting for the browser to come back through the app link.
     pub wilsoon_sign_in: wilsoon::SignInSlot,
+    /// Copies of work handed in for tasks, kept on this computer.
+    pub deliverables: Arc<multitasker_deliverables::Store>,
 }
 
 impl AppState {
@@ -81,6 +83,7 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir)?;
 
             let db = Arc::new(SqliteDb::open(data_dir.join("multitasker.db"))?);
+            let deliverables = Arc::new(multitasker_deliverables::Store::open(data_dir.join("deliverables"))?);
             let prefs = settings::load(&data_dir);
             let detector = detection::Detector::new(prefs.detection);
             let syncer = syncing::Syncer::new(prefs.sync.clone());
@@ -94,6 +97,7 @@ pub fn run() {
                 data_dir,
                 sign_in_cancel: Arc::new(AtomicBool::new(false)),
                 wilsoon_sign_in: wilsoon::SignInSlot::default(),
+                deliverables,
             });
 
             // Installers register the app link; development builds register it here so sign-in works there too.
@@ -134,6 +138,11 @@ pub fn run() {
             commands::remove_attachment,
             commands::open_attachment,
             commands::reveal_attachment,
+            commands::list_deliverables,
+            commands::hand_in,
+            commands::open_deliverable,
+            commands::export_deliverable,
+            commands::remove_deliverable,
             commands::this_device,
             commands::open_main,
             commands::widget_visible,

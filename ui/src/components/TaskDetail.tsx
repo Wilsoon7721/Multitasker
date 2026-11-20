@@ -7,6 +7,7 @@ import { AttachmentList } from './Attachments';
 import { AutoTextarea } from './AutoTextarea';
 import { useTaskSource } from '../useTaskSource';
 import { CheckButton } from './CheckButton';
+import { DeliverableList } from './Deliverables';
 
 /** The side panel for one task. Fields save as you leave them. */
 export function TaskDetail(props: {
@@ -18,8 +19,10 @@ export function TaskDetail(props: {
   /** The computer it was started on, when that isn't this one. */
   startedOn: string | null;
   onClose: () => void;
+  /** Called once the task has been marked done here. */
+  onDone: (task: TaskView) => void;
 }) {
-  const { task, run, now, deviceId, live, startedOn, onClose } = props;
+  const { task, run, now, deviceId, live, startedOn, onClose, onDone } = props;
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
   const [category, setCategory] = useState(task.category ?? '');
@@ -50,7 +53,15 @@ export function TaskDetail(props: {
   return (
     <aside className="detail" aria-label="Task details" data-drop={`task:${task.id}`}>
       <header className="detail-header">
-        <CheckButton done={done} title={task.title} onToggle={() => save({ status: done ? 'todo' : 'done' })} />
+        <CheckButton
+          done={done}
+          title={task.title}
+          onToggle={() =>
+            void run(() => api.update(task.id, { status: done ? 'todo' : 'done' })).then(
+              (ok) => ok && !done && onDone(task),
+            )
+          }
+        />
         <span className="detail-status">
           {done
             ? 'Done'
@@ -134,6 +145,7 @@ export function TaskDetail(props: {
         </div>
 
         <AttachmentList taskId={task.id} attachments={task.attachments} run={run} deviceId={deviceId} />
+        <DeliverableList task={task} run={run} now={now} />
       </div>
 
       <footer className="detail-footer">

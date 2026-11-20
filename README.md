@@ -20,6 +20,9 @@ Early development. What works today:
   long they've been going.
 - Attach files, folders and links to tasks (by picker, or by dragging files from the desktop onto a task in the main
   window or the widget). Files stay where they are; MultiTasker keeps a reference and opens them in their default app.
+- **Hand in** finished work: MultiTasker keeps a read-only copy of each file as it was, so you can open or save that
+  version later even after the original changes. Handing the same file in again keeps every version. Finishing a task
+  that has files attached offers to hand them in. Copies are kept on this computer, in MultiTasker's data folder.
 - Expand the widget to see your to-do list and drag a task up into In Progress to start it.
 - **Activity detection** (Windows): link apps, files and folders to a task, and MultiTasker notices when you're on
   them — from the window in front and from file saves. Tasks in progress show as *active now*; if you're clearly
@@ -39,9 +42,8 @@ Early development. What works today:
 
 Planned:
 
-- More task providers (Notion, Todoist...).
 - A Chrome extension to link browser tabs (AI chats, docs) to tasks, and reopen them on any of your devices.
-- Deliverables: back up finished files to your storage backend, with revisions.
+- Deliverables on your other computers too, through sync or the online task list.
 - Project shortcuts: detect a project's type and offer start/stop dev server, build and run.
 
 ## Architecture
@@ -63,6 +65,7 @@ crates/provider-sqlite   local SQLite provider + state store
 crates/provider-javadashboard   tasks from JavaDashboard's API
 crates/provider-todoist   tasks from Todoist's API, with a personal token
 crates/provider-notion    tasks from a Notion database, with an integration token
+crates/deliverables      copies of handed-in work, with every revision
 crates/activity          activity detection: window in front, file saves, matching them to tasks
 crates/sync              sync engine, sign-in, and storage backends (Google Drive, OneDrive, folder, S3)
 src-tauri                desktop app: commands, windows, tray

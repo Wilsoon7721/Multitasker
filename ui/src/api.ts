@@ -24,6 +24,35 @@ export interface TaskView {
   /** Name of the computer it was started on, when the task list keeps it. */
   started_on_name: string | null;
   attachments: Attachment[];
+  /** How many pieces of work have been handed in for it. */
+  deliverables: number;
+}
+
+/** A copy of handed-in work, kept as it was each time it was handed in. */
+export interface Revision {
+  id: string;
+  number: number;
+  size: number;
+  sha256: string;
+  /** Where it was handed in from. */
+  source: string;
+  device: string | null;
+  added_at: string;
+}
+
+export interface Deliverable {
+  id: string;
+  task_id: string;
+  name: string;
+  /** Newest first. */
+  revisions: Revision[];
+}
+
+export interface HandedIn {
+  name: string;
+  number: number;
+  /** It matched the latest version, so nothing new was kept. */
+  unchanged: boolean;
 }
 
 export type AttachmentKind = 'document' | 'pdf' | 'image' | 'video' | 'folder' | 'file' | 'link' | 'app';
@@ -258,6 +287,11 @@ export const api = {
     ),
   openAttachment: (id: string) => invoke('open_attachment', { id }),
   revealAttachment: (id: string) => invoke('reveal_attachment', { id }),
+  listDeliverables: (taskId: string) => invoke<Deliverable[]>('list_deliverables', { taskId }),
+  handIn: (taskId: string, paths: string[]) => invoke<HandedIn[]>('hand_in', { taskId, paths }),
+  openDeliverable: (revisionId: string) => invoke('open_deliverable', { revisionId }),
+  exportDeliverable: (revisionId: string, dest: string) => invoke('export_deliverable', { revisionId, dest }),
+  removeDeliverable: (id: string) => invoke('remove_deliverable', { id }),
   thisDevice: () => invoke<Device>('this_device'),
   runningApps: () => invoke<RunningApp[]>('running_apps'),
   activity: () => invoke<ActivitySnapshot>('activity'),
@@ -296,8 +330,8 @@ export const api = {
     return typeof picked === 'string' ? picked : null;
   },
   /** Asks for files with the system picker; empty if cancelled. */
-  pickFiles: async (): Promise<string[]> => {
-    const picked = await open({ multiple: true, title: 'Attach files' });
+  pickFiles: async (title = 'Attach files'): Promise<string[]> => {
+    const picked = await open({ multiple: true, title });
     return picked ?? [];
   },
   openMain: () => invoke('open_main'),

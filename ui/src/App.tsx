@@ -2,6 +2,7 @@ import { CircleCheckBig, Hash, Inbox, ListTodo, Settings, Timer, X } from 'lucid
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, type NewAttachment, type TaskView } from './api';
 import { Composer } from './components/Composer';
+import { handInCandidates, HandInDialog } from './components/Deliverables';
 import { SettingsPage } from './components/SettingsPage';
 import { TaskCard } from './components/TaskCard';
 import { TaskDetail } from './components/TaskDetail';
@@ -43,6 +44,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pending, setPending] = useState<NewAttachment[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [handingIn, setHandingIn] = useState<TaskView | null>(null);
   const now = useNow();
   const { activeNow } = useActivity();
   const { startedOn } = useDevices();
@@ -60,6 +62,7 @@ export function App() {
   useFileDrop((paths, zone) => {
     const target = taskZone(zone) ?? (zone ? null : selectedId);
     if (zone === 'composer') setPending((cur) => [...cur, ...pathItems(paths)]);
+    else if (zone?.startsWith('deliver:')) void run(() => api.handIn(zone.slice(8), paths));
     else if (target) void run(() => api.addAttachments(target, pathItems(paths)));
     else setError('Drop files onto a task, or onto "Add a task" to start a new one with them.');
   });
@@ -83,6 +86,10 @@ export function App() {
   const selected = all.find((t) => t.id === selectedId) ?? null;
   const current = VIEWS.find((v) => v.id === view);
   const close = useCallback(() => setSelectedId(null), []);
+  // Finishing a task with files attached offers to keep copies of them as handed-in work.
+  const offerHandIn = (task: TaskView) => {
+    if (handInCandidates(task, deviceId).length > 0) setHandingIn(task);
+  };
 
   const card = (t: TaskView) => (
     <TaskCard
@@ -93,6 +100,7 @@ export function App() {
       selected={t.id === selectedId}
       live={activeNow(t.id, now)}
       onOpen={() => setSelectedId(t.id)}
+      onDone={offerHandIn}
     />
   );
 
@@ -191,10 +199,12 @@ export function App() {
               live={activeNow(selected.id, now)}
               startedOn={startedOn(selected)}
               onClose={close}
+              onDone={offerHandIn}
             />
           </>
         )}
       </div>
+      {handingIn && <HandInDialog task={handingIn} deviceId={deviceId} run={run} onClose={() => setHandingIn(null)} />}
     </div>
   );
 }

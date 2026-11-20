@@ -38,6 +38,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
     let provider = state.provider();
     let tasks = provider.list().await.map_err(err)?;
     let key = provider.key();
+    let mut handed_in = state.deliverables.counts(key).map_err(err)?;
 
     if let Some(store) = provider.extras() {
         let mut extras = store.extras().await.map_err(err)?;
@@ -54,6 +55,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
                     in_progress_on: started_on.into_iter().collect(),
                     started_on_name: e.started_on_name,
                     attachments: e.attachments,
+                    deliverables: handed_in.remove(&task.id).unwrap_or(0),
                     task,
                 }
             })
@@ -80,7 +82,16 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
             let started_at = started.get(&task.id).copied();
             let attachments = attachments.remove(&task.id).unwrap_or_default();
             let in_progress_on = devices.remove(&task.id).unwrap_or_default();
-            TaskView { task, in_progress: started_at.is_some(), started_at, in_progress_on, started_on_name: None, attachments }
+            let deliverables = handed_in.remove(&task.id).unwrap_or(0);
+            TaskView {
+                task,
+                in_progress: started_at.is_some(),
+                started_at,
+                in_progress_on,
+                started_on_name: None,
+                attachments,
+                deliverables,
+            }
         })
         .collect())
 }
@@ -116,6 +127,7 @@ pub async fn delete_task(app: AppHandle, state: State<'_, AppState>, id: TaskId)
     if provider.extras().is_none() {
         state.state.forget(provider.key(), &id).await.map_err(err)?;
     }
+    state.deliverables.forget_task(provider.key(), &id).map_err(err)?;
     changed(&app);
     Ok(())
 }
@@ -250,6 +262,74 @@ pub async fn reveal_attachment(app: AppHandle, state: State<'_, AppState>, id: S
         return Err("Links have no folder to show.".into());
     }
     app.opener().reveal_item_in_dir(existing_path(&state, &a)?).map_err(err)
+}
+
+/// The work handed in for a task, each with its revisions.
+#[tauri::command]
+pub fn list_deliverables(state: State<'_, AppState>, task_id: TaskId) -> CmdResult<Vec<multitasker_deliverables::Deliverable>> {
+    state.deliverables.list(state.provider().key(), &task_id).map_err(err)
+}
+
+/// Keeps copies of files as the task's deliverables; a file handed in again becomes a new revision.
+#[tauri::command]
+pub async fn hand_in(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: TaskId,
+    paths: Vec<String>,
+) -> CmdResult<Vec<multitasker_deliverables::HandedIn>> {
+    let provider = state.provider();
+    let key = provider.key().to_owned();
+    if !provider.list().await.map_err(err)?.iter().any(|t| t.id == task_id) {
+        return Err("That task no longer exists.".into());
+    }
+    let (store, device) = (state.deliverables.clone(), state.device.id.clone());
+    // Copying big files takes a moment, so it happens off the UI's thread.
+    let (handed_in, problems) = tauri::async_runtime::spawn_blocking(move || {
+        let mut handed_in = Vec::new();
+        let mut problems = Vec::new();
+        for path in paths {
+            match store.hand_in(&key, &task_id, std::path::Path::new(path.trim()), Some(&device)) {
+                Ok(h) => handed_in.push(h),
+                Err(e) => problems.push(e.to_string()),
+            }
+        }
+        (handed_in, problems)
+    })
+    .await
+    .map_err(err)?;
+    if !handed_in.is_empty() {
+        changed(&app);
+    }
+    if problems.is_empty() {
+        Ok(handed_in)
+    } else {
+        Err(problems.join(" "))
+    }
+}
+
+/// Opens a read-only copy of a revision, so the kept one can't be changed by accident.
+#[tauri::command]
+pub async fn open_deliverable(app: AppHandle, state: State<'_, AppState>, revision_id: String) -> CmdResult<()> {
+    let path = state.deliverables.open_copy(&revision_id).map_err(err)?;
+    app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(err)
+}
+
+/// Saves a copy of a revision where the person chose.
+#[tauri::command]
+pub async fn export_deliverable(state: State<'_, AppState>, revision_id: String, dest: String) -> CmdResult<()> {
+    let store = state.deliverables.clone();
+    tauri::async_runtime::spawn_blocking(move || store.export(&revision_id, std::path::Path::new(&dest)))
+        .await
+        .map_err(err)?
+        .map_err(err)
+}
+
+#[tauri::command]
+pub fn remove_deliverable(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    state.deliverables.remove(&id).map_err(err)?;
+    changed(&app);
+    Ok(())
 }
 
 #[tauri::command]
