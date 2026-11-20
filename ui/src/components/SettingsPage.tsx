@@ -78,11 +78,28 @@ function SyncSection({ run }: { run: Run }) {
   }, []);
 
   const target = status?.target ?? { kind: 'off' };
-  const choose = (next: SyncTarget) => run(() => api.setSyncTarget(next));
+  const [question, setQuestion] = useState<{ where: string | null; resolve: (ok: boolean) => void } | null>(null);
+
+  // Leaving a location that's already been synced to splits the tasks between the two, so ask first.
+  const confirmMove = (where: string | null) =>
+    new Promise<boolean>((resolve) => {
+      if (!status || status.target.kind === 'off' || !status.last_synced) return resolve(true);
+      setQuestion({ where, resolve });
+    });
+
+  const choose = async (next: SyncTarget, where: string | null) => {
+    if (await confirmMove(where)) await run(() => api.setSyncTarget(next));
+  };
   const pick = () =>
     void run(async () => {
       const path = await api.pickFolder();
-      if (path) await api.setSyncTarget({ kind: 'folder', path });
+      if (
+        path &&
+        path !== (target.kind === 'folder' ? target.path : null) &&
+        (await confirmMove('the folder you picked'))
+      ) {
+        await api.setSyncTarget({ kind: 'folder', path });
+      }
     });
 
   const mode = choosing ?? target.kind;
@@ -99,7 +116,7 @@ function SyncSection({ run }: { run: Run }) {
           selected={mode === 'off'}
           onSelect={() => {
             setChoosing(null);
-            if (target.kind !== 'off') void choose({ kind: 'off' });
+            if (target.kind !== 'off') void choose({ kind: 'off' }, null);
           }}
           icon={<CloudOff size={18} />}
           title="Off"
@@ -143,8 +160,17 @@ function SyncSection({ run }: { run: Run }) {
           onDone={() => setChoosing(null)}
           onSignOut={() => {
             setChoosing(null);
-            void choose({ kind: 'off' });
+            void choose({ kind: 'off' }, null);
           }}
+          confirm={() =>
+            confirmMove(
+              target.kind === mode
+                ? `a different ${mode === 'google_drive' ? 'Google' : 'Microsoft'} account`
+                : mode === 'google_drive'
+                  ? 'Google Drive'
+                  : 'OneDrive',
+            )
+          }
         />
       )}
 
@@ -153,6 +179,12 @@ function SyncSection({ run }: { run: Run }) {
           current={target.kind === 's3' ? target : null}
           onSave={(settings, secret) =>
             run(async () => {
+              const same =
+                target.kind === 's3' &&
+                target.bucket === settings.bucket &&
+                (target.endpoint ?? null) === settings.endpoint &&
+                (target.prefix ?? null) === settings.prefix;
+              if (!same && !(await confirmMove(`the ${settings.bucket} bucket`))) return;
               await api.setSyncTarget({ kind: 's3', ...settings }, secret);
               setChoosing(null);
             })
@@ -181,7 +213,7 @@ function SyncSection({ run }: { run: Run }) {
                     <button
                       key={s.path}
                       className="secondary"
-                      onClick={() => void choose({ kind: 'folder', path: s.path })}
+                      onClick={() => void choose({ kind: 'folder', path: s.path }, `your ${s.label} folder`)}
                       title={s.path}
                     >
                       <Folder size={14} /> {s.label}
@@ -243,6 +275,17 @@ function SyncSection({ run }: { run: Run }) {
             </>
           )}
         </>
+      )}
+      {question && status && (
+        <MoveDialog
+          current={describeTarget(status.target)}
+          where={question.where}
+          others={status.devices.filter((d) => !d.this_device).map((d) => d.name)}
+          onAnswer={(ok) => {
+            question.resolve(ok);
+            setQuestion(null);
+          }}
+        />
       )}
     </Section>
   );
@@ -457,8 +500,10 @@ function CloudSetup(props: {
   run: Run;
   onDone: () => void;
   onSignOut: () => void;
+  /** Asks before signing in moves sync somewhere else; resolves false to stop. */
+  confirm: () => Promise<boolean>;
 }) {
-  const { service, signedInAs, run, onDone, onSignOut } = props;
+  const { service, signedInAs, run, onDone, onSignOut, confirm } = props;
   const info = SERVICE[service];
   const [builtIn, setBuiltIn] = useState<boolean | null>(null);
   const [clientId, setClientId] = useState('');
@@ -473,6 +518,7 @@ function CloudSetup(props: {
   }, [service]);
 
   const signIn = async () => {
+    if (!(await confirm())) return;
     setWaiting(true);
     const ok = await run(() => api.signInCloud(service, clientId.trim(), clientSecret.trim()));
     setWaiting(false);
@@ -536,6 +582,81 @@ function CloudSetup(props: {
         MultiTasker only gets access to its own {info.storage} folder, never your other files. The sign-in is kept in
         Windows Credential Manager.
       </p>
+    </div>
+  );
+}
+
+function describeTarget(target: SyncTarget): string {
+  switch (target.kind) {
+    case 'folder':
+      return 'the shared folder';
+    case 's3':
+      return `the ${target.bucket} bucket`;
+    case 'google_drive':
+      return `Google Drive (${target.account})`;
+    case 'one_drive':
+      return `OneDrive (${target.account})`;
+    default:
+      return 'the current location';
+  }
+}
+
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+function MoveDialog(props: {
+  current: string;
+  where: string | null;
+  others: string[];
+  onAnswer: (ok: boolean) => void;
+}) {
+  const { current, where, others, onAnswer } = props;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onAnswer(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onAnswer]);
+
+  const names = others.join(', ');
+  return (
+    <div className="dialog-scrim" onClick={() => onAnswer(false)}>
+      <div
+        className="dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="move-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 id="move-title">{where ? `Move sync to ${where}?` : 'Turn off sync?'}</h3>
+        <p>
+          {where
+            ? `Your tasks will be copied to ${where}, and this computer will sync there from now on.`
+            : 'This computer will stop syncing. Your tasks stay here.'}{' '}
+          {capitalize(current)} keeps its copy as it is now, but won't get this computer's changes.
+        </p>
+        {others.length > 0 && (
+          <p className="settings-warning">
+            <CircleAlert size={15} />
+            <span>
+              {where
+                ? `${names} ${others.length === 1 ? 'still syncs' : 'still sync'} with ${current}. Move ${
+                    others.length === 1 ? 'it' : 'them'
+                  } to ${where} too, or the computers will drift apart.`
+                : `${names} will keep syncing with ${current}, but changes made here won't reach ${
+                    others.length === 1 ? 'it' : 'them'
+                  }.`}
+            </span>
+          </p>
+        )}
+        <div className="dialog-actions">
+          <button className="secondary" onClick={() => onAnswer(false)}>
+            Cancel
+          </button>
+          <button className="primary" onClick={() => onAnswer(true)} autoFocus>
+            {where ? 'Move sync' : 'Turn off sync'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
