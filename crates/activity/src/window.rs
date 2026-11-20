@@ -251,14 +251,26 @@ mod imp {
                 _ => (0x0409, 0x04b0),
             };
             let (ptr, len) = query(&format!("\\StringFileInfo\\{lang:04x}{codepage:04x}\\FileDescription"))?;
-            let text = std::slice::from_raw_parts(ptr as *const u16, len as usize);
-            Some(String::from_utf16_lossy(text).trim_end_matches('\0').trim().to_owned())
+            Some(until_nul(std::slice::from_raw_parts(ptr as *const u16, len as usize)))
         }
+    }
+
+    /// Some programs (Spotify, for one) report a length past their string's end, so stop at its terminator.
+    fn until_nul(text: &[u16]) -> String {
+        let end = text.iter().position(|&c| c == 0).unwrap_or(text.len());
+        String::from_utf16_lossy(&text[..end]).trim().to_owned()
     }
 
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn stops_at_the_end_of_an_overlong_string() {
+            let raw: Vec<u16> = "Spotify\u{0}8\u{0}\u{0}FileV".encode_utf16().collect();
+            assert_eq!(until_nul(&raw), "Spotify");
+            assert_eq!(until_nul(&"Notepad".encode_utf16().collect::<Vec<_>>()), "Notepad");
+        }
 
         #[test]
         fn describes_programs_from_version_info() {
