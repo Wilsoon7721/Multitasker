@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   ListChecks,
   ListTodo,
+  NotebookText,
   CircleAlert,
   Cloud,
   CloudOff,
@@ -28,6 +29,7 @@ import {
   type CloudService,
   type FolderSuggestion,
   type ReminderSettings,
+  type NotionDatabases,
   type TaskSourceView,
   type S3Settings,
   type SyncStatus,
@@ -407,6 +409,13 @@ function TaskListSection({ run }: { run: Run }) {
           title="Todoist"
           detail="Your Todoist tasks, connected with your own API token."
         />
+        <Choice
+          selected={mode === 'notion'}
+          onSelect={() => setChoosing('notion')}
+          icon={<NotebookText size={18} />}
+          title="Notion"
+          detail="A task database in Notion, connected with an integration token."
+        />
         {offerDashboard && (
           <Choice
             selected={mode === 'java_dashboard'}
@@ -429,6 +438,22 @@ function TaskListSection({ run }: { run: Run }) {
           <p className="settings-hint">
             Projects show as categories. Starting a task adds an <code>in-progress</code> label, and attachments are
             kept as comments on the task, so your other computers see them too.
+          </p>
+        </div>
+      )}
+
+      {mode === 'notion' && (
+        <div className="cloud-setup">
+          {lost('The Notion token')}
+          {source.kind === 'notion' && connected ? (
+            signedIn(<NotebookText size={16} className="kind kind-link" />, `${source.name} in ${source.account}`)
+          ) : (
+            <NotionForm run={run} onConnected={() => setChoosing(null)} />
+          )}
+          <p className="settings-hint">
+            MultiTasker uses the database's Status column for in progress and done (or a Done checkbox), its date for
+            the due date and a select for the category. It adds any of those it lacks, plus Started, Started on and an
+            Attachments column, which keeps files as links and remembers which computer they're on.
           </p>
         </div>
       )}
@@ -463,6 +488,91 @@ function TaskListSection({ run }: { run: Run }) {
         </div>
       )}
     </Section>
+  );
+}
+
+function NotionForm({ run, onConnected }: { run: Run; onConnected: () => void }) {
+  const [token, setToken] = useState('');
+  const [found, setFound] = useState<NotionDatabases | null>(null);
+  const [database, setDatabase] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const look = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    let result: NotionDatabases | null = null;
+    await run(async () => {
+      result = await api.notionDatabases(token);
+    });
+    setBusy(false);
+    setFound(result);
+    setDatabase((result as NotionDatabases | null)?.databases[0]?.id ?? '');
+  };
+
+  const connect = async () => {
+    setBusy(true);
+    const ok = await run(() => api.connectNotion(token, database));
+    setBusy(false);
+    if (ok) {
+      setToken('');
+      setFound(null);
+      onConnected();
+    }
+  };
+
+  return (
+    <form className="s3-form" onSubmit={look}>
+      <label className="field wide">
+        <span>Integration token</span>
+        <input
+          type="password"
+          value={token}
+          onChange={(e) => {
+            setToken(e.target.value);
+            setFound(null);
+          }}
+          autoComplete="off"
+          spellCheck={false}
+          required
+        />
+      </label>
+      <p className="settings-hint wide">
+        <KeyRound size={13} /> In Notion, open Settings → Connections → Develop or manage integrations, make an internal
+        integration and copy its token. Then open your task database, choose ••• → Connections and add the integration
+        so MultiTasker can see it. The token is kept in Windows Credential Manager.
+      </p>
+      {found && found.databases.length === 0 && (
+        <p className="settings-warning wide">
+          <CircleAlert size={15} /> {found.workspace} hasn't shared any databases with this integration yet. Add it
+          under ••• → Connections on your task database (or the page it's in), then look again.
+        </p>
+      )}
+      {found && found.databases.length > 0 && (
+        <label className="field wide">
+          <span>Task database in {found.workspace}</span>
+          <select value={database} onChange={(e) => setDatabase(e.target.value)}>
+            {found.databases.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <div className="wide">
+        {found && found.databases.length > 0 ? (
+          <button type="button" className="primary" disabled={!database || busy} onClick={() => void connect()}>
+            {busy && <LoaderCircle size={14} className="spin" />}
+            Connect
+          </button>
+        ) : (
+          <button type="submit" className="primary" disabled={!token.trim() || busy}>
+            {busy && <LoaderCircle size={14} className="spin" />}
+            {found ? 'Look again' : 'Find databases'}
+          </button>
+        )}
+      </div>
+    </form>
   );
 }
 

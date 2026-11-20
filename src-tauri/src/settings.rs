@@ -33,6 +33,8 @@ pub enum TaskSource {
     JavaDashboard { account: String },
     /// Todoist, with a personal API token kept in the credential store.
     Todoist { account: String },
+    /// A Notion database (its data source), with an integration token kept in the credential store.
+    Notion { account: String, database: String, name: String },
 }
 
 impl Default for Settings {

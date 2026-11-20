@@ -113,7 +113,16 @@ export interface SyncStatus {
 }
 
 export type TaskSource =
-  { kind: 'local' } | { kind: 'java_dashboard'; account: string } | { kind: 'todoist'; account: string };
+  | { kind: 'local' }
+  | { kind: 'java_dashboard'; account: string }
+  | { kind: 'todoist'; account: string }
+  | { kind: 'notion'; account: string; database: string; name: string };
+
+/** Databases shared with a Notion integration, offered when connecting it. */
+export interface NotionDatabases {
+  workspace: string;
+  databases: { id: string; name: string }[];
+}
 
 export type TaskSourceView = TaskSource & {
   /** The provider actually in use; local if the online list's sign-in or token has gone. */
@@ -270,6 +279,10 @@ export const api = {
   useLocalTasks: () => invoke('use_local_tasks'),
   /** Checks a personal Todoist token and switches to Todoist; resolves with the account's name. */
   connectTodoist: (token: string) => invoke<string>('connect_todoist', { token }),
+  /** Checks a Notion integration token and lists the databases shared with it. */
+  notionDatabases: (token: string) => invoke<NotionDatabases>('notion_databases', { token }),
+  /** Switches to a Notion database; resolves with its name. */
+  connectNotion: (token: string, database: string) => invoke<string>('connect_notion', { token, database }),
   widgetOpacity: () => invoke<number>('widget_opacity'),
   /** Previews an opacity on the widget; `save` keeps it. Resolves with the value actually used. */
   setWidgetOpacity: (opacity: number, save: boolean) => invoke<number>('set_widget_opacity', { opacity, save }),

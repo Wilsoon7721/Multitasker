@@ -291,7 +291,12 @@ mockIPC(
       case 'task_source':
         return {
           ...taskSource,
-          active: taskSource.kind === 'local' ? 'sqlite' : taskSource.kind === 'todoist' ? 'todoist' : 'javadashboard',
+          active:
+            taskSource.kind === 'local'
+              ? 'sqlite'
+              : taskSource.kind === 'java_dashboard'
+                ? 'javadashboard'
+                : taskSource.kind,
           supports_due_time: taskSource.kind !== 'java_dashboard',
           wilsoon_available: true,
         };
@@ -312,6 +317,21 @@ mockIPC(
         taskSource = { kind: 'todoist', account: 'Preview Person' };
         changed();
         return 'Preview Person';
+
+      case 'notion_databases':
+        if (!String(a.token).trim()) throw "Paste your Notion integration's token.";
+        return {
+          workspace: "Preview's Space",
+          databases: [
+            { id: 'db-1', name: 'Tasks' },
+            { id: 'db-2', name: 'Reading list' },
+          ],
+        };
+
+      case 'connect_notion':
+        taskSource = { kind: 'notion', account: "Preview's Space", database: String(a.database), name: 'Tasks' };
+        changed();
+        return 'Tasks';
 
       case 'use_local_tasks':
         taskSource = { kind: 'local' };

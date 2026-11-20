@@ -5,7 +5,7 @@ mod device;
 mod reminders;
 mod settings;
 mod syncing;
-mod todoist;
+mod tokens;
 mod tray;
 mod wilsoon;
 mod windows;
@@ -53,8 +53,12 @@ fn initial_provider(source: &settings::TaskSource, db: Arc<SqliteDb>) -> Arc<dyn
             Ok(tokens) => Arc::new(wilsoon::provider(tokens)),
             Err(_) => db,
         },
-        settings::TaskSource::Todoist { .. } => match todoist::provider() {
+        settings::TaskSource::Todoist { .. } => match tokens::todoist() {
             Some(todoist) => Arc::new(todoist),
+            None => db,
+        },
+        settings::TaskSource::Notion { database, .. } => match tokens::notion(database) {
+            Some(notion) => Arc::new(notion),
             None => db,
         },
         settings::TaskSource::Local => db,
@@ -154,6 +158,8 @@ pub fn run() {
             commands::sign_in_wilsoon,
             commands::use_local_tasks,
             commands::connect_todoist,
+            commands::notion_databases,
+            commands::connect_notion,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MultiTasker");

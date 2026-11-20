@@ -2495,6 +2495,7 @@ dependencies = [
  "multitasker-activity",
  "multitasker-core",
  "multitasker-provider-javadashboard",
+ "multitasker-provider-notion",
  "multitasker-provider-sqlite",
  "multitasker-provider-todoist",
  "multitasker-sync",
@@ -2541,6 +2542,18 @@ dependencies = [
  "iana-time-zone",
  "multitasker-core",
  "serde",
+ "serde_json",
+ "tokio",
+ "ureq",
+]
+
+[[package]]
+name = "multitasker-provider-notion"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "multitasker-core",
  "serde_json",
  "tokio",
  "ureq",

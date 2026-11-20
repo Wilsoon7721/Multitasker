@@ -32,3 +32,33 @@ To run the provider's live test against your own account (it creates and then de
 ```powershell
 $env:TODOIST_TOKEN = "<your token>"; cargo test -p multitasker-provider-todoist -- --ignored
 ```
+
+## Notion
+
+Notion connects with an internal integration's token, and only sees the databases you share with that integration.
+
+1. In Notion, open **Settings → Connections → Develop or manage integrations**, create an internal integration for your
+   workspace and copy its token.
+2. Open your task database (or the page it's in), choose **••• → Connections** and add the integration.
+3. In MultiTasker, choose **Notion** under **Settings → Task list**, paste the token, select **Find databases**, pick
+   yours and select **Connect**.
+
+How tasks map, using the database's own columns where it has them:
+
+| MultiTasker | Notion |
+| --- | --- |
+| Done and in progress | The Status column's Complete and In progress groups, or a Done checkbox |
+| Due date and time | A date column such as Due (added if there isn't one) |
+| Category | A select column such as Category (added if there isn't one) |
+| Description | A text column such as Description or Notes (added if there isn't one) |
+| When and where it started | Started (date) and Started on (computer name), added on connecting |
+| Attachments | A Files & media column such as Attachments; files and folders are kept as `file:///` links |
+
+Moving a task to In progress in Notion itself starts it in MultiTasker too. Files you upload to Notion show up as
+links. Deleting a task moves its page to Notion's trash.
+
+To run the provider's live test against a database of your own (it adds and then trashes one page):
+
+```powershell
+$env:NOTION_TOKEN = "<token>"; $env:NOTION_DATABASE = "<data source id>"; cargo test -p multitasker-provider-notion -- --ignored
+```

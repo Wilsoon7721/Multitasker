@@ -12,7 +12,8 @@ use multitasker_sync::TokenSource;
 use crate::cloud::{self, BuiltInClients, Cloud};
 use crate::settings::SyncTarget;
 use crate::syncing::{self, FolderSuggestion, SyncStatus};
-use crate::{device::Device, settings, todoist, wilsoon, windows, AppState};
+use crate::tokens::{self, Service};
+use crate::{device::Device, settings, wilsoon, windows, AppState};
 
 /// Tells every window the task list changed, so the widget and main window stay in step.
 pub const TASKS_CHANGED: &str = "tasks-changed";
@@ -44,10 +45,13 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
             .into_iter()
             .map(|task| {
                 let e = extras.remove(&task.id).unwrap_or_default();
+                // Lists that only keep the computer's name still know it was started here.
+                let here = e.started_on_name.as_deref() == Some(state.device.name.as_str());
+                let started_on = e.started_on.or_else(|| here.then(|| state.device.id.clone()));
                 TaskView {
                     in_progress: e.started_at.is_some(),
                     started_at: e.started_at,
-                    in_progress_on: e.started_on.into_iter().collect(),
+                    in_progress_on: started_on.into_iter().collect(),
                     started_on_name: e.started_on_name,
                     attachments: e.attachments,
                     task,
@@ -519,13 +523,67 @@ pub async fn sign_in_wilsoon(app: AppHandle, state: State<'_, AppState>) -> CmdR
 pub async fn connect_todoist(app: AppHandle, state: State<'_, AppState>, token: String) -> CmdResult<String> {
     let token = token.trim().to_owned();
     if token.is_empty() {
-        return Err(format!("Paste your Todoist API token, from {}.", todoist::TOKEN_PAGE));
+        return Err("Paste your Todoist API token, from Todoist's Settings → Integrations → Developer.".into());
     }
     let provider = multitasker_provider_todoist::Todoist::new(token.clone());
-    let account = provider.account().await.map_err(|e| e.to_string().trim_start_matches("storage error: ").to_owned())?;
-    todoist::save_token(&token)?;
+    let account = provider.account().await.map_err(plain_err)?;
+    tokens::save(Service::Todoist, &token)?;
     switch_source(&app, &state, settings::TaskSource::Todoist { account: account.clone() }, Arc::new(provider))?;
     Ok(account)
+}
+
+/// Provider errors without their category prefix, for messages shown as they are.
+fn plain_err(e: multitasker_core::Error) -> String {
+    let text = e.to_string();
+    text.split_once(": ").filter(|(head, _)| head.ends_with("error")).map(|(_, rest)| rest.to_owned()).unwrap_or(text)
+}
+
+#[derive(serde::Serialize)]
+pub struct NotionDatabases {
+    workspace: String,
+    databases: Vec<NotionDatabase>,
+}
+
+#[derive(serde::Serialize)]
+pub struct NotionDatabase {
+    id: String,
+    name: String,
+}
+
+/// Checks a Notion integration token and lists the databases shared with it.
+#[tauri::command]
+pub async fn notion_databases(token: String) -> CmdResult<NotionDatabases> {
+    let token = token.trim().to_owned();
+    if token.is_empty() {
+        return Err("Paste your Notion integration's token.".into());
+    }
+    let (workspace, found) = multitasker_provider_notion::Notion::databases(&token).await.map_err(plain_err)?;
+    Ok(NotionDatabases {
+        workspace,
+        databases: found.into_iter().map(|d| NotionDatabase { id: d.id, name: d.name }).collect(),
+    })
+}
+
+/// Takes tasks from a Notion database from now on, adding the columns MultiTasker needs to it.
+#[tauri::command]
+pub async fn connect_notion(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    token: String,
+    database: String,
+) -> CmdResult<String> {
+    let token = token.trim().to_owned();
+    let (workspace, found) = multitasker_provider_notion::Notion::databases(&token).await.map_err(plain_err)?;
+    let chosen = found
+        .into_iter()
+        .find(|d| d.id == database)
+        .ok_or("MultiTasker can't see that database; share it with your integration in Notion.")?;
+    let provider = multitasker_provider_notion::Notion::new(token.clone(), chosen.id.clone());
+    provider.prepare().await.map_err(plain_err)?;
+    tokens::save(Service::Notion, &token)?;
+    let source = settings::TaskSource::Notion { account: workspace, database: chosen.id, name: chosen.name.clone() };
+    switch_source(&app, &state, source, Arc::new(provider))?;
+    Ok(chosen.name)
 }
 
 /// Goes back to the tasks kept on this computer and forgets the online task list's sign-in.
@@ -546,7 +604,8 @@ fn switch_source(
     if std::mem::discriminant(&previous) != std::mem::discriminant(&source) {
         match previous {
             settings::TaskSource::JavaDashboard { .. } => wilsoon::sign_out(),
-            settings::TaskSource::Todoist { .. } => todoist::forget(),
+            settings::TaskSource::Todoist { .. } => tokens::forget(Service::Todoist),
+            settings::TaskSource::Notion { .. } => tokens::forget(Service::Notion),
             settings::TaskSource::Local => {}
         }
     }

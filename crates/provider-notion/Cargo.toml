@@ -1,0 +1,17 @@
+[package]
+name = "multitasker-provider-notion"
+description = "Tasks from a Notion database, through its API with an integration token"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+multitasker-core.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+ureq = "3"
+
+[dev-dependencies]
+tokio.workspace = true

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/provider-sqlite", "crates/provider-javadashboard", "crates/provider-todoist", "crates/activity", "crates/sync", "src-tauri"]
+members = ["crates/core", "crates/provider-sqlite", "crates/provider-javadashboard", "crates/provider-todoist", "crates/provider-notion", "crates/activity", "crates/sync", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,6 +12,7 @@ multitasker-core = { path = "crates/core" }
 multitasker-provider-sqlite = { path = "crates/provider-sqlite" }
 multitasker-provider-javadashboard = { path = "crates/provider-javadashboard" }
 multitasker-provider-todoist = { path = "crates/provider-todoist" }
+multitasker-provider-notion = { path = "crates/provider-notion" }
 multitasker-activity = { path = "crates/activity" }
 multitasker-sync = { path = "crates/sync" }
 async-trait = "0.1"
