@@ -14,9 +14,10 @@ export function TaskDetail(props: {
   now: number;
   deviceId: string | null;
   live?: Activity;
+  where: { text: string; elsewhereOnly: boolean } | null;
   onClose: () => void;
 }) {
-  const { task, run, now, deviceId, live, onClose } = props;
+  const { task, run, now, deviceId, live, where, onClose } = props;
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
   const [category, setCategory] = useState(task.category ?? '');
@@ -48,7 +49,7 @@ export function TaskDetail(props: {
           {done
             ? 'Done'
             : task.in_progress && task.started_at
-              ? `In progress · ${elapsed(task.started_at, now)}`
+              ? `In progress · ${elapsed(task.started_at, now)}${where ? ` · ${where.text.replace(/^On /, 'on ')}` : ''}`
               : 'To do'}
           {live && (
             <span className="detail-live">

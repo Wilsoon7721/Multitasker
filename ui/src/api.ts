@@ -17,6 +17,8 @@ export interface TaskView {
   completed_at: string | null;
   in_progress: boolean;
   started_at: string | null;
+  /** Device ids it's in progress on. */
+  in_progress_on: string[];
   attachments: Attachment[];
 }
 

@@ -34,7 +34,9 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
 
     // Earliest start per task across every device: "in progress since" means since anyone picked it up.
     let mut started = HashMap::new();
+    let mut devices: HashMap<TaskId, Vec<String>> = HashMap::new();
     for entry in state.state.focus().await.map_err(err)?.into_iter().filter(|e| e.provider == key) {
+        devices.entry(entry.task_id.clone()).or_default().push(entry.device);
         let at = started.entry(entry.task_id).or_insert(entry.started_at);
         *at = (*at).min(entry.started_at);
     }
@@ -49,7 +51,8 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
         .map(|task| {
             let started_at = started.get(&task.id).copied();
             let attachments = attachments.remove(&task.id).unwrap_or_default();
-            TaskView { task, in_progress: started_at.is_some(), started_at, attachments }
+            let in_progress_on = devices.remove(&task.id).unwrap_or_default();
+            TaskView { task, in_progress: started_at.is_some(), started_at, in_progress_on, attachments }
         })
         .collect())
 }

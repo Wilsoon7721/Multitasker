@@ -81,6 +81,8 @@ pub struct TaskView {
     pub task: Task,
     pub in_progress: bool,
     pub started_at: Option<DateTime<Utc>>,
+    /// The devices it's in progress on, so other computers can show where.
+    pub in_progress_on: Vec<crate::DeviceId>,
     pub attachments: Vec<crate::Attachment>,
 }
 

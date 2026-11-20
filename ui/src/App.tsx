@@ -8,6 +8,7 @@ import { TaskDetail } from './components/TaskDetail';
 import { TitleBar } from './components/TitleBar';
 import { useNow } from './time';
 import { useActivity } from './useActivity';
+import { useDevices } from './useDevices';
 import { useTasks } from './useTasks';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 
@@ -44,6 +45,7 @@ export function App() {
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const now = useNow();
   const { activeNow } = useActivity();
+  const { whereLabel } = useDevices();
 
   useEffect(
     () =>
@@ -90,6 +92,7 @@ export function App() {
       now={now}
       selected={t.id === selectedId}
       live={activeNow(t.id, now)}
+      where={whereLabel(t)}
       onOpen={() => setSelectedId(t.id)}
     />
   );
@@ -187,6 +190,7 @@ export function App() {
               now={now}
               deviceId={deviceId}
               live={activeNow(selected.id, now)}
+              where={whereLabel(selected)}
               onClose={close}
             />
           </>

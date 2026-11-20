@@ -29,8 +29,14 @@ let tasks: TaskView[] = [
     due_date: day(1),
     in_progress: true,
     started_at: iso(95 * 60_000),
+    in_progress_on: ['preview-device'],
   }),
-  task('Fix calendar sync bug in JavaDashboard', { category: 'Dev', in_progress: true, started_at: iso(20 * 60_000) }),
+  task('Fix calendar sync bug in JavaDashboard', {
+    category: 'Dev',
+    in_progress: true,
+    started_at: iso(20 * 60_000),
+    in_progress_on: ['laptop'],
+  }),
   task('Draft project proposal', { category: 'School', due_date: day(-1) }),
   task('Book dentist appointment', { due_date: day(4) }),
   task('Read chapter 5', { category: 'School', description: 'Pages 120–158.' }),
@@ -50,6 +56,7 @@ function task(title: string, extra: Partial<TaskView> = {}): TaskView {
     completed_at: null,
     in_progress: false,
     started_at: null,
+    in_progress_on: [],
     attachments: [],
     ...extra,
   };
@@ -112,7 +119,16 @@ let activity: ActivitySnapshot = {
   suggestion: { task_id: tasks[2].id, title: tasks[2].title, reason: '“proposal.docx” is open' },
 };
 
-let sync: SyncStatus = { target: { kind: 'off' }, state: 'off', last_synced: null, error: null, devices: [] };
+let sync: SyncStatus = {
+  target: { kind: 'folder', path: 'C:\\Users\\you\\OneDrive' },
+  state: 'ok',
+  last_synced: iso(60_000),
+  error: null,
+  devices: [
+    { id: DEVICE.id, name: DEVICE.name, last_seen: iso(60_000), this_device: true },
+    { id: 'laptop', name: 'LAPTOP', last_seen: iso(4 * 60_000), this_device: false },
+  ],
+};
 
 function syncTo(target: SyncTarget) {
   if (target.kind === 'off') {
@@ -187,7 +203,7 @@ mockIPC(
         if (c.status !== undefined && c.status !== t.status) {
           t.status = c.status;
           t.completed_at = c.status === 'done' ? new Date().toISOString() : null;
-          if (c.status === 'done') Object.assign(t, { in_progress: false, started_at: null });
+          if (c.status === 'done') Object.assign(t, { in_progress: false, started_at: null, in_progress_on: [] });
         }
         changed();
         return t;
@@ -207,13 +223,14 @@ mockIPC(
             completed_at: null,
             in_progress: true,
             started_at: t.started_at ?? new Date().toISOString(),
+            in_progress_on: [...new Set([...t.in_progress_on, DEVICE.id])],
           });
           if (activity.suggestion?.task_id === t.id) {
             activity = { ...activity, suggestion: null };
             activityChanged();
           }
         } else {
-          Object.assign(t, { in_progress: false, started_at: null });
+          Object.assign(t, { in_progress: false, started_at: null, in_progress_on: [] });
         }
         changed();
         return null;

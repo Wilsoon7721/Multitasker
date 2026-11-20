@@ -1,4 +1,4 @@
-import { CalendarDays, Paperclip, Pause, Play, Timer } from 'lucide-react';
+import { CalendarDays, Laptop, Paperclip, Pause, Play, Timer } from 'lucide-react';
 import { api, type Activity, type TaskView } from '../api';
 import { dueLabel, elapsed } from '../time';
 import type { Run } from '../useTasks';
@@ -10,9 +10,12 @@ export function TaskCard(props: {
   now: number;
   selected: boolean;
   live?: Activity;
+  where: { text: string; elsewhereOnly: boolean } | null;
   onOpen: () => void;
 }) {
-  const { task, run, now, selected, live, onOpen } = props;
+  const { task, run, now, selected, live, where, onOpen } = props;
+  // Started on another computer only: the button picks it up here instead of pausing it everywhere.
+  const pausing = task.in_progress && !where?.elsewhereOnly;
   const done = task.status === 'done';
   const due = task.due_date && !done ? dueLabel(task.due_date) : null;
 
@@ -43,6 +46,11 @@ export function TaskCard(props: {
               <Timer size={12} /> {elapsed(task.started_at, now)}
             </span>
           )}
+          {where && (
+            <span className="meta device">
+              <Laptop size={12} /> {where.text}
+            </span>
+          )}
           {task.category && <span className="tag">{task.category}</span>}
           {due && (
             <span className={`meta${due.late ? ' late' : ''}`}>
@@ -62,12 +70,14 @@ export function TaskCard(props: {
           className={`icon-btn start${task.in_progress ? ' on' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
-            void run(() => api.setInProgress(task.id, !task.in_progress));
+            void run(() => api.setInProgress(task.id, !pausing));
           }}
-          aria-label={task.in_progress ? `Pause "${task.title}"` : `Start "${task.title}"`}
-          title={task.in_progress ? 'Pause' : 'Start — shows in the widget'}
+          aria-label={
+            pausing ? `Pause "${task.title}"` : where ? `Continue "${task.title}" here` : `Start "${task.title}"`
+          }
+          title={pausing ? 'Pause' : where ? 'Continue here' : 'Start — shows in the widget'}
         >
-          {task.in_progress ? <Pause size={15} /> : <Play size={15} />}
+          {pausing ? <Pause size={15} /> : <Play size={15} />}
         </button>
       )}
     </li>

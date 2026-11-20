@@ -1,5 +1,5 @@
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
-import { AppWindow, CalendarDays, ChevronDown, Maximize2, Paperclip, Pause, Play, X } from 'lucide-react';
+import { AppWindow, CalendarDays, ChevronDown, Laptop, Maximize2, Paperclip, Pause, Play, X } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { AppPicker } from './components/AppPicker';
@@ -8,6 +8,7 @@ import { WidgetTodo } from './components/WidgetTodo';
 import { dueLabel, elapsed, useNow } from './time';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 import { useActivity } from './useActivity';
+import { useDevices } from './useDevices';
 import { useTasks } from './useTasks';
 
 const WIDTH = 320;
@@ -37,6 +38,7 @@ export function WidgetView() {
   const activeZone = useRef<HTMLElement>(null);
   const [pickingFor, setPickingFor] = useState<string | null>(null);
   const { snapshot, activeNow } = useActivity();
+  const { whereLabel } = useDevices();
   const suggestion = snapshot.suggestion;
 
   const toggleExpanded = () =>
@@ -148,6 +150,7 @@ export function WidgetView() {
             {active.map((t) => {
               const due = t.due_date ? dueLabel(t.due_date) : null;
               const live = activeNow(t.id, now);
+              const where = whereLabel(t);
               return (
                 <Fragment key={t.id}>
                   <li className={`widget-item${live ? ' live' : ''}`} data-drop={`task:${t.id}`}>
@@ -163,6 +166,11 @@ export function WidgetView() {
                       </span>
                       <span className="card-meta">
                         {t.started_at && <span className="meta accent">{elapsed(t.started_at, now)}</span>}
+                        {where && (
+                          <span className="meta device">
+                            <Laptop size={11} /> {where.text}
+                          </span>
+                        )}
                         {t.category && <span className="tag">{t.category}</span>}
                         {due && (
                           <span className={`meta${due.late ? ' late' : ''}`}>
@@ -177,6 +185,16 @@ export function WidgetView() {
                       </span>
                     </div>
                     <div className="widget-actions">
+                      {where?.elsewhereOnly && (
+                        <button
+                          className="icon-btn"
+                          onClick={() => void run(() => api.setInProgress(t.id, true))}
+                          aria-label={`Continue "${t.title}" on this computer`}
+                          title="Continue here"
+                        >
+                          <Play size={14} />
+                        </button>
+                      )}
                       <button
                         className="icon-btn"
                         onClick={() => attach(t.id)}
