@@ -15,13 +15,47 @@ Both registrations ask only for access to MultiTasker's own folder:
 | Google Drive | `drive.appdata`             | A hidden app-data folder; nothing appears in the person's Drive |
 | OneDrive     | `Files.ReadWrite.AppFolder` | `Apps/<registration name>` in the person's OneDrive          |
 
+## What to enter
+
+The same details work for both registrations.
+
+| Field                     | Value                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------ |
+| App name                  | MultiTasker                                                                                |
+| Short description         | An always-on-top focus list that keeps the tasks you've started in view.                   |
+| Home page                 | https://github.com/Wilsoon7721/Multitasker                                                 |
+| Privacy policy            | https://github.com/Wilsoon7721/Multitasker/blob/main/PRIVACY.md                            |
+| Terms of service          | Leave empty (optional)                                                                     |
+| Support / developer email | Your own email address                                                                     |
+| Logo                      | Google: [`docs/branding/logo-120.png`](branding/logo-120.png) (120×120) · Microsoft: [`docs/branding/logo-240.png`](branding/logo-240.png) (240×240) |
+
+**Longer description**, for anywhere that asks what the app does:
+
+> MultiTasker is an open-source desktop app for people who juggle several tasks at once. Tasks you've started stay
+> pinned in a small always-on-top widget, so nothing in progress gets forgotten. It can link files, apps and web pages
+> to tasks, notice which task you're working on, and sync your tasks between your own computers.
+
+**How the data is used**, for Google's data-access step or a verification form:
+
+> MultiTasker stores its sync files (the user's tasks, which tasks are in progress, and references to attached files
+> and links) in its own app folder, so the user's task list stays the same on each of their computers. It only reads
+> and writes files it created in that folder (`drive.appdata` / `Files.ReadWrite.AppFolder`) and never accesses any
+> other files. The email address (`openid`, `email`) is only shown in Settings to tell the user which account is
+> signed in. Data is never sent to any server other than the user's own Google Drive or OneDrive, is never shared,
+> and is never used for advertising or AI training.
+
+**About the home page and privacy links:** the GitHub links are fine while the Google app is in *Testing*. If you later
+ask Google to verify the brand (so the logo and name show on the sign-in page), Google requires the home page and
+privacy policy to be on a domain you've verified you own, which github.com isn't. A GitHub Pages site
+(`wilsoon7721.github.io`) that you verify in Google Search Console is the usual way around that.
+
 ## Google Drive
 
 1. Open the [Google Cloud console](https://console.cloud.google.com/) and create a project (e.g. "MultiTasker").
 2. **APIs & Services → Library**: enable the **Google Drive API**.
 3. **Google Auth Platform** (formerly "OAuth consent screen"):
-   - **Branding**: app name "MultiTasker", a support email, and (for publishing) a homepage and privacy policy link.
-     The GitHub repository and a short privacy note in it are enough.
+   - **Branding**: fill in the fields from [What to enter](#what-to-enter). Under **Authorized domains**, add the
+     domain of your home page and privacy policy links (`github.com` while testing).
    - **Audience**: choose **External**.
    - **Data access**: add the scopes `openid`, `.../auth/userinfo.email` and `.../auth/drive.appdata`. All three are
      non-sensitive, so Google doesn't require the security review that full Drive access needs.
@@ -43,7 +77,9 @@ Both registrations ask only for access to MultiTasker's own folder:
 2. **API permissions → Add a permission → Microsoft Graph → Delegated**: add `Files.ReadWrite.AppFolder`, `openid`,
    `email`, `profile` and `offline_access`. You can remove the default `User.Read`.
 3. Copy the **Application (client) ID** from the overview page. There's no secret: desktop apps are public clients.
-4. Optional: without **publisher verification**, Microsoft's consent page marks the app as from an unverified
+4. **Branding & properties**: fill in the logo, home page and privacy statement URLs from
+   [What to enter](#what-to-enter).
+5. Optional: without **publisher verification**, Microsoft's consent page marks the app as from an unverified
    publisher. Verification is free but needs a Microsoft AI Cloud Partner Program account and a verified domain.
 
 ## Using the IDs

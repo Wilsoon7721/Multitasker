@@ -69,6 +69,10 @@ numbered batches under `multitasker/v1/ops/<device>/`, and merges every other co
 field by field, newest stamp wins; deleting a task wins over edits to it. Because no file is ever written by two
 computers, this works through file-sync clients that can't lock files.
 
+## Privacy
+
+MultiTasker has no server, accounts or tracking; see [PRIVACY.md](PRIVACY.md) for what it stores and where.
+
 ## Development
 
 Prerequisites: [Rust](https://rustup.rs) (stable), [Node.js](https://nodejs.org) 20+, and the
