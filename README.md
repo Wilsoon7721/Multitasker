@@ -93,4 +93,4 @@ npm run tauri build     # build an installer
 ([`ui/src/dev/mockBackend.ts`](ui/src/dev/mockBackend.ts)), so you can work on the UI in any browser. It only loads in
 dev and never ships in builds.
 
-Your data lives in the app data folder (on Windows, `%APPDATA%\io.github.wilsoon7721.multitasker`).
+Your data lives in the app data folder (on Windows, `%APPDATA%\dev.wilsoon.multitasker`).

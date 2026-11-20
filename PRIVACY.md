@@ -9,7 +9,7 @@ keeps stays on your computer, or in storage you choose to sync through.
   to tasks; the files themselves are never copied).
 - Its settings and an ID for your computer, so synced data can say which computer something happened on.
 
-These live in MultiTasker's app data folder (`%APPDATA%\io.github.wilsoon7721.multitasker` on Windows).
+These live in MultiTasker's app data folder (`%APPDATA%\dev.wilsoon.multitasker` on Windows).
 
 ## Activity detection
 

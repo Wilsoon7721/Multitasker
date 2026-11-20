@@ -35,6 +35,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
+            move_old_data_dir(&data_dir);
             std::fs::create_dir_all(&data_dir)?;
 
             let db = Arc::new(SqliteDb::open(data_dir.join("multitasker.db"))?);
@@ -96,4 +97,12 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running MultiTasker");
+}
+
+/// Early builds used the identifier `io.github.wilsoon7721.multitasker`; carry their data over once.
+fn move_old_data_dir(data_dir: &std::path::Path) {
+    let Some(old) = data_dir.parent().map(|p| p.join("io.github.wilsoon7721.multitasker")) else { return };
+    if !data_dir.exists() && old.is_dir() {
+        let _ = std::fs::rename(old, data_dir);
+    }
 }
