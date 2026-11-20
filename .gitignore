@@ -18,6 +18,7 @@ Thumbs.db
 # Local env and logs
 .env
 .env.*
+!.env.example
 *.log
 
 # Local agent config

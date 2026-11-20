@@ -88,17 +88,17 @@ those links to be live and on a domain you've proved you own, which you do by ve
 
 ## Using the IDs
 
-**While developing**, set them in the terminal before running the app:
+**While developing**, copy [`.env.example`](../.env.example) to `.env` at the repository root and fill it in:
 
-```powershell
-$env:MULTITASKER_GOOGLE_CLIENT_ID = "1234-abc.apps.googleusercontent.com"
-$env:MULTITASKER_GOOGLE_CLIENT_SECRET = "GOCSPX-..."
-$env:MULTITASKER_MICROSOFT_CLIENT_ID = "00000000-0000-0000-0000-000000000000"
-npm run tauri dev
+```sh
+MULTITASKER_GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
+MULTITASKER_GOOGLE_CLIENT_SECRET=GOCSPX-...
+MULTITASKER_MICROSOFT_CLIENT_ID=00000000-0000-0000-0000-000000000000
 ```
 
-They're read when the app is compiled (`option_env!`), so builds made this way can sign in with no setup. For release
-builds, set the same three variables as CI secrets.
+`.env` is git-ignored. The values are read when the app is compiled, so builds made this way sign in with no setup;
+saving `.env` makes the next `npm run tauri dev` rebuild with them. Environment variables of the same names take
+priority over `.env`, so for release builds set them as CI secrets instead.
 
 **Without rebuilding**, choose Google Drive or OneDrive in **Settings → Sync** on a build that has no IDs, and paste
 them there. The client ID goes in `settings.json`; Google's client secret goes in Windows Credential Manager.
