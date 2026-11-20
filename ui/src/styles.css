@@ -1059,6 +1059,10 @@ html.widget body {
   border-radius: var(--radius-sm);
 }
 
+.attachment.pending {
+  opacity: 0.6;
+}
+
 .attachment:hover {
   background: var(--surface-hover);
 }

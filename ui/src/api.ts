@@ -38,6 +38,8 @@ export interface Attachment {
   /** The computer a file path belongs to; null for links. */
   device: string | null;
   added_at: string;
+  /** Shown while it's still being saved. */
+  pending?: boolean;
 }
 
 export type NewAttachment =
@@ -149,14 +151,101 @@ export interface TaskChanges {
   status?: TaskStatus;
 }
 
+/** A change shown before the backend confirms it, so slow task lists still feel instant. */
+export interface Pending {
+  apply: (tasks: TaskView[]) => TaskView[];
+  /** The backend has finished; dropped once the list has been fetched again. */
+  settled: boolean;
+}
+
+const pendings = new Set<Pending>();
+const pendingListeners = new Set<() => void>();
+const notifyPending = () => pendingListeners.forEach((fn) => fn());
+
+export function pendingChanges(): Pending[] {
+  return [...pendings];
+}
+
+export function onPendingChanged(fn: () => void): () => void {
+  pendingListeners.add(fn);
+  return () => pendingListeners.delete(fn);
+}
+
+export function dropPending(done: Pending[]) {
+  done.forEach((p) => pendings.delete(p));
+  notifyPending();
+}
+
+function optimistic<T>(apply: Pending['apply'], call: () => Promise<T>): Promise<T> {
+  const p: Pending = { apply, settled: false };
+  pendings.add(p);
+  notifyPending();
+  return call().then(
+    (value) => {
+      p.settled = true;
+      notifyPending();
+      return value;
+    },
+    (e) => {
+      dropPending([p]);
+      throw e;
+    },
+  );
+}
+
+const editTask = (id: string, f: (t: TaskView) => TaskView) => (tasks: TaskView[]) =>
+  tasks.map((t) => (t.id === id ? f(t) : t));
+
+let placeholders = 0;
+const placeholder = (taskId: string, item: NewAttachment): Attachment => {
+  const name =
+    item.type === 'path'
+      ? (item.path.split(/[\\/]/).filter(Boolean).pop() ?? item.path)
+      : item.type === 'link'
+        ? (item.name ?? item.url)
+        : item.name;
+  return {
+    id: `pending-${++placeholders}`,
+    task_id: taskId,
+    kind: item.type === 'path' ? 'file' : item.type,
+    name,
+    target: item.type === 'link' ? item.url : item.path,
+    device: null,
+    added_at: new Date().toISOString(),
+    pending: true,
+  };
+};
+
 export const api = {
   list: () => invoke<TaskView[]>('list_tasks'),
   create: (task: NewTask) => invoke<{ id: string }>('create_task', { task }),
   update: (id: string, changes: TaskChanges) => invoke('update_task', { id, changes }),
   remove: (id: string) => invoke('delete_task', { id }),
-  setInProgress: (id: string, inProgress: boolean) => invoke('set_in_progress', { id, inProgress }),
-  addAttachments: (id: string, items: NewAttachment[]) => invoke<Attachment[]>('add_attachments', { id, items }),
-  removeAttachment: (id: string) => invoke('remove_attachment', { id }),
+  setInProgress: (id: string, inProgress: boolean) =>
+    optimistic(
+      editTask(id, (t) =>
+        inProgress
+          ? {
+              ...t,
+              status: 'todo',
+              completed_at: null,
+              in_progress: true,
+              started_at: t.started_at ?? new Date().toISOString(),
+            }
+          : { ...t, in_progress: false, started_at: null, in_progress_on: [], started_on_name: null },
+      ),
+      () => invoke('set_in_progress', { id, inProgress }),
+    ),
+  addAttachments: (id: string, items: NewAttachment[]) =>
+    optimistic(
+      editTask(id, (t) => ({ ...t, attachments: [...t.attachments, ...items.map((item) => placeholder(id, item))] })),
+      () => invoke<Attachment[]>('add_attachments', { id, items }),
+    ),
+  removeAttachment: (id: string) =>
+    optimistic(
+      (tasks) => tasks.map((t) => ({ ...t, attachments: t.attachments.filter((a) => a.id !== id) })),
+      () => invoke('remove_attachment', { id }),
+    ),
   openAttachment: (id: string) => invoke('open_attachment', { id }),
   revealAttachment: (id: string) => invoke('reveal_attachment', { id }),
   thisDevice: () => invoke<Device>('this_device'),

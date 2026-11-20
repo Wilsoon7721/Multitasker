@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Globe,
   Link2,
+  LoaderCircle,
   Paperclip,
   X,
 } from 'lucide-react';
@@ -81,19 +82,20 @@ export function AttachmentList(props: {
       ) : (
         <ul className="attachment-list">
           {attachments.map((a) => (
-            <li key={a.id} className="attachment">
+            <li key={a.id} className={a.pending ? 'attachment pending' : 'attachment'} aria-busy={a.pending}>
               <button
                 className="attachment-open"
                 onClick={() => void run(() => api.openAttachment(a.id))}
-                title={`Open ${a.target}`}
+                title={a.pending ? 'Attaching…' : `Open ${a.target}`}
+                disabled={a.pending}
               >
-                <KindIcon kind={a.kind} size={18} />
+                {a.pending ? <LoaderCircle size={18} className="spin" /> : <KindIcon kind={a.kind} size={18} />}
                 <span className="attachment-text">
                   <span className="attachment-name">{a.name}</span>
-                  <span className="attachment-where">{where(a, deviceId)}</span>
+                  <span className="attachment-where">{a.pending ? 'Attaching…' : where(a, deviceId)}</span>
                 </span>
               </button>
-              {a.kind !== 'link' && a.kind !== 'app' && (
+              {!a.pending && a.kind !== 'link' && a.kind !== 'app' && (
                 <button
                   className="icon-btn"
                   onClick={() => void run(() => api.revealAttachment(a.id))}
@@ -105,6 +107,7 @@ export function AttachmentList(props: {
               )}
               <button
                 className="icon-btn"
+                disabled={a.pending}
                 onClick={() => void run(() => api.removeAttachment(a.id))}
                 aria-label={`Remove ${a.name}`}
                 title="Remove (the file itself is kept)"
