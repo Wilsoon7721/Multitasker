@@ -112,10 +112,11 @@ export interface SyncStatus {
   client: { name: string; running: boolean | null } | null;
 }
 
-export type TaskSource = { kind: 'local' } | { kind: 'java_dashboard'; account: string };
+export type TaskSource =
+  { kind: 'local' } | { kind: 'java_dashboard'; account: string } | { kind: 'todoist'; account: string };
 
 export type TaskSourceView = TaskSource & {
-  /** The provider actually in use; local if a JavaDashboard sign-in has gone. */
+  /** The provider actually in use; local if the online list's sign-in or token has gone. */
   active: string;
   supports_due_time: boolean;
   /** Whether this build can sign in to WilsoonID. */
@@ -267,6 +268,8 @@ export const api = {
   /** Opens the browser to sign in to WilsoonID; resolves with the account once JavaDashboard answers. */
   signInWilsoon: () => invoke<string>('sign_in_wilsoon'),
   useLocalTasks: () => invoke('use_local_tasks'),
+  /** Checks a personal Todoist token and switches to Todoist; resolves with the account's name. */
+  connectTodoist: (token: string) => invoke<string>('connect_todoist', { token }),
   widgetOpacity: () => invoke<number>('widget_opacity'),
   /** Previews an opacity on the widget; `save` keeps it. Resolves with the value actually used. */
   setWidgetOpacity: (opacity: number, save: boolean) => invoke<number>('set_widget_opacity', { opacity, save }),

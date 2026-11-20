@@ -12,7 +12,7 @@ use multitasker_sync::TokenSource;
 use crate::cloud::{self, BuiltInClients, Cloud};
 use crate::settings::SyncTarget;
 use crate::syncing::{self, FolderSuggestion, SyncStatus};
-use crate::{device::Device, settings, wilsoon, windows, AppState};
+use crate::{device::Device, settings, todoist, wilsoon, windows, AppState};
 
 /// Tells every window the task list changed, so the widget and main window stay in step.
 pub const TASKS_CHANGED: &str = "tasks-changed";
@@ -509,23 +509,50 @@ pub async fn sign_in_wilsoon(app: AppHandle, state: State<'_, AppState>) -> CmdR
     let (account, provider) = outcome?;
 
     let account = account.unwrap_or_else(|| "your WilsoonID account".into());
-    settings::update(&state.data_dir, |s| s.tasks = settings::TaskSource::JavaDashboard { account: account.clone() })
-        .map_err(err)?;
-    state.set_provider(Arc::new(provider));
-    state.syncer.wake();
+    switch_source(&app, &state, settings::TaskSource::JavaDashboard { account: account.clone() }, Arc::new(provider))?;
     let _ = windows::show_main(&app);
-    changed(&app);
     Ok(account)
 }
 
-/// Goes back to the tasks kept on this computer and forgets the WilsoonID sign-in.
+/// Checks a personal Todoist token and takes tasks from Todoist from now on.
+#[tauri::command]
+pub async fn connect_todoist(app: AppHandle, state: State<'_, AppState>, token: String) -> CmdResult<String> {
+    let token = token.trim().to_owned();
+    if token.is_empty() {
+        return Err(format!("Paste your Todoist API token, from {}.", todoist::TOKEN_PAGE));
+    }
+    let provider = multitasker_provider_todoist::Todoist::new(token.clone());
+    let account = provider.account().await.map_err(|e| e.to_string().trim_start_matches("storage error: ").to_owned())?;
+    todoist::save_token(&token)?;
+    switch_source(&app, &state, settings::TaskSource::Todoist { account: account.clone() }, Arc::new(provider))?;
+    Ok(account)
+}
+
+/// Goes back to the tasks kept on this computer and forgets the online task list's sign-in.
 #[tauri::command]
 pub fn use_local_tasks(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
-    settings::update(&state.data_dir, |s| s.tasks = settings::TaskSource::Local).map_err(err)?;
-    wilsoon::sign_out();
-    state.set_provider(state.db.clone());
+    switch_source(&app, &state, settings::TaskSource::Local, state.db.clone())
+}
+
+/// Moves to another task list, forgetting the sign-in for the one being left.
+fn switch_source(
+    app: &AppHandle,
+    state: &AppState,
+    source: settings::TaskSource,
+    provider: Arc<dyn multitasker_core::TaskProvider>,
+) -> CmdResult<()> {
+    let previous = settings::load(&state.data_dir).tasks;
+    settings::update(&state.data_dir, |s| s.tasks = source.clone()).map_err(err)?;
+    if std::mem::discriminant(&previous) != std::mem::discriminant(&source) {
+        match previous {
+            settings::TaskSource::JavaDashboard { .. } => wilsoon::sign_out(),
+            settings::TaskSource::Todoist { .. } => todoist::forget(),
+            settings::TaskSource::Local => {}
+        }
+    }
+    state.set_provider(provider);
     state.syncer.wake();
-    changed(&app);
+    changed(app);
     Ok(())
 }
 

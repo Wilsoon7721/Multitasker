@@ -10,6 +10,7 @@ import type {
   SyncStatus,
   SyncTarget,
   TaskChanges,
+  TaskSource,
   TaskView,
 } from '../api';
 
@@ -155,7 +156,7 @@ function syncTo(target: SyncTarget) {
 }
 
 let signInCancelled = false;
-let taskSource: { kind: 'local' } | { kind: 'java_dashboard'; account: string } = { kind: 'local' };
+let taskSource: TaskSource = { kind: 'local' };
 let widgetOpacity = 94;
 let reminders = { minutes_before: 15 as number | null, at_due_time: true };
 
@@ -290,8 +291,8 @@ mockIPC(
       case 'task_source':
         return {
           ...taskSource,
-          active: taskSource.kind === 'local' ? 'sqlite' : 'javadashboard',
-          supports_due_time: taskSource.kind === 'local',
+          active: taskSource.kind === 'local' ? 'sqlite' : taskSource.kind === 'todoist' ? 'todoist' : 'javadashboard',
+          supports_due_time: taskSource.kind !== 'java_dashboard',
           wilsoon_available: true,
         };
 
@@ -305,6 +306,12 @@ mockIPC(
             resolve('you@wilsoon.dev');
           }, 1500),
         );
+
+      case 'connect_todoist':
+        if (!String(a.token).trim()) throw 'Paste your Todoist API token.';
+        taskSource = { kind: 'todoist', account: 'Preview Person' };
+        changed();
+        return 'Preview Person';
 
       case 'use_local_tasks':
         taskSource = { kind: 'local' };

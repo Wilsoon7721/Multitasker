@@ -2496,6 +2496,7 @@ dependencies = [
  "multitasker-core",
  "multitasker-provider-javadashboard",
  "multitasker-provider-sqlite",
+ "multitasker-provider-todoist",
  "multitasker-sync",
  "serde",
  "serde_json",
@@ -2556,6 +2557,19 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "multitasker-provider-todoist"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "multitasker-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "ureq",
 ]
 
 [[package]]

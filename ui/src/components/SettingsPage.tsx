@@ -4,6 +4,7 @@ import {
   HardDrive,
   LayoutDashboard,
   ListChecks,
+  ListTodo,
   CircleAlert,
   Cloud,
   CloudOff,
@@ -341,9 +342,11 @@ function Choice(props: { selected: boolean; onSelect: () => void; icon: ReactNod
   );
 }
 
+type SourceKind = TaskSourceView['kind'];
+
 function TaskListSection({ run }: { run: Run }) {
   const [source, setSource] = useState<TaskSourceView | null>(null);
-  const [choosing, setChoosing] = useState<'local' | 'java_dashboard' | null>(null);
+  const [choosing, setChoosing] = useState<SourceKind | null>(null);
   const [waiting, setWaiting] = useState(false);
 
   useEffect(() => {
@@ -352,12 +355,13 @@ function TaskListSection({ run }: { run: Run }) {
     return onTasksChanged(load);
   }, []);
 
-  // Only builds made with a WilsoonID registration can use JavaDashboard; with nothing else to pick, say nothing.
-  if (!source || (!source.wilsoon_available && source.kind === 'local')) return null;
+  if (!source) return null;
 
   const mode = choosing ?? source.kind;
-  const signedInAs = source?.kind === 'java_dashboard' && source.active !== 'sqlite' ? source.account : null;
-  const signedOut = source?.kind === 'java_dashboard' && source.active === 'sqlite';
+  const connected = source.kind !== 'local' && source.active !== 'sqlite';
+  const account = source.kind !== 'local' ? source.account : null;
+  // Only builds made with a WilsoonID registration can use JavaDashboard.
+  const offerDashboard = source.wilsoon_available || source.kind === 'java_dashboard';
 
   const signIn = async () => {
     setWaiting(true);
@@ -366,6 +370,23 @@ function TaskListSection({ run }: { run: Run }) {
     if (ok) setChoosing(null);
   };
 
+  const signedIn = (icon: ReactNode, text: string) => (
+    <div className="folder-current">
+      {icon}
+      <span className="folder-path account">{text}</span>
+      <button className="secondary" onClick={() => void run(api.useLocalTasks)}>
+        <LogOut size={14} /> Use tasks on this computer
+      </button>
+    </div>
+  );
+  const lost = (what: string) =>
+    source.kind === mode &&
+    !connected && (
+      <p className="settings-warning">
+        <CircleAlert size={15} /> {what} has gone, so tasks on this computer are showing for now.
+      </p>
+    );
+
   return (
     <Section icon={<ListChecks size={18} />} title="Task list">
       <div className="choice-list" role="radiogroup" aria-label="Where tasks come from">
@@ -373,37 +394,50 @@ function TaskListSection({ run }: { run: Run }) {
           selected={mode === 'local'}
           onSelect={() => {
             setChoosing(null);
-            if (source?.kind !== 'local') void run(api.useLocalTasks);
+            if (source.kind !== 'local') void run(api.useLocalTasks);
           }}
           icon={<HardDrive size={18} />}
           title="On this computer"
           detail="Kept by MultiTasker; sync carries them to your other computers."
         />
         <Choice
-          selected={mode === 'java_dashboard'}
-          onSelect={() => setChoosing('java_dashboard')}
-          icon={<LayoutDashboard size={18} />}
-          title="JavaDashboard"
-          detail="Your dashboard's task board, signed in with WilsoonID."
+          selected={mode === 'todoist'}
+          onSelect={() => setChoosing('todoist')}
+          icon={<ListTodo size={18} />}
+          title="Todoist"
+          detail="Your Todoist tasks, connected with your own API token."
         />
+        {offerDashboard && (
+          <Choice
+            selected={mode === 'java_dashboard'}
+            onSelect={() => setChoosing('java_dashboard')}
+            icon={<LayoutDashboard size={18} />}
+            title="JavaDashboard"
+            detail="Your dashboard's task board, signed in with WilsoonID."
+          />
+        )}
       </div>
+
+      {mode === 'todoist' && (
+        <div className="cloud-setup">
+          {lost('The Todoist token')}
+          {source.kind === 'todoist' && connected ? (
+            signedIn(<ListTodo size={16} className="kind kind-link" />, `Connected as ${account}`)
+          ) : (
+            <TodoistForm run={run} onConnected={() => setChoosing(null)} />
+          )}
+          <p className="settings-hint">
+            Projects show as categories. Starting a task adds an <code>in-progress</code> label, and attachments are
+            kept as comments on the task, so your other computers see them too.
+          </p>
+        </div>
+      )}
 
       {mode === 'java_dashboard' && (
         <div className="cloud-setup">
-          {signedOut && !waiting && (
-            <p className="settings-warning">
-              <CircleAlert size={15} /> The WilsoonID sign-in has gone, so tasks on this computer are showing for now.
-              Sign in again to get JavaDashboard's back.
-            </p>
-          )}
-          {signedInAs && !waiting ? (
-            <div className="folder-current">
-              <LayoutDashboard size={16} className="kind kind-link" />
-              <span className="folder-path account">Signed in as {signedInAs}</span>
-              <button className="secondary" onClick={() => void run(api.useLocalTasks)}>
-                <LogOut size={14} /> Use tasks on this computer
-              </button>
-            </div>
+          {!waiting && lost('The WilsoonID sign-in')}
+          {source.kind === 'java_dashboard' && connected && !waiting ? (
+            signedIn(<LayoutDashboard size={16} className="kind kind-link" />, `Signed in as ${account}`)
           ) : waiting ? (
             <div className="sign-in-wait">
               <LoaderCircle size={16} className="spin" />
@@ -416,8 +450,8 @@ function TaskListSection({ run }: { run: Run }) {
             <button
               className="primary sign-in"
               onClick={() => void signIn()}
-              disabled={!source?.wilsoon_available}
-              title={source?.wilsoon_available ? undefined : 'This build has no WilsoonID registration.'}
+              disabled={!source.wilsoon_available}
+              title={source.wilsoon_available ? undefined : 'This build has no WilsoonID registration.'}
             >
               <LogIn size={15} /> Sign in with WilsoonID
             </button>
@@ -429,6 +463,49 @@ function TaskListSection({ run }: { run: Run }) {
         </div>
       )}
     </Section>
+  );
+}
+
+function TodoistForm({ run, onConnected }: { run: Run; onConnected: () => void }) {
+  const [token, setToken] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    const ok = await run(() => api.connectTodoist(token));
+    setSaving(false);
+    if (ok) {
+      setToken('');
+      onConnected();
+    }
+  };
+
+  return (
+    <form className="s3-form" onSubmit={submit}>
+      <label className="field wide">
+        <span>API token</span>
+        <input
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          required
+        />
+      </label>
+      <p className="settings-hint wide">
+        <KeyRound size={13} /> In Todoist, open Settings → Integrations → Developer and copy your API token. It's kept
+        in Windows Credential Manager, never in MultiTasker's files. Tasks on this computer stay saved while you use
+        Todoist.
+      </p>
+      <div className="wide">
+        <button type="submit" className="primary" disabled={!token.trim() || saving}>
+          {saving && <LoaderCircle size={14} className="spin" />}
+          Connect
+        </button>
+      </div>
+    </form>
   );
 }
 

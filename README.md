@@ -10,8 +10,9 @@ of sight.
 
 Early development. What works today:
 
-- A task list (add, edit, complete, delete) stored locally in SQLite. Builds made with a WilsoonID registration can
-  use a **JavaDashboard** task board instead (see [docs/cloud-sign-in.md](docs/cloud-sign-in.md#wilsoonid-and-javadashboard)).
+- A task list (add, edit, complete, delete) stored locally in SQLite, or taken from **Todoist** with your own API
+  token (see [docs/task-lists.md](docs/task-lists.md)). Builds made with a WilsoonID registration can use a
+  **JavaDashboard** task board instead (see [docs/cloud-sign-in.md](docs/cloud-sign-in.md#wilsoonid-and-javadashboard)).
 - **Due dates with an optional time.** Timed tasks count down ("in 2h 15m") once they're within a day, and
   MultiTasker reminds you with a Windows notification beforehand (15 minutes by default) and when they're due.
 - Mark tasks **in progress**; they appear in an always-on-top widget pinned to the top-right of your screen, with how
@@ -59,6 +60,7 @@ MultiTasker has two plug-in points, both defined in [`crates/core`](crates/core)
 crates/core              domain model, TaskProvider and StateStore traits
 crates/provider-sqlite   local SQLite provider + state store
 crates/provider-javadashboard   tasks from JavaDashboard's API
+crates/provider-todoist   tasks from Todoist's API, with a personal token
 crates/activity          activity detection: window in front, file saves, matching them to tasks
 crates/sync              sync engine, sign-in, and storage backends (Google Drive, OneDrive, folder, S3)
 src-tauri                desktop app: commands, windows, tray

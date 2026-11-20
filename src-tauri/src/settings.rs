@@ -31,6 +31,8 @@ pub enum TaskSource {
     Local,
     /// A JavaDashboard calendar, signed in with WilsoonID.
     JavaDashboard { account: String },
+    /// Todoist, with a personal API token kept in the credential store.
+    Todoist { account: String },
 }
 
 impl Default for Settings {
