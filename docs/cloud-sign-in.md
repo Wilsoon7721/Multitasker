@@ -23,8 +23,9 @@ The same details work for both registrations.
 | ------------------------- | ------------------------------------------------------------------------------------------ |
 | App name                  | MultiTasker                                                                                |
 | Short description         | An always-on-top focus list that keeps the tasks you've started in view.                   |
-| Home page                 | https://github.com/Wilsoon7721/Multitasker                                                 |
-| Privacy policy            | https://github.com/Wilsoon7721/Multitasker/blob/main/PRIVACY.md                            |
+| Home page                 | https://multitasker.wilsoon.dev                                                            |
+| Privacy policy            | https://multitasker.wilsoon.dev/privacy                                                    |
+| Authorized domain         | wilsoon.dev                                                                                |
 | Terms of service          | Leave empty (optional)                                                                     |
 | Support / developer email | Your own email address                                                                     |
 | Logo                      | Google: [`docs/branding/logo-120.png`](branding/logo-120.png) (120×120) · Microsoft: [`docs/branding/logo-240.png`](branding/logo-240.png) (240×240) |
@@ -44,18 +45,19 @@ The same details work for both registrations.
 > signed in. Data is never sent to any server other than the user's own Google Drive or OneDrive, is never shared,
 > and is never used for advertising or AI training.
 
-**About the home page and privacy links:** the GitHub links are fine while the Google app is in *Testing*. If you later
-ask Google to verify the brand (so the logo and name show on the sign-in page), Google requires the home page and
-privacy policy to be on a domain you've verified you own, which github.com isn't. A GitHub Pages site
-(`wilsoon7721.github.io`) that you verify in Google Search Console is the usual way around that.
+**Until multitasker.wilsoon.dev is live:** registering and testing work with the GitHub links instead
+(https://github.com/Wilsoon7721/Multitasker and its [`PRIVACY.md`](../PRIVACY.md), authorized domain `github.com`).
+Switch to the wilsoon.dev links before publishing the Google app or asking Google to verify the brand: Google requires
+those links to be live and on a domain you've proved you own, which you do by verifying `wilsoon.dev` in
+[Google Search Console](https://search.google.com/search-console) (a DNS TXT record). The privacy page should say what
+[`PRIVACY.md`](../PRIVACY.md) says; keep the two in step.
 
 ## Google Drive
 
 1. Open the [Google Cloud console](https://console.cloud.google.com/) and create a project (e.g. "MultiTasker").
 2. **APIs & Services → Library**: enable the **Google Drive API**.
 3. **Google Auth Platform** (formerly "OAuth consent screen"):
-   - **Branding**: fill in the fields from [What to enter](#what-to-enter). Under **Authorized domains**, add the
-     domain of your home page and privacy policy links (`github.com` while testing).
+   - **Branding**: fill in the fields from [What to enter](#what-to-enter), including the authorized domain.
    - **Audience**: choose **External**.
    - **Data access**: add the scopes `openid`, `.../auth/userinfo.email` and `.../auth/drive.appdata`. All three are
      non-sensitive, so Google doesn't require the security review that full Drive access needs.
@@ -80,7 +82,9 @@ privacy policy to be on a domain you've verified you own, which github.com isn't
 4. **Branding & properties**: fill in the logo, home page and privacy statement URLs from
    [What to enter](#what-to-enter).
 5. Optional: without **publisher verification**, Microsoft's consent page marks the app as from an unverified
-   publisher. Verification is free but needs a Microsoft AI Cloud Partner Program account and a verified domain.
+   publisher. Verification is free but needs a Microsoft AI Cloud Partner Program account and a verified domain. For
+   the domain, set **Branding & properties → Publisher domain** to `wilsoon.dev`; Microsoft checks it by fetching a
+   small JSON file it gives you from `https://wilsoon.dev/.well-known/microsoft-identity-association.json`.
 
 ## Using the IDs
 
