@@ -1,0 +1,16 @@
+[package]
+name = "multitasker-provider-sqlite"
+description = "Local SQLite task provider and state store for MultiTasker"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+multitasker-core.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+rusqlite.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

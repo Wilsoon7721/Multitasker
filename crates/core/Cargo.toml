@@ -1,0 +1,15 @@
+[package]
+name = "multitasker-core"
+description = "Domain model and provider interfaces for MultiTasker"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -1,0 +1,21 @@
+# Rust
+/target/
+
+# Tauri generated
+/src-tauri/gen/
+
+# Frontend
+/node_modules/
+/dist/
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local env and logs
+.env
+.env.*
+*.log
