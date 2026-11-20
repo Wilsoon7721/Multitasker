@@ -1738,3 +1738,24 @@ button.primary.small {
     grid-template-columns: 1fr;
   }
 }
+
+.badge.warn,
+.settings-warning {
+  background: color-mix(in srgb, var(--late) 14%, var(--surface));
+  color: var(--late);
+}
+
+.settings-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.settings-warning svg {
+  flex: none;
+  margin-top: 2px;
+}

@@ -171,6 +171,18 @@ function SyncSection({ run }: { run: Run }) {
 
       {status && status.state !== 'off' && (
         <>
+          {status.client?.running === false && (
+            <p className="settings-warning">
+              <CircleAlert size={15} /> {status.client.name} isn't running, so changes are only saved in the folder on
+              this computer. Start {status.client.name} and they'll go out.
+            </p>
+          )}
+          {status.target.kind === 'folder' && status.client?.running !== false && (
+            <p className="settings-hint">
+              Changes reach your other computers once {status.client?.name ?? 'your sync app'} uploads them; a computer
+              listed below with a recent "last seen" shows that round trip works.
+            </p>
+          )}
           {status.error && (
             <p className="settings-error">
               <CircleAlert size={15} /> {status.error}
@@ -191,7 +203,7 @@ function SyncSection({ run }: { run: Run }) {
                     <Laptop size={16} />
                     <span className="device-name">{d.name}</span>
                     <span className="muted">
-                      {d.this_device ? 'This computer' : `Last synced ${ago(d.last_seen, now)}`}
+                      {d.this_device ? 'This computer' : `Last seen ${ago(d.last_seen, now)}`}
                     </span>
                   </li>
                 ))}
@@ -204,9 +216,11 @@ function SyncSection({ run }: { run: Run }) {
   );
 }
 
+// For a shared folder MultiTasker only knows its files reached the folder; the sync app does the rest.
 function SyncBadge({ status, now }: { status: SyncStatus; now: number }) {
   if (status.state === 'off') return <span className="badge">Off</span>;
   if (status.state === 'error') return <span className="badge error">Needs attention</span>;
+  if (status.client?.running === false) return <span className="badge warn">Not leaving this computer</span>;
   if (status.state === 'syncing' || !status.last_synced) {
     return (
       <span className="badge">
@@ -214,7 +228,9 @@ function SyncBadge({ status, now }: { status: SyncStatus; now: number }) {
       </span>
     );
   }
-  return <span className="badge ok">Synced {ago(status.last_synced, now)}</span>;
+  const when = ago(status.last_synced, now);
+  if (status.target.kind === 'folder') return <span className="badge ok">Saved to folder {when}</span>;
+  return <span className="badge ok">Synced {when}</span>;
 }
 
 function Choice(props: { selected: boolean; onSelect: () => void; icon: ReactNode; title: string; detail: string }) {

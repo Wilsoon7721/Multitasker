@@ -36,6 +36,16 @@ pub struct SyncStatus {
     pub last_synced: Option<DateTime<Utc>>,
     pub error: Option<String>,
     pub devices: Vec<DeviceView>,
+    /// The app that carries a shared folder between computers, when it can be told from the path.
+    pub client: Option<SyncClient>,
+}
+
+/// A folder only reaches other computers while its sync app runs; MultiTasker can only see the local folder.
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncClient {
+    pub name: &'static str,
+    /// `None` when running programs can't be listed.
+    pub running: Option<bool>,
 }
 
 pub struct Syncer {
@@ -48,7 +58,14 @@ impl Syncer {
     pub fn new(target: SyncTarget) -> Arc<Self> {
         let state = if target == SyncTarget::Off { "off" } else { "syncing" };
         Arc::new(Self {
-            status: Mutex::new(SyncStatus { target, state, last_synced: None, error: None, devices: Vec::new() }),
+            status: Mutex::new(SyncStatus {
+                target,
+                state,
+                last_synced: None,
+                error: None,
+                devices: Vec::new(),
+                client: None,
+            }),
             woken: Mutex::new(false),
             wake: Condvar::new(),
         })
@@ -119,7 +136,9 @@ fn run_once(app: &AppHandle, syncer: &Syncer) {
             if state.db.sync_device().is_ok_and(|d| d.is_some()) {
                 let _ = state.db.disable_sync();
             }
-            syncer.update(app, |s| *s = SyncStatus { target, state: "off", last_synced: None, error: None, devices: Vec::new() });
+            syncer.update(app, |s| {
+                *s = SyncStatus { target, state: "off", last_synced: None, error: None, devices: Vec::new(), client: None }
+            });
             return;
         }
         SyncTarget::Folder { path } => match FolderRemote::new(path) {
@@ -132,9 +151,14 @@ fn run_once(app: &AppHandle, syncer: &Syncer) {
         },
     };
 
+    let client = match &target {
+        SyncTarget::Folder { path } => folder_client(path),
+        _ => None,
+    };
     syncer.update(app, |s| {
         s.target = target.clone();
         s.state = "syncing";
+        s.client = client.clone();
     });
     let me = DeviceInfo { id: state.device.id.clone(), name: state.device.name.clone(), last_seen: Utc::now() };
     match sync_once(&state.db, remote.as_ref(), &me) {
@@ -148,7 +172,7 @@ fn run_once(app: &AppHandle, syncer: &Syncer) {
                 .map(|d| DeviceView { this_device: d.id == me.id, id: d.id, name: d.name, last_seen: d.last_seen })
                 .collect();
             syncer.update(app, |s| {
-                *s = SyncStatus { target, state: "ok", last_synced: Some(Utc::now()), error: None, devices }
+                *s = SyncStatus { target, state: "ok", last_synced: Some(Utc::now()), error: None, devices, client }
             });
         }
         Err(e) => fail(app, syncer, target, e.to_string()),
@@ -206,6 +230,22 @@ pub fn check_folder(path: &str) -> Result<(), String> {
     std::fs::write(&probe, b"ok").map_err(|e| format!("Can't write to '{path}': {e}"))?;
     let _ = std::fs::remove_file(probe);
     Ok(())
+}
+
+/// Works out which sync app a folder belongs to, and whether that app is running right now.
+fn folder_client(path: &str) -> Option<SyncClient> {
+    let path = path.to_lowercase();
+    let under = |var: &str| std::env::var(var).is_ok_and(|root| !root.is_empty() && path.starts_with(&root.to_lowercase()));
+    let (name, exe) = if under("OneDrive") || under("OneDriveConsumer") || under("OneDriveCommercial") {
+        ("OneDrive", "OneDrive.exe")
+    } else if path.contains("\\my drive") || path.contains("\\shared drives") {
+        ("Google Drive", "GoogleDriveFS.exe")
+    } else if path.contains("\\dropbox") {
+        ("Dropbox", "Dropbox.exe")
+    } else {
+        return None;
+    };
+    Some(SyncClient { name, running: multitasker_activity::is_process_running(exe) })
 }
 
 /// A sync client folder found on this computer, offered as a one-click choice.

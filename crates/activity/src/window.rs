@@ -1,5 +1,5 @@
 #[cfg(windows)]
-pub use imp::{app_windows, foreground_window, idle_time};
+pub use imp::{app_windows, foreground_window, idle_time, is_process_running};
 
 /// The window in front and the program that owns it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +37,11 @@ pub fn idle_time() -> std::time::Duration {
     std::time::Duration::ZERO
 }
 
+#[cfg(not(windows))]
+pub fn is_process_running(_exe: &str) -> Option<bool> {
+    None
+}
+
 #[cfg(windows)]
 mod imp {
     use std::ffi::c_void;
@@ -46,6 +51,9 @@ mod imp {
     use windows_sys::Win32::Foundation::{CloseHandle, HWND, LPARAM};
     use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows_sys::Win32::Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
     use windows_sys::Win32::System::SystemInformation::GetTickCount;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
     use windows_sys::Win32::System::Threading::{
@@ -76,6 +84,26 @@ mod imp {
             }
         }
         Some(ForegroundWindow { pid, exe: file_name(&exe_path).to_owned(), exe_path, title })
+    }
+
+    /// Whether a program with this file name (e.g. `OneDrive.exe`) is running; `None` if processes can't be listed.
+    pub fn is_process_running(exe: &str) -> Option<bool> {
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot.is_null() || snapshot as isize == -1 {
+                return None;
+            }
+            let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+            let mut found = false;
+            let mut more = Process32FirstW(snapshot, &mut entry) != 0;
+            while more && !found {
+                let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                found = String::from_utf16_lossy(&entry.szExeFile[..len]).eq_ignore_ascii_case(exe);
+                more = Process32NextW(snapshot, &mut entry) != 0;
+            }
+            CloseHandle(snapshot);
+            Some(found)
+        }
     }
 
     /// How long since the last keyboard or mouse input anywhere on the computer.
@@ -248,6 +276,9 @@ mod imp {
             }
             let _ = foreground_window();
             assert!(idle_time() < std::time::Duration::from_secs(60 * 60 * 24 * 50));
+            let me = std::env::current_exe().unwrap();
+            assert_eq!(is_process_running(me.file_name().unwrap().to_str().unwrap()), Some(true));
+            assert_eq!(is_process_running("definitely-not-running-4242.exe"), Some(false));
         }
     }
 }

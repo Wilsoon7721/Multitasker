@@ -93,6 +93,8 @@ export interface SyncStatus {
   last_synced: string | null;
   error: string | null;
   devices: SyncDevice[];
+  /** The app carrying a shared folder, when known; `running` is null if it couldn't be checked. */
+  client: { name: string; running: boolean | null } | null;
 }
 
 export interface FolderSuggestion {

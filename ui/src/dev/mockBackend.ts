@@ -128,11 +128,12 @@ let sync: SyncStatus = {
     { id: DEVICE.id, name: DEVICE.name, last_seen: iso(60_000), this_device: true },
     { id: 'laptop', name: 'LAPTOP', last_seen: iso(4 * 60_000), this_device: false },
   ],
+  client: { name: 'OneDrive', running: false },
 };
 
 function syncTo(target: SyncTarget) {
   if (target.kind === 'off') {
-    sync = { target, state: 'off', last_synced: null, error: null, devices: [] };
+    sync = { target, state: 'off', last_synced: null, error: null, devices: [], client: null };
   } else {
     const seen = new Date().toISOString();
     sync = {
@@ -144,6 +145,7 @@ function syncTo(target: SyncTarget) {
         { id: DEVICE.id, name: DEVICE.name, last_seen: seen, this_device: true },
         { id: 'laptop', name: 'LAPTOP', last_seen: iso(4 * 60_000), this_device: false },
       ],
+      client: target.kind === 'folder' ? { name: 'OneDrive', running: true } : null,
     };
   }
   setTimeout(() => void emit('sync-status', sync), 0);
