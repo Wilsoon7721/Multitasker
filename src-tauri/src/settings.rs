@@ -16,7 +16,12 @@ pub struct Settings {
     pub reminders: Reminders,
     /// Where tasks come from.
     pub tasks: TaskSource,
+    /// How opaque the widget's background is, in percent; its text always stays solid.
+    pub widget_opacity: u8,
 }
+
+/// The widget's background never goes fully clear, so its text stays readable over anything.
+pub const MIN_WIDGET_OPACITY: u8 = 30;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -30,7 +35,13 @@ pub enum TaskSource {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { detection: true, sync: SyncTarget::Off, reminders: Reminders::default(), tasks: TaskSource::Local }
+        Self {
+            detection: true,
+            sync: SyncTarget::Off,
+            reminders: Reminders::default(),
+            tasks: TaskSource::Local,
+            widget_opacity: 94,
+        }
     }
 }
 
@@ -116,5 +127,6 @@ mod tests {
 
         let old: Settings = serde_json::from_str(r#"{"detection":false}"#).unwrap();
         assert_eq!((old.detection, old.sync), (false, SyncTarget::Off), "settings from before sync still load");
+        assert_eq!(old.widget_opacity, 94);
     }
 }

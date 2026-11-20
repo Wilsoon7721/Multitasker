@@ -176,6 +176,9 @@ export const api = {
   /** Opens the browser to sign in to WilsoonID; resolves with the account once JavaDashboard answers. */
   signInWilsoon: () => invoke<string>('sign_in_wilsoon'),
   useLocalTasks: () => invoke('use_local_tasks'),
+  widgetOpacity: () => invoke<number>('widget_opacity'),
+  /** Previews an opacity on the widget; `save` keeps it. Resolves with the value actually used. */
+  setWidgetOpacity: (opacity: number, save: boolean) => invoke<number>('set_widget_opacity', { opacity, save }),
   reminderSettings: () => invoke<ReminderSettings>('reminder_settings'),
   setReminderSettings: (reminders: ReminderSettings) => invoke('set_reminder_settings', { reminders }),
   builtInClients: () => invoke<Record<CloudService, boolean>>('built_in_clients'),
@@ -209,6 +212,9 @@ export const onActivity = (handler: (snapshot: ActivitySnapshot) => void) => sub
 
 /** Fires whenever sync starts, finishes or fails. */
 export const onSyncStatus = (handler: (status: SyncStatus) => void) => subscribe('sync-status', handler);
+
+/** Fires when the widget's background opacity changes, with the new percentage. */
+export const onWidgetAppearance = (handler: (opacity: number) => void) => subscribe('widget-appearance', handler);
 
 /** Fires when the widget is shown or hidden, from anywhere (tray, widget, main window). */
 export const onWidgetVisibility = (handler: (visible: boolean) => void) => subscribe('widget-visibility', handler);

@@ -1,5 +1,6 @@
 import {
   BellRing,
+  PictureInPicture2,
   HardDrive,
   LayoutDashboard,
   ListChecks,
@@ -45,6 +46,7 @@ export function SettingsPage({ run }: { run: Run }) {
     <>
       <TaskListSection run={run} />
       <SyncSection run={run} />
+      <WidgetSection run={run} />
       <RemindersSection run={run} />
       <DetectionSection run={run} />
     </>
@@ -422,6 +424,47 @@ function TaskListSection({ run }: { run: Run }) {
           </p>
         </div>
       )}
+    </Section>
+  );
+}
+
+function WidgetSection({ run }: { run: Run }) {
+  const [opacity, setOpacity] = useState<number | null>(null);
+
+  useEffect(() => {
+    void api.widgetOpacity().then(setOpacity, () => {});
+  }, []);
+
+  // Dragging previews on the widget as it moves; letting go saves.
+  const preview = (value: number) => {
+    setOpacity(value);
+    void api.setWidgetOpacity(value, false);
+  };
+  const save = () => opacity !== null && void run(() => api.setWidgetOpacity(opacity, true));
+
+  return (
+    <Section icon={<PictureInPicture2 size={18} />} title="Widget">
+      <label className="toggle-row">
+        <span>
+          <span className="choice-title">Background opacity</span>
+          <span className="choice-detail">Lower lets more of what's behind show through. Text stays solid.</span>
+        </span>
+        <span className="slider-field">
+          <input
+            type="range"
+            min={30}
+            max={100}
+            step={1}
+            value={opacity ?? 94}
+            disabled={opacity === null}
+            onChange={(e) => preview(Number(e.target.value))}
+            onPointerUp={save}
+            onKeyUp={save}
+            aria-label="Widget background opacity"
+          />
+          <output>{opacity ?? 94}%</output>
+        </span>
+      </label>
     </Section>
   );
 }

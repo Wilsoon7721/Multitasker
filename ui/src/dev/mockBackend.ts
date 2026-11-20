@@ -155,6 +155,7 @@ function syncTo(target: SyncTarget) {
 
 let signInCancelled = false;
 let taskSource: { kind: 'local' } | { kind: 'java_dashboard'; account: string } = { kind: 'local' };
+let widgetOpacity = 94;
 let reminders = { minutes_before: 15 as number | null, at_due_time: true };
 
 function activityChanged() {
@@ -274,6 +275,16 @@ mockIPC(
       case 'set_sync_target':
         syncTo(a.target as SyncTarget);
         return null;
+
+      case 'widget_opacity':
+        return widgetOpacity;
+
+      case 'set_widget_opacity': {
+        const value = Math.min(100, Math.max(30, Number(a.opacity)));
+        if (a.save) widgetOpacity = value;
+        setTimeout(() => void emit('widget-appearance', value), 0);
+        return value;
+      }
 
       case 'task_source':
         return {

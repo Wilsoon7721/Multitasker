@@ -1,7 +1,7 @@
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { AppWindow, CalendarDays, ChevronDown, Maximize2, Paperclip, Pause, Play, X } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { api } from './api';
+import { api, onWidgetAppearance } from './api';
 import { AppPicker } from './components/AppPicker';
 import { CheckButton } from './components/CheckButton';
 import { WidgetTodo } from './components/WidgetTodo';
@@ -48,6 +48,12 @@ export function WidgetView() {
       }
       return !cur;
     });
+
+  useEffect(() => {
+    const apply = (opacity: number) => document.documentElement.style.setProperty('--widget-alpha', `${opacity}%`);
+    void api.widgetOpacity().then(apply, () => {});
+    return onWidgetAppearance(apply);
+  }, []);
 
   // The window hugs the card, so the transparent area around it never blocks clicks on what's behind.
   useEffect(() => {

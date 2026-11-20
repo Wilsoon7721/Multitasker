@@ -484,3 +484,22 @@ pub fn use_local_tasks(app: AppHandle, state: State<'_, AppState>) -> CmdResult<
     changed(&app);
     Ok(())
 }
+
+/// Tells the widget its background opacity changed.
+pub const WIDGET_APPEARANCE: &str = "widget-appearance";
+
+#[tauri::command]
+pub fn widget_opacity(state: State<'_, AppState>) -> u8 {
+    settings::load(&state.data_dir).widget_opacity
+}
+
+/// Shows a new opacity on the widget straight away; `save` keeps it (sent when the slider is let go).
+#[tauri::command]
+pub fn set_widget_opacity(app: AppHandle, state: State<'_, AppState>, opacity: u8, save: bool) -> CmdResult<u8> {
+    let opacity = opacity.clamp(settings::MIN_WIDGET_OPACITY, 100);
+    if save {
+        settings::update(&state.data_dir, |s| s.widget_opacity = opacity).map_err(err)?;
+    }
+    let _ = app.emit(WIDGET_APPEARANCE, opacity);
+    Ok(opacity)
+}

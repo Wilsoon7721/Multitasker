@@ -1880,3 +1880,25 @@ button.primary.small {
 .composer + .empty {
   margin-top: 16px;
 }
+
+.toggle-row > .slider-field {
+  display: flex;
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.slider-field input[type='range'] {
+  width: 180px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.slider-field output {
+  min-width: 40px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

@@ -144,6 +144,8 @@ pub fn run() {
             commands::reminder_settings,
             commands::set_reminder_settings,
             commands::task_source,
+            commands::widget_opacity,
+            commands::set_widget_opacity,
             commands::sign_in_wilsoon,
             commands::use_local_tasks,
         ])
