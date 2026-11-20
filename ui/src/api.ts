@@ -41,11 +41,18 @@ export const api = {
   remove: (id: string) => invoke('delete_task', { id }),
   setInProgress: (id: string, inProgress: boolean) => invoke('set_in_progress', { id, inProgress }),
   openMain: () => invoke('open_main'),
-  toggleWidget: () => invoke<boolean>('toggle_widget'),
+  widgetVisible: () => invoke<boolean>('widget_visible'),
+  /** Returns whether the widget is now visible. */
+  setWidgetVisible: (visible: boolean) => invoke<boolean>('set_widget_visible', { visible }),
 };
 
-/** Fires whenever any window changes a task. Returns an unsubscribe function. */
-export function onTasksChanged(handler: () => void): () => void {
-  const unlisten = listen('tasks-changed', handler);
+function subscribe<T>(event: string, handler: (payload: T) => void): () => void {
+  const unlisten = listen<T>(event, (e) => handler(e.payload));
   return () => void unlisten.then((stop) => stop());
 }
+
+/** Fires whenever any window changes a task. Returns an unsubscribe function. */
+export const onTasksChanged = (handler: () => void) => subscribe('tasks-changed', handler);
+
+/** Fires when the widget is shown or hidden, from anywhere (tray, widget, main window). */
+export const onWidgetVisibility = (handler: (visible: boolean) => void) => subscribe('widget-visibility', handler);

@@ -1,10 +1,13 @@
-use tauri::{AppHandle, Manager, PhysicalPosition, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow};
 
 pub const MAIN: &str = "main";
 pub const WIDGET: &str = "widget";
 
+/// Tells every window whether the widget is showing, so toggles stay in step wherever it was changed.
+pub const WIDGET_VISIBILITY: &str = "widget-visibility";
+
 /// Gap between the widget and the screen's top-right corner, in logical pixels.
-const MARGIN: f64 = 12.0;
+const MARGIN: f64 = 4.0;
 
 fn window(app: &AppHandle, label: &str) -> tauri::Result<WebviewWindow> {
     app.get_webview_window(label).ok_or(tauri::Error::WindowNotFound)
@@ -17,25 +20,28 @@ pub fn show_main(app: &AppHandle) -> tauri::Result<()> {
     main.set_focus()
 }
 
-/// Pins the widget to the top-right of the primary monitor's work area (clear of the taskbar), then shows it.
-pub fn show_widget(app: &AppHandle) -> tauri::Result<()> {
-    let widget = window(app, WIDGET)?;
-    pin_top_right(&widget)?;
-    widget.show()
+pub fn widget_visible(app: &AppHandle) -> tauri::Result<bool> {
+    window(app, WIDGET)?.is_visible()
 }
 
-/// Shows or hides the widget; returns whether it is now visible.
-pub fn toggle_widget(app: &AppHandle) -> tauri::Result<bool> {
+/// Shows the widget pinned top-right, or hides it. Returns whether it is now visible.
+pub fn set_widget_visible(app: &AppHandle, visible: bool) -> tauri::Result<bool> {
     let widget = window(app, WIDGET)?;
-    if widget.is_visible()? {
-        widget.hide()?;
-        Ok(false)
+    if visible {
+        pin_top_right(&widget)?;
+        widget.show()?;
     } else {
-        show_widget(app)?;
-        Ok(true)
+        widget.hide()?;
     }
+    let _ = app.emit(WIDGET_VISIBILITY, visible);
+    Ok(visible)
 }
 
+pub fn toggle_widget(app: &AppHandle) -> tauri::Result<bool> {
+    set_widget_visible(app, !widget_visible(app)?)
+}
+
+/// Pins the widget to the top-right of the primary monitor's work area, clear of the taskbar.
 fn pin_top_right(widget: &WebviewWindow) -> tauri::Result<()> {
     let Some(monitor) = widget.primary_monitor()?.or(widget.current_monitor()?) else {
         return Ok(());

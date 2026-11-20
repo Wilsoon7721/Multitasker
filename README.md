@@ -57,4 +57,11 @@ npm run typecheck       # frontend type check
 npm run tauri build     # build an installer
 ```
 
+### Browser preview
+
+`npm run dev` on its own serves the UI at http://localhost:1420 (main window) and http://localhost:1420/widget.html
+(widget). Outside Tauri, a mock backend with sample tasks stands in for Rust
+([`ui/src/dev/mockBackend.ts`](ui/src/dev/mockBackend.ts)), so you can work on the UI in any browser. It only loads in
+dev and never ships in builds.
+
 Your data lives in the app data folder (on Windows, `%APPDATA%\io.github.wilsoon7721.multitasker`).

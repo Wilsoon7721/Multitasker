@@ -103,6 +103,11 @@ pub fn open_main(app: AppHandle) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub fn toggle_widget(app: AppHandle) -> CmdResult<bool> {
-    windows::toggle_widget(&app).map_err(err)
+pub fn widget_visible(app: AppHandle) -> CmdResult<bool> {
+    windows::widget_visible(&app).map_err(err)
+}
+
+#[tauri::command]
+pub fn set_widget_visible(app: AppHandle, visible: bool) -> CmdResult<bool> {
+    windows::set_widget_visible(&app, visible).map_err(err)
 }

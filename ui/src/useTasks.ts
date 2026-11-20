@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, onTasksChanged, type TaskView } from './api';
 
+/** Runs an action, surfacing its error instead of throwing. Resolves to whether it worked. */
+export type Run = (action: () => Promise<unknown>) => Promise<boolean>;
+
 /** The task list, kept fresh across windows. Errors from any action land in `error`. */
 export function useTasks() {
   const [tasks, setTasks] = useState<TaskView[] | null>(null);
@@ -9,7 +12,6 @@ export function useTasks() {
   const refresh = useCallback(async () => {
     try {
       setTasks(await api.list());
-      setError(null);
     } catch (e) {
       setError(String(e));
     }
@@ -20,10 +22,11 @@ export function useTasks() {
     return onTasksChanged(() => void refresh());
   }, [refresh]);
 
-  /** Runs an action, surfacing its error instead of throwing. Windows refresh via the change event. */
-  const run = useCallback(async (action: () => Promise<unknown>) => {
+  // Windows refresh through the change event the backend sends after every change.
+  const run: Run = useCallback(async (action) => {
     try {
       await action();
+      setError(null);
       return true;
     } catch (e) {
       setError(String(e));
@@ -31,5 +34,5 @@ export function useTasks() {
     }
   }, []);
 
-  return { tasks, error, clearError: () => setError(null), run };
+  return { tasks, error, setError, clearError: () => setError(null), run };
 }

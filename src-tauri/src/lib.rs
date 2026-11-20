@@ -26,7 +26,7 @@ pub fn run() {
             app.manage(AppState { provider: db.clone(), state: db, device: device::load_or_create(&data_dir)? });
 
             tray::build(app.handle())?;
-            windows::show_widget(app.handle())?;
+            windows::set_widget_visible(app.handle(), true)?;
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -45,7 +45,8 @@ pub fn run() {
             commands::delete_task,
             commands::set_in_progress,
             commands::open_main,
-            commands::toggle_widget,
+            commands::widget_visible,
+            commands::set_widget_visible,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MultiTasker");
