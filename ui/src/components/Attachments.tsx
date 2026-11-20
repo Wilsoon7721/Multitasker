@@ -1,8 +1,21 @@
-import { File, FileImage, FileText, FileVideo, Folder, FolderOpen, Globe, Link2, Paperclip, X } from 'lucide-react';
+import {
+  AppWindow,
+  File,
+  FileImage,
+  FileText,
+  FileVideo,
+  Folder,
+  FolderOpen,
+  Globe,
+  Link2,
+  Paperclip,
+  X,
+} from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { api, type Attachment, type AttachmentKind, type NewAttachment } from '../api';
 import type { Run } from '../useTasks';
 import { pathItems } from '../useFileDrop';
+import { AppPicker } from './AppPicker';
 
 const ICONS: Record<AttachmentKind, typeof File> = {
   document: FileText,
@@ -12,6 +25,7 @@ const ICONS: Record<AttachmentKind, typeof File> = {
   folder: Folder,
   file: File,
   link: Globe,
+  app: AppWindow,
 };
 
 export function KindIcon({ kind, size = 16 }: { kind: AttachmentKind; size?: number }) {
@@ -30,6 +44,7 @@ const GUESSES: [RegExp, AttachmentKind][] = [
 /** The name shown for a not-yet-saved attachment in the composer. */
 export function pendingLabel(item: NewAttachment): { kind: AttachmentKind; name: string } {
   if (item.type === 'link') return { kind: 'link', name: item.name || item.url.replace(/^https?:\/\/(www\.)?/, '') };
+  if (item.type === 'app') return { kind: 'app', name: item.name };
   const name = item.path.split(/[\\/]/).filter(Boolean).pop() ?? item.path;
   return { kind: GUESSES.find(([re]) => re.test(name))?.[1] ?? 'file', name };
 }
@@ -38,6 +53,7 @@ export function pendingLabel(item: NewAttachment): { kind: AttachmentKind; name:
 function where(a: Attachment, deviceId: string | null): string {
   if (a.kind === 'link') return a.target.replace(/^https?:\/\//, '');
   if (deviceId && a.device && a.device !== deviceId) return 'On another computer';
+  if (a.kind === 'app') return `${a.target.split(/[\\/]/).pop()} · counts while it's in front`;
   const parts = a.target.split(/[\\/]/);
   parts.pop();
   const dir = parts.join('\\');
@@ -45,32 +61,39 @@ function where(a: Attachment, deviceId: string | null): string {
 }
 
 /** The attachments section of the detail panel. */
-export function AttachmentList(props: { taskId: string; attachments: Attachment[]; run: Run; deviceId: string | null }) {
+export function AttachmentList(props: {
+  taskId: string;
+  attachments: Attachment[];
+  run: Run;
+  deviceId: string | null;
+}) {
   const { taskId, attachments, run, deviceId } = props;
 
   return (
     <section className="attachments" data-drop={`task:${taskId}`}>
       <header className="attachments-header">
-        <h3>
-          Attachments {attachments.length > 0 && <span className="count">{attachments.length}</span>}
-        </h3>
+        <h3>Attachments {attachments.length > 0 && <span className="count">{attachments.length}</span>}</h3>
         <AttachButtons onAdd={(items) => run(() => api.addAttachments(taskId, items))} run={run} />
       </header>
 
       {attachments.length === 0 ? (
-        <p className="attachments-empty">Drop files or folders here, or attach a link.</p>
+        <p className="attachments-empty">Drop files or folders here, or attach a link or app.</p>
       ) : (
         <ul className="attachment-list">
           {attachments.map((a) => (
             <li key={a.id} className="attachment">
-              <button className="attachment-open" onClick={() => void run(() => api.openAttachment(a.id))} title={`Open ${a.target}`}>
+              <button
+                className="attachment-open"
+                onClick={() => void run(() => api.openAttachment(a.id))}
+                title={`Open ${a.target}`}
+              >
                 <KindIcon kind={a.kind} size={18} />
                 <span className="attachment-text">
                   <span className="attachment-name">{a.name}</span>
                   <span className="attachment-where">{where(a, deviceId)}</span>
                 </span>
               </button>
-              {a.kind !== 'link' && (
+              {a.kind !== 'link' && a.kind !== 'app' && (
                 <button
                   className="icon-btn"
                   onClick={() => void run(() => api.revealAttachment(a.id))}
@@ -96,9 +119,18 @@ export function AttachmentList(props: { taskId: string; attachments: Attachment[
   );
 }
 
-/** "Files" and "Link" buttons; the link one turns into an inline field. */
-export function AttachButtons({ onAdd, run, compact }: { onAdd: (items: NewAttachment[]) => unknown; run: Run; compact?: boolean }) {
+/** "Files", "Link" and "App" buttons; the link one turns into an inline field, the app one opens a picker. */
+export function AttachButtons({
+  onAdd,
+  run,
+  compact,
+}: {
+  onAdd: (items: NewAttachment[]) => unknown;
+  run: Run;
+  compact?: boolean;
+}) {
   const [linking, setLinking] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [url, setUrl] = useState('');
 
   const pick = () =>
@@ -135,7 +167,13 @@ export function AttachButtons({ onAdd, run, compact }: { onAdd: (items: NewAttac
           onBlur={() => !url && setLinking(false)}
           aria-label="Link to attach"
         />
-        <button type="button" className="icon-btn" onClick={(e) => void addLink(e)} aria-label="Add link" disabled={!url.trim()}>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={(e) => void addLink(e)}
+          aria-label="Add link"
+          disabled={!url.trim()}
+        >
           <Paperclip size={14} />
         </button>
       </span>
@@ -150,6 +188,25 @@ export function AttachButtons({ onAdd, run, compact }: { onAdd: (items: NewAttac
       <button type="button" className="ghost-pill" onClick={() => setLinking(true)} title="Attach a link">
         <Link2 size={14} /> {compact ? null : 'Link'}
       </button>
+      <span className="popover-anchor">
+        <button
+          type="button"
+          className="ghost-pill"
+          onClick={() => setPicking((p) => !p)}
+          title="Link an app; its windows count as working on this task"
+        >
+          <AppWindow size={14} /> {compact ? null : 'App'}
+        </button>
+        {picking && (
+          <AppPicker
+            onClose={() => setPicking(false)}
+            onPick={(app) => {
+              setPicking(false);
+              void onAdd([{ type: 'app', path: app.exe_path, name: app.name }]);
+            }}
+          />
+        )}
+      </span>
     </span>
   );
 }

@@ -1,6 +1,6 @@
 import { CalendarDays, Pause, Play, Tag, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { api, type TaskChanges, type TaskView } from '../api';
+import { api, type Activity, type TaskChanges, type TaskView } from '../api';
 import { elapsed } from '../time';
 import type { Run } from '../useTasks';
 import { AttachmentList } from './Attachments';
@@ -8,8 +8,15 @@ import { AutoTextarea } from './AutoTextarea';
 import { CheckButton } from './CheckButton';
 
 /** The side panel for one task. Fields save as you leave them. */
-export function TaskDetail(props: { task: TaskView; run: Run; now: number; deviceId: string | null; onClose: () => void }) {
-  const { task, run, now, deviceId, onClose } = props;
+export function TaskDetail(props: {
+  task: TaskView;
+  run: Run;
+  now: number;
+  deviceId: string | null;
+  live?: Activity;
+  onClose: () => void;
+}) {
+  const { task, run, now, deviceId, live, onClose } = props;
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
   const [category, setCategory] = useState(task.category ?? '');
@@ -38,7 +45,16 @@ export function TaskDetail(props: { task: TaskView; run: Run; now: number; devic
       <header className="detail-header">
         <CheckButton done={done} title={task.title} onToggle={() => save({ status: done ? 'todo' : 'done' })} />
         <span className="detail-status">
-          {done ? 'Done' : task.in_progress && task.started_at ? `In progress · ${elapsed(task.started_at, now)}` : 'To do'}
+          {done
+            ? 'Done'
+            : task.in_progress && task.started_at
+              ? `In progress · ${elapsed(task.started_at, now)}`
+              : 'To do'}
+          {live && (
+            <span className="detail-live">
+              <span className="live-dot" /> Active now — {live.reason}
+            </span>
+          )}
         </span>
         <button className="icon-btn" onClick={onClose} aria-label="Close details">
           <X size={16} />
@@ -110,7 +126,10 @@ export function TaskDetail(props: { task: TaskView; run: Run; now: number; devic
             <button className="secondary" onClick={() => setConfirmDelete(false)}>
               Keep
             </button>
-            <button className="danger" onClick={() => void run(() => api.remove(task.id)).then((ok) => ok && onClose())}>
+            <button
+              className="danger"
+              onClick={() => void run(() => api.remove(task.id)).then((ok) => ok && onClose())}
+            >
               <Trash2 size={15} /> Delete
             </button>
           </>

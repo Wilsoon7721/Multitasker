@@ -1,6 +1,15 @@
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks';
 import { emit } from '@tauri-apps/api/event';
-import type { Attachment, AttachmentKind, NewAttachment, NewTask, TaskChanges, TaskView } from '../api';
+import type {
+  ActivitySnapshot,
+  Attachment,
+  AttachmentKind,
+  NewAttachment,
+  NewTask,
+  RunningApp,
+  TaskChanges,
+  TaskView,
+} from '../api';
 
 // Stands in for the Rust backend with in-memory sample tasks when the UI runs in a plain browser (see README).
 
@@ -54,8 +63,30 @@ const KINDS: [RegExp, AttachmentKind][] = [
   [/\.(mp4|mov|mkv|avi|webm|wmv)$/i, 'video'],
 ];
 
+const APPS: RunningApp[] = [
+  {
+    exe_path: 'C:\\Program Files\\Microsoft Office\\WINWORD.EXE',
+    exe: 'WINWORD.EXE',
+    name: 'Microsoft Word',
+    title: 'GS module notes - Word',
+  },
+  {
+    exe_path: 'C:\\Program Files\\Google\\Chrome\\chrome.exe',
+    exe: 'chrome.exe',
+    name: 'Google Chrome',
+    title: 'Claude - Google Chrome',
+  },
+  {
+    exe_path: 'C:\\Users\\you\\AppData\\Local\\Programs\\cursor\\Cursor.exe',
+    exe: 'Cursor.exe',
+    name: 'Cursor',
+    title: 'page.jsx - JavaDashboard - Cursor',
+  },
+];
+
 function attachment(taskId: string, item: NewAttachment): Attachment {
   const base = { id: crypto.randomUUID(), task_id: taskId, added_at: new Date().toISOString() };
+  if (item.type === 'app') return { ...base, kind: 'app', name: item.name, target: item.path, device: DEVICE.id };
   if (item.type === 'link') {
     const url = /^https?:\/\//i.test(item.url) ? item.url : `https://${item.url}`;
     if (!/^https?:\/\/[^\s/]+\.[^\s/]+/i.test(url)) throw `'${item.url}' doesn't look like a web link.`;
@@ -73,6 +104,16 @@ tasks[0].attachments = [
   attachment(tasks[0].id, { type: 'link', url: 'https://claude.ai/chat/0f3c', name: 'Claude: GS module summary' }),
 ];
 
+let activity: ActivitySnapshot = {
+  enabled: true,
+  active: [{ task_id: tasks[0].id, at: new Date().toISOString(), reason: '“GS module notes.pdf” is open' }],
+  suggestion: { task_id: tasks[2].id, title: tasks[2].title, reason: '“proposal.docx” is open' },
+};
+
+function activityChanged() {
+  setTimeout(() => void emit('activity', activity), 0);
+}
+
 const blank = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
 
 function find(id: string): TaskView {
@@ -85,7 +126,8 @@ function changed() {
   setTimeout(() => void emit('tasks-changed'), 0);
 }
 
-const label = new URLSearchParams(location.search).get('window') ?? (location.pathname.includes('widget') ? 'widget' : 'main');
+const label =
+  new URLSearchParams(location.search).get('window') ?? (location.pathname.includes('widget') ? 'widget' : 'main');
 mockWindows(label);
 
 mockIPC(
@@ -137,7 +179,16 @@ mockIPC(
       case 'set_in_progress': {
         const t = find(a.id as string);
         if (a.inProgress) {
-          Object.assign(t, { status: 'todo', completed_at: null, in_progress: true, started_at: t.started_at ?? new Date().toISOString() });
+          Object.assign(t, {
+            status: 'todo',
+            completed_at: null,
+            in_progress: true,
+            started_at: t.started_at ?? new Date().toISOString(),
+          });
+          if (activity.suggestion?.task_id === t.id) {
+            activity = { ...activity, suggestion: null };
+            activityChanged();
+          }
         } else {
           Object.assign(t, { in_progress: false, started_at: null });
         }
@@ -165,6 +216,22 @@ mockIPC(
 
       case 'this_device':
         return DEVICE;
+
+      case 'running_apps':
+        return APPS;
+
+      case 'activity':
+        return activity;
+
+      case 'dismiss_suggestion':
+        activity = { ...activity, suggestion: null };
+        activityChanged();
+        return null;
+
+      case 'set_detection':
+        activity = { enabled: !!a.enabled, active: [], suggestion: null };
+        activityChanged();
+        return null;
 
       case 'plugin:dialog|open':
         return ['C:\\Users\\you\\Documents\\School\\Revision plan.docx', 'C:\\Users\\you\\Pictures\\diagram.png'];

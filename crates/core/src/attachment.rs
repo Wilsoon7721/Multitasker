@@ -16,6 +16,8 @@ pub enum AttachmentKind {
     Folder,
     File,
     Link,
+    /// A program; its windows count as working on the task.
+    App,
 }
 
 impl AttachmentKind {
@@ -28,6 +30,7 @@ impl AttachmentKind {
             AttachmentKind::Folder => "folder",
             AttachmentKind::File => "file",
             AttachmentKind::Link => "link",
+            AttachmentKind::App => "app",
         }
     }
 
@@ -40,6 +43,7 @@ impl AttachmentKind {
             "folder" => AttachmentKind::Folder,
             "file" => AttachmentKind::File,
             "link" => AttachmentKind::Link,
+            "app" => AttachmentKind::App,
             other => return Err(Error::Invalid(format!("unknown attachment kind '{other}'"))),
         })
     }
@@ -69,7 +73,7 @@ pub struct Attachment {
     pub kind: AttachmentKind,
     /// Shown in the UI: the file name, or the link's label or host.
     pub name: String,
-    /// The absolute path, or the URL.
+    /// The absolute path (of the file, folder or program), or the URL.
     pub target: String,
     /// The computer a file path belongs to; `None` for links, which work anywhere.
     pub device: Option<DeviceId>,
@@ -87,6 +91,8 @@ pub enum NewAttachment {
         #[serde(default)]
         name: Option<String>,
     },
+    /// A program on this computer, by its executable's path.
+    App { path: String, name: String },
 }
 
 impl Attachment {
@@ -107,6 +113,15 @@ impl Attachment {
                 let url = normalize_url(&url)?;
                 let name = crate::clean(name).unwrap_or_else(|| link_label(&url));
                 (AttachmentKind::Link, name, url, None)
+            }
+            NewAttachment::App { path, name } => {
+                let p = Path::new(path.trim());
+                if !p.is_absolute() || !p.is_file() {
+                    return Err(Error::Invalid(format!("Can't find the program '{}'.", p.display())));
+                }
+                let fallback = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                let name = crate::clean(Some(name)).unwrap_or(fallback);
+                (AttachmentKind::App, name, p.display().to_string(), Some(device.clone()))
             }
         };
 
@@ -186,6 +201,18 @@ mod tests {
         assert_eq!(link(None).name, "claude.ai");
         assert_eq!(link(Some(" GS notes chat ")).name, "GS notes chat");
         assert_eq!(link(None).device, None);
+    }
+
+    #[test]
+    fn apps_must_be_existing_programs() {
+        let (device, task) = ("pc".to_string(), "t".to_string());
+        let exe = std::env::current_exe().unwrap();
+        let app = |path: String, name: &str| Attachment::new("p", &task, &device, NewAttachment::App { path, name: name.into() });
+
+        let named = app(exe.display().to_string(), " Test runner ").unwrap();
+        assert_eq!((named.kind, named.name.as_str()), (AttachmentKind::App, "Test runner"));
+        assert!(!app(exe.display().to_string(), "").unwrap().name.is_empty());
+        assert!(app(std::env::temp_dir().display().to_string(), "folder").is_err());
     }
 
     #[test]

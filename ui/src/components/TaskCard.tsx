@@ -1,11 +1,18 @@
 import { CalendarDays, Paperclip, Pause, Play, Timer } from 'lucide-react';
-import { api, type TaskView } from '../api';
+import { api, type Activity, type TaskView } from '../api';
 import { dueLabel, elapsed } from '../time';
 import type { Run } from '../useTasks';
 import { CheckButton } from './CheckButton';
 
-export function TaskCard(props: { task: TaskView; run: Run; now: number; selected: boolean; onOpen: () => void }) {
-  const { task, run, now, selected, onOpen } = props;
+export function TaskCard(props: {
+  task: TaskView;
+  run: Run;
+  now: number;
+  selected: boolean;
+  live?: Activity;
+  onOpen: () => void;
+}) {
+  const { task, run, now, selected, live, onOpen } = props;
   const done = task.status === 'done';
   const due = task.due_date && !done ? dueLabel(task.due_date) : null;
 
@@ -25,7 +32,10 @@ export function TaskCard(props: { task: TaskView; run: Run; now: number; selecte
       />
 
       <div className="card-body">
-        <span className="card-title">{task.title}</span>
+        <span className="card-title">
+          {live && <span className="live-dot" title={`Active now: ${live.reason}`} />}
+          {task.title}
+        </span>
         {task.description && <span className="card-desc">{task.description}</span>}
         <span className="card-meta">
           {task.in_progress && task.started_at && (

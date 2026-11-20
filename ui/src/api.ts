@@ -20,21 +20,46 @@ export interface TaskView {
   attachments: Attachment[];
 }
 
-export type AttachmentKind = 'document' | 'pdf' | 'image' | 'video' | 'folder' | 'file' | 'link';
+export type AttachmentKind = 'document' | 'pdf' | 'image' | 'video' | 'folder' | 'file' | 'link' | 'app';
 
 export interface Attachment {
   id: string;
   task_id: string;
   kind: AttachmentKind;
   name: string;
-  /** Absolute path, or URL for links. */
+  /** Absolute path (file, folder or program), or URL for links. */
   target: string;
   /** The computer a file path belongs to; null for links. */
   device: string | null;
   added_at: string;
 }
 
-export type NewAttachment = { type: 'path'; path: string } | { type: 'link'; url: string; name?: string | null };
+export type NewAttachment =
+  | { type: 'path'; path: string }
+  | { type: 'link'; url: string; name?: string | null }
+  | { type: 'app'; path: string; name: string };
+
+/** A program with a window open, offered when linking an app to a task. */
+export interface RunningApp {
+  exe_path: string;
+  exe: string;
+  name: string;
+  title: string;
+}
+
+/** An in-progress task that was just worked on. */
+export interface Activity {
+  task_id: string;
+  at: string;
+  reason: string;
+}
+
+/** What detection currently sees. */
+export interface ActivitySnapshot {
+  enabled: boolean;
+  active: Activity[];
+  suggestion: { task_id: string; title: string; reason: string } | null;
+}
 
 export interface Device {
   id: string;
@@ -68,6 +93,10 @@ export const api = {
   openAttachment: (id: string) => invoke('open_attachment', { id }),
   revealAttachment: (id: string) => invoke('reveal_attachment', { id }),
   thisDevice: () => invoke<Device>('this_device'),
+  runningApps: () => invoke<RunningApp[]>('running_apps'),
+  activity: () => invoke<ActivitySnapshot>('activity'),
+  dismissSuggestion: (taskId: string) => invoke('dismiss_suggestion', { taskId }),
+  setDetection: (enabled: boolean) => invoke('set_detection', { enabled }),
   /** Asks for files with the system picker; empty if cancelled. */
   pickFiles: async (): Promise<string[]> => {
     const picked = await open({ multiple: true, title: 'Attach files' });
@@ -86,6 +115,9 @@ function subscribe<T>(event: string, handler: (payload: T) => void): () => void 
 
 /** Fires whenever any window changes a task. Returns an unsubscribe function. */
 export const onTasksChanged = (handler: () => void) => subscribe('tasks-changed', handler);
+
+/** Fires when detection sees a task being worked on, or stops seeing it. */
+export const onActivity = (handler: (snapshot: ActivitySnapshot) => void) => subscribe('activity', handler);
 
 /** Fires when the widget is shown or hidden, from anywhere (tray, widget, main window). */
 export const onWidgetVisibility = (handler: (visible: boolean) => void) => subscribe('widget-visibility', handler);

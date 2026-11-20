@@ -1,11 +1,13 @@
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
-import { CalendarDays, ChevronDown, Maximize2, Paperclip, Pause, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { AppWindow, CalendarDays, ChevronDown, Maximize2, Paperclip, Pause, Play, X } from 'lucide-react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { api } from './api';
+import { AppPicker } from './components/AppPicker';
 import { CheckButton } from './components/CheckButton';
 import { WidgetTodo } from './components/WidgetTodo';
 import { dueLabel, elapsed, useNow } from './time';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
+import { useActivity } from './useActivity';
 import { useTasks } from './useTasks';
 
 const WIDTH = 320;
@@ -33,6 +35,9 @@ export function WidgetView() {
   const [expanded, setExpanded] = useState(loadExpanded);
   const [dragState, setDragState] = useState<'idle' | 'dragging' | 'over'>('idle');
   const activeZone = useRef<HTMLElement>(null);
+  const [pickingFor, setPickingFor] = useState<string | null>(null);
+  const { snapshot, activeNow } = useActivity();
+  const suggestion = snapshot.suggestion;
 
   const toggleExpanded = () =>
     setExpanded((cur) => {
@@ -104,6 +109,29 @@ export function WidgetView() {
 
       {error && <p className="widget-error">{error}</p>}
 
+      {suggestion && (
+        <div className="suggestion" role="status">
+          <span className="live-dot" aria-hidden />
+          <div className="suggestion-text">
+            <span className="suggestion-title" title={suggestion.title}>
+              Working on “{suggestion.title}”?
+            </span>
+            <span className="suggestion-reason">{suggestion.reason}</span>
+          </div>
+          <button className="primary small" onClick={() => void run(() => api.setInProgress(suggestion.task_id, true))}>
+            <Play size={12} /> Start
+          </button>
+          <button
+            className="icon-btn"
+            onClick={() => void run(() => api.dismissSuggestion(suggestion.task_id))}
+            aria-label="Not now"
+            title="Not now (quiet for 30 minutes)"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       <section ref={activeZone} className={`widget-active drag-${dragState}`}>
         {tasks !== null && active.length === 0 && dragState === 'idle' && (
           <button className="widget-empty" onClick={expanded ? undefined : toggleExpanded} disabled={expanded}>
@@ -119,51 +147,76 @@ export function WidgetView() {
           <ul className="widget-list">
             {active.map((t) => {
               const due = t.due_date ? dueLabel(t.due_date) : null;
+              const live = activeNow(t.id, now);
               return (
-                <li key={t.id} className="widget-item" data-drop={`task:${t.id}`}>
-                  <CheckButton
-                    done={false}
-                    title={t.title}
-                    onToggle={() => void run(() => api.update(t.id, { status: 'done' }))}
-                  />
-                  <div className="widget-task">
-                    <span className="widget-title" title={t.title}>
-                      {t.title}
-                    </span>
-                    <span className="card-meta">
-                      {t.started_at && <span className="meta accent">{elapsed(t.started_at, now)}</span>}
-                      {t.category && <span className="tag">{t.category}</span>}
-                      {due && (
-                        <span className={`meta${due.late ? ' late' : ''}`}>
-                          <CalendarDays size={11} /> {due.text}
-                        </span>
-                      )}
-                      {t.attachments.length > 0 && (
-                        <span className="meta" title={t.attachments.map((a) => a.name).join('\n')}>
-                          <Paperclip size={11} /> {t.attachments.length}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  <div className="widget-actions">
-                    <button
-                      className="icon-btn"
-                      onClick={() => attach(t.id)}
-                      aria-label={`Attach files to "${t.title}"`}
-                      title="Attach files"
-                    >
-                      <Paperclip size={14} />
-                    </button>
-                    <button
-                      className="icon-btn"
-                      onClick={() => void run(() => api.setInProgress(t.id, false))}
-                      aria-label={`Pause "${t.title}"`}
-                      title="Pause"
-                    >
-                      <Pause size={14} />
-                    </button>
-                  </div>
-                </li>
+                <Fragment key={t.id}>
+                  <li className={`widget-item${live ? ' live' : ''}`} data-drop={`task:${t.id}`}>
+                    <CheckButton
+                      done={false}
+                      title={t.title}
+                      onToggle={() => void run(() => api.update(t.id, { status: 'done' }))}
+                    />
+                    <div className="widget-task">
+                      <span className="widget-title" title={live ? `${t.title} — ${live.reason}` : t.title}>
+                        {live && <span className="live-dot" aria-label={`Active now: ${live.reason}`} />}
+                        {t.title}
+                      </span>
+                      <span className="card-meta">
+                        {t.started_at && <span className="meta accent">{elapsed(t.started_at, now)}</span>}
+                        {t.category && <span className="tag">{t.category}</span>}
+                        {due && (
+                          <span className={`meta${due.late ? ' late' : ''}`}>
+                            <CalendarDays size={11} /> {due.text}
+                          </span>
+                        )}
+                        {t.attachments.length > 0 && (
+                          <span className="meta" title={t.attachments.map((a) => a.name).join('\n')}>
+                            <Paperclip size={11} /> {t.attachments.length}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="widget-actions">
+                      <button
+                        className="icon-btn"
+                        onClick={() => attach(t.id)}
+                        aria-label={`Attach files to "${t.title}"`}
+                        title="Attach files"
+                      >
+                        <Paperclip size={14} />
+                      </button>
+                      <button
+                        className={`icon-btn${pickingFor === t.id ? ' on' : ''}`}
+                        onClick={() => setPickingFor((cur) => (cur === t.id ? null : t.id))}
+                        aria-label={`Link an app to "${t.title}"`}
+                        title="Link an app — its windows count as working on this"
+                      >
+                        <AppWindow size={14} />
+                      </button>
+                      <button
+                        className="icon-btn"
+                        onClick={() => void run(() => api.setInProgress(t.id, false))}
+                        aria-label={`Pause "${t.title}"`}
+                        title="Pause"
+                      >
+                        <Pause size={14} />
+                      </button>
+                    </div>
+                  </li>
+                  {pickingFor === t.id && (
+                    <li className="widget-picker">
+                      <AppPicker
+                        onClose={() => setPickingFor(null)}
+                        onPick={(app) => {
+                          setPickingFor(null);
+                          void run(() =>
+                            api.addAttachments(t.id, [{ type: 'app', path: app.exe_path, name: app.name }]),
+                          );
+                        }}
+                      />
+                    </li>
+                  )}
+                </Fragment>
               );
             })}
           </ul>

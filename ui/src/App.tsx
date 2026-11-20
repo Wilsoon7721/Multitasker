@@ -6,6 +6,7 @@ import { TaskCard } from './components/TaskCard';
 import { TaskDetail } from './components/TaskDetail';
 import { TitleBar } from './components/TitleBar';
 import { useNow } from './time';
+import { useActivity } from './useActivity';
 import { useTasks } from './useTasks';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 
@@ -13,7 +14,12 @@ type View = 'open' | 'active' | 'todo' | 'done';
 
 const VIEWS: { id: View; label: string; icon: ReactNode; empty: string }[] = [
   { id: 'open', label: 'All open', icon: <Inbox size={16} />, empty: 'Nothing open. Add a task above.' },
-  { id: 'active', label: 'In progress', icon: <Timer size={16} />, empty: 'Start a task and it shows up here and in the widget.' },
+  {
+    id: 'active',
+    label: 'In progress',
+    icon: <Timer size={16} />,
+    empty: 'Start a task and it shows up here and in the widget.',
+  },
   { id: 'todo', label: 'To do', icon: <ListTodo size={16} />, empty: 'Nothing waiting to be started.' },
   { id: 'done', label: 'Done', icon: <CircleCheckBig size={16} />, empty: 'Finished tasks land here.' },
 ];
@@ -35,8 +41,16 @@ export function App() {
   const [pending, setPending] = useState<NewAttachment[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const now = useNow();
+  const { activeNow } = useActivity();
 
-  useEffect(() => void api.thisDevice().then((d) => setDeviceId(d.id), () => {}), []);
+  useEffect(
+    () =>
+      void api.thisDevice().then(
+        (d) => setDeviceId(d.id),
+        () => {},
+      ),
+    [],
+  );
 
   // Files dropped on a task attach to it; on the composer they wait for the new task.
   useFileDrop((paths, zone) => {
@@ -52,7 +66,8 @@ export function App() {
     [all],
   );
   const counts = useMemo(
-    () => Object.fromEntries(VIEWS.map((v) => [v.id, all.filter((t) => inView(t, v.id)).length])) as Record<View, number>,
+    () =>
+      Object.fromEntries(VIEWS.map((v) => [v.id, all.filter((t) => inView(t, v.id)).length])) as Record<View, number>,
     [all],
   );
 
@@ -62,7 +77,15 @@ export function App() {
   const close = useCallback(() => setSelectedId(null), []);
 
   const card = (t: TaskView) => (
-    <TaskCard key={t.id} task={t} run={run} now={now} selected={t.id === selectedId} onOpen={() => setSelectedId(t.id)} />
+    <TaskCard
+      key={t.id}
+      task={t}
+      run={run}
+      now={now}
+      selected={t.id === selectedId}
+      live={activeNow(t.id, now)}
+      onOpen={() => setSelectedId(t.id)}
+    />
   );
 
   return (
@@ -102,7 +125,11 @@ export function App() {
             <header className="content-header">
               <h1>{current.label}</h1>
               {category && (
-                <button className="filter-chip" onClick={() => setCategory(null)} aria-label={`Clear filter ${category}`}>
+                <button
+                  className="filter-chip"
+                  onClick={() => setCategory(null)}
+                  aria-label={`Clear filter ${category}`}
+                >
                   <Hash size={12} /> {category} <X size={12} />
                 </button>
               )}
@@ -117,7 +144,9 @@ export function App() {
               </div>
             )}
 
-            {view !== 'done' && <Composer run={run} categories={categories} pending={pending} setPending={setPending} />}
+            {view !== 'done' && (
+              <Composer run={run} categories={categories} pending={pending} setPending={setPending} />
+            )}
 
             {tasks === null ? null : shown.length === 0 ? (
               <p className="empty">{category ? `Nothing in ${category} here.` : current.empty}</p>
@@ -135,7 +164,14 @@ export function App() {
         {selected && (
           <>
             <div className="scrim" onClick={close} />
-            <TaskDetail task={selected} run={run} now={now} deviceId={deviceId} onClose={close} />
+            <TaskDetail
+              task={selected}
+              run={run}
+              now={now}
+              deviceId={deviceId}
+              live={activeNow(selected.id, now)}
+              onClose={close}
+            />
           </>
         )}
       </div>

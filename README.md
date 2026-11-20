@@ -16,13 +16,16 @@ Early development. What works today:
 - Attach files, folders and links to tasks (by picker, or by dragging files from the desktop onto a task in the main
   window or the widget). Files stay where they are; MultiTasker keeps a reference and opens them in their default app.
 - Expand the widget to see your to-do list and drag a task up into In Progress to start it.
+- **Activity detection** (Windows): link apps, files and folders to a task, and MultiTasker notices when you're on
+  them — from the window in front and from file saves. Tasks in progress show as *active now*; if you're clearly
+  working on a task you haven't started, the widget offers to start it. Everything stays on your computer; window
+  titles are only read in memory. Turn it off from the tray ("Detect what I'm working on").
 - Tray icon: closing the main window keeps MultiTasker running with the widget.
 
 Planned:
 
 - Syncing MultiTasker's state and settings through a storage backend of your choice (Google Drive, OneDrive, S3).
 - More task providers (your own dashboard, Notion, Todoist...).
-- Detecting which task you're working on from file saves and the active window.
 - A Chrome extension to link browser tabs (AI chats, docs) to tasks, and reopen them on any of your devices.
 - Deliverables: back up finished files to your storage backend, with revisions.
 - Project shortcuts: detect a project's type and offer start/stop dev server, build and run.
@@ -43,6 +46,7 @@ MultiTasker has two plug-in points, both defined in [`crates/core`](crates/core)
 ```
 crates/core              domain model, TaskProvider and StateStore traits
 crates/provider-sqlite   local SQLite provider + state store
+crates/activity          activity detection: window in front, file saves, matching them to tasks
 src-tauri                desktop app: commands, windows, tray
 ui                       React frontend (main window + widget)
 ```

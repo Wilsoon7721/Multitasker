@@ -4,7 +4,8 @@ use multitasker_core::{Attachment, AttachmentKind, NewAttachment, NewTask, Task,
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::{device::Device, windows, AppState};
+use crate::detection::{self, Snapshot};
+use crate::{device::Device, settings, windows, AppState};
 
 /// Tells every window the task list changed, so the widget and main window stay in step.
 pub const TASKS_CHANGED: &str = "tasks-changed";
@@ -21,6 +22,11 @@ fn changed(app: &AppHandle) {
 
 #[tauri::command]
 pub async fn list_tasks(state: State<'_, AppState>) -> CmdResult<Vec<TaskView>> {
+    task_views(&state).await
+}
+
+/// Every task with MultiTasker's own state joined in.
+pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
     let tasks = state.provider.list().await.map_err(err)?;
     let key = state.provider.key();
 
@@ -203,4 +209,46 @@ pub fn widget_visible(app: AppHandle) -> CmdResult<bool> {
 #[tauri::command]
 pub fn set_widget_visible(app: AppHandle, visible: bool) -> CmdResult<bool> {
     windows::set_widget_visible(&app, visible).map_err(err)
+}
+
+/// A program with a window open, offered when linking an app to a task.
+#[derive(serde::Serialize)]
+pub struct RunningApp {
+    exe_path: String,
+    exe: String,
+    name: String,
+    title: String,
+}
+
+#[tauri::command]
+pub async fn running_apps() -> Vec<RunningApp> {
+    // Reading every window's program details takes a moment; keep it off the main thread.
+    tauri::async_runtime::spawn_blocking(|| {
+        multitasker_activity::app_windows()
+            .into_iter()
+            .map(|a| RunningApp { exe_path: a.exe_path, exe: a.exe, name: a.name, title: a.title })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn activity(state: State<'_, AppState>) -> Snapshot {
+    state.detector.snapshot()
+}
+
+#[tauri::command]
+pub fn dismiss_suggestion(app: AppHandle, state: State<'_, AppState>, task_id: TaskId) {
+    state.detector.dismiss(&app, &task_id);
+}
+
+#[tauri::command]
+pub fn set_detection(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> CmdResult<()> {
+    let mut current = settings::load(&state.data_dir);
+    current.detection = enabled;
+    settings::save(&state.data_dir, &current).map_err(err)?;
+    state.detector.set_enabled(&app, enabled);
+    detection::sync_tray(&app, enabled);
+    Ok(())
 }

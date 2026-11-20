@@ -1,8 +1,11 @@
 mod commands;
+mod detection;
 mod device;
+mod settings;
 mod tray;
 mod windows;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use multitasker_core::{StateStore, TaskProvider};
@@ -14,6 +17,8 @@ pub struct AppState {
     pub provider: Arc<dyn TaskProvider>,
     pub state: Arc<dyn StateStore>,
     pub device: device::Device,
+    pub detector: Arc<detection::Detector>,
+    pub data_dir: PathBuf,
 }
 
 pub fn run() {
@@ -25,10 +30,19 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir)?;
 
             let db = Arc::new(SqliteDb::open(data_dir.join("multitasker.db"))?);
-            app.manage(AppState { provider: db.clone(), state: db, device: device::load_or_create(&data_dir)? });
+            let prefs = settings::load(&data_dir);
+            let detector = detection::Detector::new(prefs.detection);
+            app.manage(AppState {
+                provider: db.clone(),
+                state: db,
+                device: device::load_or_create(&data_dir)?,
+                detector: detector.clone(),
+                data_dir,
+            });
 
-            tray::build(app.handle())?;
+            tray::build(app.handle(), prefs.detection)?;
             windows::set_widget_visible(app.handle(), true)?;
+            detection::start(app.handle(), detector);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -54,6 +68,10 @@ pub fn run() {
             commands::open_main,
             commands::widget_visible,
             commands::set_widget_visible,
+            commands::running_apps,
+            commands::activity,
+            commands::dismiss_suggestion,
+            commands::set_detection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MultiTasker");
