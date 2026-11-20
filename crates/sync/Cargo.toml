@@ -16,6 +16,8 @@ ureq = "3"
 hmac = "0.13"
 sha2 = "0.11"
 hex = "0.4"
+base64 = "0.22"
+uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
 tokio.workspace = true

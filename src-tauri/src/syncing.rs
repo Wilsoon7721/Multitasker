@@ -4,10 +4,11 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use multitasker_core::DeviceInfo;
-use multitasker_sync::{sync_once, FolderRemote, Remote, S3Config, S3Remote};
+use multitasker_sync::{sync_once, FolderRemote, GoogleDriveRemote, OneDriveRemote, Remote, S3Config, S3Remote, TokenSource};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
+use crate::cloud::Cloud;
 use crate::commands::TASKS_CHANGED;
 use crate::settings::{self, SyncTarget};
 use crate::AppState;
@@ -50,6 +51,8 @@ pub struct SyncClient {
 
 pub struct Syncer {
     status: Mutex<SyncStatus>,
+    /// The signed-in service's tokens, kept between rounds so the access token isn't renewed every time.
+    tokens: Mutex<Option<(SyncTarget, Arc<TokenSource>)>>,
     woken: Mutex<bool>,
     wake: Condvar,
 }
@@ -68,7 +71,25 @@ impl Syncer {
             }),
             woken: Mutex::new(false),
             wake: Condvar::new(),
+            tokens: Mutex::new(None),
         })
+    }
+
+    /// Hands over tokens from a fresh sign-in, so the first round doesn't need to renew them.
+    pub fn use_tokens(&self, target: SyncTarget, tokens: Arc<TokenSource>) {
+        *self.tokens.lock().unwrap_or_else(|e| e.into_inner()) = Some((target, tokens));
+    }
+
+    fn tokens_for(&self, target: &SyncTarget, cloud: Cloud, client_id: Option<&str>) -> Result<Arc<TokenSource>, String> {
+        let mut cached = self.tokens.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((t, tokens)) = cached.as_ref() {
+            if t == target {
+                return Ok(tokens.clone());
+            }
+        }
+        let tokens = cloud.tokens(cloud.app(client_id)?)?;
+        *cached = Some((target.clone(), tokens.clone()));
+        Ok(tokens)
     }
 
     fn lock(&self) -> MutexGuard<'_, SyncStatus> {
@@ -149,6 +170,13 @@ fn run_once(app: &AppHandle, syncer: &Syncer) {
             Ok(remote) => Box::new(remote),
             Err(e) => return fail(app, syncer, target.clone(), e),
         },
+        SyncTarget::GoogleDrive { .. } | SyncTarget::OneDrive { .. } => {
+            let (cloud, client_id) = Cloud::of(&target).expect("matched a cloud target");
+            match syncer.tokens_for(&target, cloud, client_id) {
+                Ok(tokens) => cloud_remote(cloud, tokens),
+                Err(e) => return fail(app, syncer, target.clone(), e),
+            }
+        }
     };
 
     let client = match &target {
@@ -185,6 +213,13 @@ fn fail(app: &AppHandle, syncer: &Syncer, target: SyncTarget, error: String) {
         s.state = "error";
         s.error = Some(error);
     });
+}
+
+pub fn cloud_remote(cloud: Cloud, tokens: Arc<TokenSource>) -> Box<dyn Remote> {
+    match cloud {
+        Cloud::Google => Box::new(GoogleDriveRemote::new(tokens)),
+        Cloud::Microsoft => Box::new(OneDriveRemote::new(tokens)),
+    }
 }
 
 const KEYRING_SERVICE: &str = "MultiTasker";

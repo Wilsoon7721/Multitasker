@@ -29,6 +29,19 @@ pub enum SyncTarget {
     Folder { path: String },
     /// An S3-compatible bucket; its secret key lives in the system's credential store, not here.
     S3(S3Config),
+    /// Google Drive's hidden app-data folder, signed in directly; the sign-in lives in the credential store.
+    GoogleDrive {
+        account: String,
+        /// A client ID entered in Settings instead of the one this build was made with.
+        #[serde(default)]
+        client_id: Option<String>,
+    },
+    /// OneDrive's app folder, signed in directly with a personal Microsoft account.
+    OneDrive {
+        account: String,
+        #[serde(default)]
+        client_id: Option<String>,
+    },
 }
 
 const FILE: &str = "settings.json";
@@ -66,6 +79,11 @@ mod tests {
 
         let folder: SyncTarget = serde_json::from_str(r#"{"kind":"folder","path":"C:\\Sync"}"#).unwrap();
         assert_eq!(folder, SyncTarget::Folder { path: r"C:\Sync".into() });
+
+        let drive: SyncTarget = serde_json::from_str(r#"{"kind":"google_drive","account":"me@gmail.com"}"#).unwrap();
+        assert_eq!(drive, SyncTarget::GoogleDrive { account: "me@gmail.com".into(), client_id: None });
+        let one: SyncTarget = serde_json::from_str(r#"{"kind":"one_drive","account":"me@outlook.com","client_id":"id"}"#).unwrap();
+        assert!(matches!(one, SyncTarget::OneDrive { client_id: Some(ref c), .. } if c == "id"));
 
         let old: Settings = serde_json::from_str(r#"{"detection":false}"#).unwrap();
         assert_eq!((old.detection, old.sync), (false, SyncTarget::Off), "settings from before sync still load");

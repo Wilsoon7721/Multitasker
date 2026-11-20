@@ -6,6 +6,9 @@ use thiserror::Error;
 pub enum RemoteError {
     #[error("{0}")]
     Io(String),
+    /// The sign-in is no longer valid; signing in again fixes it.
+    #[error("{0}")]
+    Auth(String),
 }
 
 impl From<std::io::Error> for RemoteError {

@@ -151,6 +151,8 @@ function syncTo(target: SyncTarget) {
   setTimeout(() => void emit('sync-status', sync), 0);
 }
 
+let signInCancelled = false;
+
 function activityChanged() {
   setTimeout(() => void emit('activity', activity), 0);
 }
@@ -264,6 +266,26 @@ mockIPC(
 
       case 'set_sync_target':
         syncTo(a.target as SyncTarget);
+        return null;
+
+      case 'built_in_clients':
+        return { google: false, microsoft: true };
+
+      case 'sign_in_cloud': {
+        signInCancelled = false;
+        const service = a.service as 'google' | 'microsoft';
+        return new Promise((resolve, reject) =>
+          setTimeout(() => {
+            if (signInCancelled) return reject('Sign-in was cancelled.');
+            const account = service === 'google' ? 'you@gmail.com' : 'you@outlook.com';
+            syncTo(service === 'google' ? { kind: 'google_drive', account } : { kind: 'one_drive', account });
+            resolve(account);
+          }, 1500),
+        );
+      }
+
+      case 'cancel_sign_in':
+        signInCancelled = true;
         return null;
 
       case 'sync_now':

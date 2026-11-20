@@ -1,3 +1,4 @@
+mod cloud;
 mod commands;
 mod detection;
 mod device;
@@ -7,6 +8,7 @@ mod tray;
 mod windows;
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use multitasker_core::{StateStore, TaskProvider};
@@ -23,6 +25,8 @@ pub struct AppState {
     /// The local database itself, for sync; `provider` and `state` are the same object behind their traits.
     pub db: Arc<SqliteDb>,
     pub data_dir: PathBuf,
+    /// Set to stop waiting for a browser sign-in.
+    pub sign_in_cancel: Arc<AtomicBool>,
 }
 
 pub fn run() {
@@ -45,6 +49,7 @@ pub fn run() {
                 syncer: syncer.clone(),
                 db,
                 data_dir,
+                sign_in_cancel: Arc::new(AtomicBool::new(false)),
             });
 
             tray::build(app.handle(), prefs.detection)?;
@@ -85,6 +90,9 @@ pub fn run() {
             commands::set_sync_target,
             commands::sync_now,
             commands::sync_folder_suggestions,
+            commands::sign_in_cloud,
+            commands::cancel_sign_in,
+            commands::built_in_clients,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MultiTasker");

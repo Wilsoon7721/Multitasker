@@ -1,6 +1,9 @@
 import {
   CircleAlert,
+  Cloud,
   CloudOff,
+  LogIn,
+  LogOut,
   Database,
   Folder,
   FolderSync,
@@ -15,6 +18,7 @@ import {
   api,
   onActivity,
   onSyncStatus,
+  type CloudService,
   type FolderSuggestion,
   type S3Settings,
   type SyncStatus,
@@ -102,11 +106,25 @@ function SyncSection({ run }: { run: Run }) {
           detail="Tasks stay on this computer only."
         />
         <Choice
+          selected={mode === 'google_drive'}
+          onSelect={() => setChoosing('google_drive')}
+          icon={<Cloud size={18} />}
+          title="Google Drive"
+          detail="Sign in with Google. Kept in a hidden app folder, so nothing shows up in your Drive."
+        />
+        <Choice
+          selected={mode === 'one_drive'}
+          onSelect={() => setChoosing('one_drive')}
+          icon={<Cloud size={18} />}
+          title="OneDrive"
+          detail="Sign in with a personal Microsoft account. Kept in its own Apps/MultiTasker folder."
+        />
+        <Choice
           selected={mode === 'folder'}
           onSelect={() => setChoosing('folder')}
           icon={<Folder size={18} />}
           title="Shared folder"
-          detail="Pick a folder in OneDrive, Google Drive or Dropbox; their desktop apps carry it between computers."
+          detail="A folder in Dropbox or another sync app; that app carries it between computers while it's running."
         />
         <Choice
           selected={mode === 's3'}
@@ -116,6 +134,19 @@ function SyncSection({ run }: { run: Run }) {
           detail="AWS S3, Cloudflare R2, MinIO or any service with the S3 API."
         />
       </div>
+
+      {(mode === 'google_drive' || mode === 'one_drive') && (
+        <CloudSetup
+          service={mode === 'google_drive' ? 'google' : 'microsoft'}
+          signedInAs={target.kind === mode ? target.account : null}
+          run={run}
+          onDone={() => setChoosing(null)}
+          onSignOut={() => {
+            setChoosing(null);
+            void choose({ kind: 'off' });
+          }}
+        />
+      )}
 
       {mode === 's3' && (
         <S3Form
@@ -412,5 +443,99 @@ function S3Form(props: { current: S3Settings | null; onSave: (s: S3Settings, sec
         </button>
       </div>
     </form>
+  );
+}
+
+const SERVICE = {
+  google: { name: 'Google', storage: 'Google Drive', secret: true },
+  microsoft: { name: 'Microsoft', storage: 'OneDrive', secret: false },
+} as const;
+
+function CloudSetup(props: {
+  service: CloudService;
+  signedInAs: string | null;
+  run: Run;
+  onDone: () => void;
+  onSignOut: () => void;
+}) {
+  const { service, signedInAs, run, onDone, onSignOut } = props;
+  const info = SERVICE[service];
+  const [builtIn, setBuiltIn] = useState<boolean | null>(null);
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [waiting, setWaiting] = useState(false);
+
+  useEffect(() => {
+    void api.builtInClients().then(
+      (c) => setBuiltIn(c[service]),
+      () => setBuiltIn(false),
+    );
+  }, [service]);
+
+  const signIn = async () => {
+    setWaiting(true);
+    const ok = await run(() => api.signInCloud(service, clientId.trim(), clientSecret.trim()));
+    setWaiting(false);
+    if (ok) onDone();
+  };
+
+  const needsClient = builtIn === false && !signedInAs;
+  const ready = !needsClient || (clientId.trim() && (!info.secret || clientSecret.trim()));
+
+  return (
+    <div className="cloud-setup">
+      {signedInAs && !waiting && (
+        <div className="folder-current">
+          <Cloud size={16} className="kind kind-link" />
+          <span className="folder-path account">Signed in as {signedInAs}</span>
+          <button className="secondary" onClick={() => void signIn()}>
+            Switch account
+          </button>
+          <button className="secondary" onClick={onSignOut}>
+            <LogOut size={14} /> Sign out
+          </button>
+        </div>
+      )}
+
+      {needsClient && !waiting && (
+        <div className="s3-form">
+          <p className="settings-hint wide">
+            This copy of MultiTasker wasn't built with a {info.name} app registration. Paste the client ID
+            {info.secret ? ' and secret' : ''} from your own (see docs/cloud-sign-in.md).
+          </p>
+          <label className={`field${info.secret ? '' : ' wide'}`}>
+            <span>Client ID</span>
+            <input value={clientId} onChange={(e) => setClientId(e.target.value)} spellCheck={false} />
+          </label>
+          {info.secret && (
+            <label className="field">
+              <span>Client secret</span>
+              <input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
+            </label>
+          )}
+        </div>
+      )}
+
+      {waiting ? (
+        <div className="sign-in-wait">
+          <LoaderCircle size={16} className="spin" />
+          <span>Finish signing in to {info.name} in your browser…</span>
+          <button className="secondary" onClick={() => void api.cancelSignIn()}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        !signedInAs && (
+          <button className="primary sign-in" onClick={() => void signIn()} disabled={!ready || builtIn === null}>
+            <LogIn size={15} /> Sign in with {info.name}
+          </button>
+        )
+      )}
+
+      <p className="settings-hint">
+        MultiTasker only gets access to its own {info.storage} folder, never your other files. The sign-in is kept in
+        Windows Credential Manager.
+      </p>
+    </div>
   );
 }

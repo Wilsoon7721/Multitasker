@@ -1,3 +1,5 @@
+mod cloud;
+mod oauth;
 mod remote;
 mod s3;
 
@@ -9,6 +11,8 @@ use multitasker_provider_sqlite::SqliteDb;
 use thiserror::Error;
 
 pub use remote::{FolderRemote, Remote, RemoteError};
+pub use cloud::{GoogleDriveRemote, OneDriveRemote};
+pub use oauth::{sign_in, OAuthApp, SignedIn, TokenSource};
 pub use s3::{S3Config, S3Remote};
 
 /// Everything MultiTasker writes lives under this key, so a shared folder can hold other files too.

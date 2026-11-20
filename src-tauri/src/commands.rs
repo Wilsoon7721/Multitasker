@@ -5,6 +5,11 @@ use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::detection::{self, Snapshot};
+use std::sync::Arc;
+
+use multitasker_sync::TokenSource;
+
+use crate::cloud::{self, BuiltInClients, Cloud};
 use crate::settings::SyncTarget;
 use crate::syncing::{self, FolderSuggestion, SyncStatus};
 use crate::{device::Device, settings, windows, AppState};
@@ -277,17 +282,91 @@ pub async fn set_sync_target(state: State<'_, AppState>, target: SyncTarget, sec
                 .await
                 .map_err(err)??;
         }
+        SyncTarget::GoogleDrive { .. } | SyncTarget::OneDrive { .. } => {
+            return Err("Sign in from Settings to sync with Google Drive or OneDrive.".into());
+        }
     }
 
     let previous = settings::load(&state.data_dir).sync;
     settings::update(&state.data_dir, |s| s.sync = target.clone()).map_err(err)?;
-    if let SyncTarget::S3(old) = previous {
-        if !matches!(&target, SyncTarget::S3(new) if new.access_key_id == old.access_key_id && new.endpoint == old.endpoint) {
-            syncing::forget_s3_secret(&old);
-        }
-    }
+    forget_replaced(&previous, &target);
     state.syncer.wake();
     Ok(())
+}
+
+/// Removes saved secrets the new sync target no longer needs: an old S3 key, or a sign-in to another service.
+fn forget_replaced(previous: &SyncTarget, next: &SyncTarget) {
+    if let SyncTarget::S3(old) = previous {
+        if !matches!(next, SyncTarget::S3(new) if new.access_key_id == old.access_key_id && new.endpoint == old.endpoint) {
+            syncing::forget_s3_secret(old);
+        }
+    }
+    if let Some((old, _)) = Cloud::of(previous) {
+        if Cloud::of(next).map(|(c, _)| c) != Some(old) {
+            old.sign_out();
+        }
+    }
+}
+
+/// Signs in to Google or Microsoft in the browser, checks the storage answers, and syncs there from now on.
+#[tauri::command]
+pub async fn sign_in_cloud(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    service: String,
+    client_id: Option<String>,
+    client_secret: Option<String>,
+) -> CmdResult<String> {
+    let cloud = Cloud::parse(&service)?;
+    let client_id = client_id.map(|c| c.trim().to_owned()).filter(|c| !c.is_empty());
+    if let Some(secret) = client_secret.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        cloud.save_client_secret(secret)?;
+    }
+    let oauth = cloud.app(client_id.as_deref())?;
+    let cancel = state.sign_in_cancel.clone();
+    cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+
+    let opener = app.clone();
+    let (signed_in, tokens) = tauri::async_runtime::spawn_blocking(move || {
+        let open = |url: &str| opener.opener().open_url(url, None::<&str>).map_err(|e| e.to_string());
+        let signed_in = multitasker_sync::sign_in(&oauth, open, &cancel).map_err(err)?;
+        cloud.save_refresh_token(&signed_in.refresh_token)?;
+        let tokens = Arc::new(
+            TokenSource::new(oauth, signed_in.refresh_token.clone(), move |rotated| {
+                let _ = cloud.save_refresh_token(rotated);
+            })
+            .with_access_token(signed_in.access_token.clone(), signed_in.expires_in),
+        );
+        // One request now, so a storage problem shows up here rather than on the next sync.
+        syncing::cloud_remote(cloud, tokens.clone()).list("multitasker/v1/devices/").map_err(err)?;
+        Ok::<_, String>((signed_in, tokens))
+    })
+    .await
+    .map_err(err)??;
+
+    let account = signed_in.account.unwrap_or_else(|| format!("your {} account", cloud.label()));
+    let target = match cloud {
+        Cloud::Google => SyncTarget::GoogleDrive { account: account.clone(), client_id },
+        Cloud::Microsoft => SyncTarget::OneDrive { account: account.clone(), client_id },
+    };
+    let previous = settings::load(&state.data_dir).sync;
+    settings::update(&state.data_dir, |s| s.sync = target.clone()).map_err(err)?;
+    if Cloud::of(&previous).map(|(c, _)| c) != Some(cloud) {
+        forget_replaced(&previous, &target);
+    }
+    state.syncer.use_tokens(target, tokens);
+    state.syncer.wake();
+    Ok(account)
+}
+
+#[tauri::command]
+pub fn cancel_sign_in(state: State<'_, AppState>) {
+    state.sign_in_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[tauri::command]
+pub fn built_in_clients() -> BuiltInClients {
+    cloud::built_in_clients()
 }
 
 #[tauri::command]

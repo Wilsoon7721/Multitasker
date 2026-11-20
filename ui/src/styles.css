@@ -1780,3 +1780,31 @@ button.primary.small {
   font-size: 12px;
   word-break: break-all;
 }
+
+.cloud-setup {
+  margin-top: 14px;
+}
+
+.cloud-setup .s3-form {
+  margin: 0 0 12px;
+}
+
+.sign-in-wait {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.sign-in-wait span {
+  flex: 1;
+}
+
+.folder-path.account {
+  font-family: inherit;
+  font-size: 13px;
+}

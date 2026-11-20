@@ -80,7 +80,14 @@ export interface S3Settings {
   access_key_id: string;
 }
 
-export type SyncTarget = { kind: 'off' } | { kind: 'folder'; path: string } | ({ kind: 's3' } & S3Settings);
+export type CloudService = 'google' | 'microsoft';
+
+export type SyncTarget =
+  | { kind: 'off' }
+  | { kind: 'folder'; path: string }
+  | ({ kind: 's3' } & S3Settings)
+  | { kind: 'google_drive'; account: string; client_id?: string | null }
+  | { kind: 'one_drive'; account: string; client_id?: string | null };
 
 export interface SyncDevice {
   id: string;
@@ -140,6 +147,12 @@ export const api = {
   /** `secret` is only sent for S3, and only when it changed; it's kept in the system credential store. */
   setSyncTarget: (target: SyncTarget, secret?: string) => invoke('set_sync_target', { target, secret: secret || null }),
   syncNow: () => invoke('sync_now'),
+  /** Opens the browser to sign in; resolves with the account once storage answers. */
+  signInCloud: (service: CloudService, clientId?: string, clientSecret?: string) =>
+    invoke<string>('sign_in_cloud', { service, clientId: clientId || null, clientSecret: clientSecret || null }),
+  cancelSignIn: () => invoke('cancel_sign_in'),
+  /** Which services this build can sign in to without a client ID being entered. */
+  builtInClients: () => invoke<Record<CloudService, boolean>>('built_in_clients'),
   syncFolderSuggestions: () => invoke<FolderSuggestion[]>('sync_folder_suggestions'),
   /** Asks for a folder with the system picker; null if cancelled. */
   pickFolder: async (): Promise<string | null> => {

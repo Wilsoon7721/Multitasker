@@ -20,17 +20,20 @@ Early development. What works today:
   them — from the window in front and from file saves. Tasks in progress show as *active now*; if you're clearly
   working on a task you haven't started, the widget offers to start it. Everything stays on your computer; window
   titles are only read in memory. Turn it off from the tray ("Detect what I'm working on").
-- **Sync between computers**, through a shared folder (point MultiTasker at a folder in OneDrive, Google Drive or
-  Dropbox on each computer and their desktop apps carry it) or any S3-compatible bucket (AWS S3, Cloudflare R2,
-  Supabase Storage, Backblaze B2, Wasabi, DigitalOcean Spaces or MinIO; the secret key stays in Windows Credential
-  Manager). Tasks, what's in progress and attachments merge across
-  computers; each computer only writes its own files, so nothing gets overwritten. Tasks show which computer
+- **Sync between computers**, three ways:
+  - sign in to **Google Drive** or **OneDrive**; MultiTasker only gets its own app folder (setting up the app
+    registrations: [docs/cloud-sign-in.md](docs/cloud-sign-in.md));
+  - a **shared folder** that a sync app (Dropbox and the like) carries while it's running;
+  - an **S3-compatible bucket**: AWS S3, Cloudflare R2, Supabase Storage, Backblaze B2, Wasabi, DigitalOcean Spaces
+    or MinIO.
+
+  Sign-ins and secret keys stay in Windows Credential Manager. Tasks, what's in progress and attachments merge across
+  computers, and each computer only writes its own files, so nothing gets overwritten. Tasks show which computer
   they're in progress on, with "Continue here" to pick one up.
 - Tray icon: closing the main window keeps MultiTasker running with the widget.
 
 Planned:
 
-- Signing in to Google Drive or OneDrive directly, without their desktop apps.
 - More task providers (your own dashboard, Notion, Todoist...).
 - A Chrome extension to link browser tabs (AI chats, docs) to tasks, and reopen them on any of your devices.
 - Deliverables: back up finished files to your storage backend, with revisions.
@@ -53,7 +56,7 @@ MultiTasker has two plug-in points, both defined in [`crates/core`](crates/core)
 crates/core              domain model, TaskProvider and StateStore traits
 crates/provider-sqlite   local SQLite provider + state store
 crates/activity          activity detection: window in front, file saves, matching them to tasks
-crates/sync              sync engine and storage backends (shared folder, S3)
+crates/sync              sync engine, sign-in, and storage backends (Google Drive, OneDrive, folder, S3)
 src-tauri                desktop app: commands, windows, tray
 ui                       React frontend (main window + widget)
 ```
