@@ -66,6 +66,28 @@ export interface Device {
   name: string;
 }
 
+export type SyncTarget = { kind: 'off' } | { kind: 'folder'; path: string };
+
+export interface SyncDevice {
+  id: string;
+  name: string;
+  last_seen: string;
+  this_device: boolean;
+}
+
+export interface SyncStatus {
+  target: SyncTarget;
+  state: 'off' | 'syncing' | 'ok' | 'error';
+  last_synced: string | null;
+  error: string | null;
+  devices: SyncDevice[];
+}
+
+export interface FolderSuggestion {
+  label: string;
+  path: string;
+}
+
 export interface NewTask {
   title: string;
   description?: string | null;
@@ -97,6 +119,16 @@ export const api = {
   activity: () => invoke<ActivitySnapshot>('activity'),
   dismissSuggestion: (taskId: string) => invoke('dismiss_suggestion', { taskId }),
   setDetection: (enabled: boolean) => invoke('set_detection', { enabled }),
+  detectionEnabled: () => invoke<boolean>('detection_enabled'),
+  syncStatus: () => invoke<SyncStatus>('sync_status'),
+  setSyncTarget: (target: SyncTarget) => invoke('set_sync_target', { target }),
+  syncNow: () => invoke('sync_now'),
+  syncFolderSuggestions: () => invoke<FolderSuggestion[]>('sync_folder_suggestions'),
+  /** Asks for a folder with the system picker; null if cancelled. */
+  pickFolder: async (): Promise<string | null> => {
+    const picked = await open({ directory: true, title: 'Choose a folder to sync through' });
+    return typeof picked === 'string' ? picked : null;
+  },
   /** Asks for files with the system picker; empty if cancelled. */
   pickFiles: async (): Promise<string[]> => {
     const picked = await open({ multiple: true, title: 'Attach files' });
@@ -118,6 +150,9 @@ export const onTasksChanged = (handler: () => void) => subscribe('tasks-changed'
 
 /** Fires when detection sees a task being worked on, or stops seeing it. */
 export const onActivity = (handler: (snapshot: ActivitySnapshot) => void) => subscribe('activity', handler);
+
+/** Fires whenever sync starts, finishes or fails. */
+export const onSyncStatus = (handler: (status: SyncStatus) => void) => subscribe('sync-status', handler);
 
 /** Fires when the widget is shown or hidden, from anywhere (tray, widget, main window). */
 export const onWidgetVisibility = (handler: (visible: boolean) => void) => subscribe('widget-visibility', handler);

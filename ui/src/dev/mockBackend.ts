@@ -7,6 +7,8 @@ import type {
   NewAttachment,
   NewTask,
   RunningApp,
+  SyncStatus,
+  SyncTarget,
   TaskChanges,
   TaskView,
 } from '../api';
@@ -109,6 +111,27 @@ let activity: ActivitySnapshot = {
   active: [{ task_id: tasks[0].id, at: new Date().toISOString(), reason: '“GS module notes.pdf” is open' }],
   suggestion: { task_id: tasks[2].id, title: tasks[2].title, reason: '“proposal.docx” is open' },
 };
+
+let sync: SyncStatus = { target: { kind: 'off' }, state: 'off', last_synced: null, error: null, devices: [] };
+
+function syncTo(target: SyncTarget) {
+  if (target.kind === 'off') {
+    sync = { target, state: 'off', last_synced: null, error: null, devices: [] };
+  } else {
+    const seen = new Date().toISOString();
+    sync = {
+      target,
+      state: 'ok',
+      last_synced: seen,
+      error: null,
+      devices: [
+        { id: DEVICE.id, name: DEVICE.name, last_seen: seen, this_device: true },
+        { id: 'laptop', name: 'LAPTOP', last_seen: iso(4 * 60_000), this_device: false },
+      ],
+    };
+  }
+  setTimeout(() => void emit('sync-status', sync), 0);
+}
 
 function activityChanged() {
   setTimeout(() => void emit('activity', activity), 0);
@@ -217,6 +240,31 @@ mockIPC(
       case 'this_device':
         return DEVICE;
 
+      case 'sync_status':
+        return sync;
+
+      case 'set_sync_target':
+        syncTo(a.target as SyncTarget);
+        return null;
+
+      case 'sync_now':
+        syncTo(sync.target);
+        return null;
+
+      case 'sync_folder_suggestions':
+        return [
+          { label: 'OneDrive', path: 'C:\\Users\\you\\OneDrive' },
+          { label: 'Google Drive', path: 'G:\\My Drive' },
+        ];
+
+      case 'detection_enabled':
+        return activity.enabled;
+
+      case 'plugin:dialog|open':
+        return (a.options as { directory?: boolean } | undefined)?.directory
+          ? 'C:\\Users\\you\\Dropbox'
+          : ['C:\\Users\\you\\Documents\\School\\Revision plan.docx', 'C:\\Users\\you\\Pictures\\diagram.png'];
+
       case 'running_apps':
         return APPS;
 
@@ -232,9 +280,6 @@ mockIPC(
         activity = { enabled: !!a.enabled, active: [], suggestion: null };
         activityChanged();
         return null;
-
-      case 'plugin:dialog|open':
-        return ['C:\\Users\\you\\Documents\\School\\Revision plan.docx', 'C:\\Users\\you\\Pictures\\diagram.png'];
 
       case 'open_main':
         console.info('[preview] open_main');

@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 multitasker-core.workspace = true
 multitasker-provider-sqlite.workspace = true
 multitasker-activity.workspace = true
+multitasker-sync.workspace = true
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -109,7 +109,7 @@ pub fn check_category(category: Option<String>) -> Result<Option<String>> {
 }
 
 /// Lets a JSON field tell "absent" (leave alone) from `null` (clear).
-mod double_option {
+pub(crate) mod double_option {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<T: Serialize, S: Serializer>(value: &Option<Option<T>>, s: S) -> Result<S::Ok, S::Error> {

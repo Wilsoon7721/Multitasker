@@ -1,7 +1,8 @@
-import { CircleCheckBig, Hash, Inbox, ListTodo, Timer, X } from 'lucide-react';
+import { CircleCheckBig, Hash, Inbox, ListTodo, Settings, Timer, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, type NewAttachment, type TaskView } from './api';
 import { Composer } from './components/Composer';
+import { SettingsPage } from './components/SettingsPage';
 import { TaskCard } from './components/TaskCard';
 import { TaskDetail } from './components/TaskDetail';
 import { TitleBar } from './components/TitleBar';
@@ -10,9 +11,10 @@ import { useActivity } from './useActivity';
 import { useTasks } from './useTasks';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 
-type View = 'open' | 'active' | 'todo' | 'done';
+type View = 'open' | 'active' | 'todo' | 'done' | 'settings';
+type TaskViewId = Exclude<View, 'settings'>;
 
-const VIEWS: { id: View; label: string; icon: ReactNode; empty: string }[] = [
+const VIEWS: { id: TaskViewId; label: string; icon: ReactNode; empty: string }[] = [
   { id: 'open', label: 'All open', icon: <Inbox size={16} />, empty: 'Nothing open. Add a task above.' },
   {
     id: 'active',
@@ -24,7 +26,7 @@ const VIEWS: { id: View; label: string; icon: ReactNode; empty: string }[] = [
   { id: 'done', label: 'Done', icon: <CircleCheckBig size={16} />, empty: 'Finished tasks land here.' },
 ];
 
-const inView = (t: TaskView, view: View) =>
+const inView = (t: TaskView, view: TaskViewId) =>
   view === 'open'
     ? t.status === 'todo'
     : view === 'active'
@@ -67,13 +69,17 @@ export function App() {
   );
   const counts = useMemo(
     () =>
-      Object.fromEntries(VIEWS.map((v) => [v.id, all.filter((t) => inView(t, v.id)).length])) as Record<View, number>,
+      Object.fromEntries(VIEWS.map((v) => [v.id, all.filter((t) => inView(t, v.id)).length])) as Record<
+        TaskViewId,
+        number
+      >,
     [all],
   );
 
-  const shown = all.filter((t) => inView(t, view) && (!category || t.category === category));
+  const taskView = view === 'settings' ? null : view;
+  const shown = taskView ? all.filter((t) => inView(t, taskView) && (!category || t.category === category)) : [];
   const selected = all.find((t) => t.id === selectedId) ?? null;
-  const current = VIEWS.find((v) => v.id === view)!;
+  const current = VIEWS.find((v) => v.id === view);
   const close = useCallback(() => setSelectedId(null), []);
 
   const card = (t: TaskView) => (
@@ -109,7 +115,10 @@ export function App() {
                 <button
                   key={c}
                   className={`nav${category === c ? ' current' : ''}`}
-                  onClick={() => setCategory((cur) => (cur === c ? null : c))}
+                  onClick={() => {
+                    setCategory((cur) => (cur === c ? null : c));
+                    if (view === 'settings') setView('open');
+                  }}
                   aria-pressed={category === c}
                 >
                   <Hash size={15} />
@@ -118,13 +127,19 @@ export function App() {
               ))}
             </>
           )}
+
+          <span className="spacer" />
+          <button className={`nav${view === 'settings' ? ' current' : ''}`} onClick={() => setView('settings')}>
+            <Settings size={16} />
+            <span className="nav-label">Settings</span>
+          </button>
         </nav>
 
         <main className="content">
           <div className="content-inner">
             <header className="content-header">
-              <h1>{current.label}</h1>
-              {category && (
+              <h1>{current?.label ?? 'Settings'}</h1>
+              {category && taskView && (
                 <button
                   className="filter-chip"
                   onClick={() => setCategory(null)}
@@ -144,11 +159,13 @@ export function App() {
               </div>
             )}
 
-            {view !== 'done' && (
+            {view === 'settings' && <SettingsPage run={run} />}
+
+            {taskView && taskView !== 'done' && (
               <Composer run={run} categories={categories} pending={pending} setPending={setPending} />
             )}
 
-            {tasks === null ? null : shown.length === 0 ? (
+            {!current || tasks === null ? null : shown.length === 0 ? (
               <p className="empty">{category ? `Nothing in ${category} here.` : current.empty}</p>
             ) : view === 'open' ? (
               <>

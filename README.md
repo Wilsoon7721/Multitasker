@@ -20,11 +20,14 @@ Early development. What works today:
   them — from the window in front and from file saves. Tasks in progress show as *active now*; if you're clearly
   working on a task you haven't started, the widget offers to start it. Everything stays on your computer; window
   titles are only read in memory. Turn it off from the tray ("Detect what I'm working on").
+- **Sync between computers** through a shared folder: point MultiTasker at a folder in OneDrive, Google Drive or
+  Dropbox on each computer and their desktop apps carry it. Tasks, what's in progress and attachments merge across
+  computers; each computer only writes its own files, so nothing gets overwritten.
 - Tray icon: closing the main window keeps MultiTasker running with the widget.
 
 Planned:
 
-- Syncing MultiTasker's state and settings through a storage backend of your choice (Google Drive, OneDrive, S3).
+- More sync backends: S3-compatible storage, and signing in to Google Drive or OneDrive directly.
 - More task providers (your own dashboard, Notion, Todoist...).
 - A Chrome extension to link browser tabs (AI chats, docs) to tasks, and reopen them on any of your devices.
 - Deliverables: back up finished files to your storage backend, with revisions.
@@ -47,9 +50,18 @@ MultiTasker has two plug-in points, both defined in [`crates/core`](crates/core)
 crates/core              domain model, TaskProvider and StateStore traits
 crates/provider-sqlite   local SQLite provider + state store
 crates/activity          activity detection: window in front, file saves, matching them to tasks
+crates/sync              sync engine and storage backends (shared folder)
 src-tauri                desktop app: commands, windows, tray
 ui                       React frontend (main window + widget)
 ```
+
+### How sync works
+
+Every change made on a computer (a task edited, started, an attachment added) is logged with a
+[hybrid logical clock](https://cse.buffalo.edu/tech-reports/2014-04.pdf) stamp. Each computer uploads its changes as
+numbered batches under `multitasker/v1/ops/<device>/`, and merges every other computer's batches. Conflicts resolve
+field by field, newest stamp wins; deleting a task wins over edits to it. Because no file is ever written by two
+computers, this works through file-sync clients that can't lock files.
 
 ## Development
 

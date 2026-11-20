@@ -5,6 +5,8 @@ use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::detection::{self, Snapshot};
+use crate::settings::SyncTarget;
+use crate::syncing::{self, FolderSuggestion, SyncStatus};
 use crate::{device::Device, settings, windows, AppState};
 
 /// Tells every window the task list changed, so the widget and main window stay in step.
@@ -245,10 +247,42 @@ pub fn dismiss_suggestion(app: AppHandle, state: State<'_, AppState>, task_id: T
 
 #[tauri::command]
 pub fn set_detection(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> CmdResult<()> {
-    let mut current = settings::load(&state.data_dir);
-    current.detection = enabled;
-    settings::save(&state.data_dir, &current).map_err(err)?;
+    settings::update(&state.data_dir, |s| s.detection = enabled).map_err(err)?;
     state.detector.set_enabled(&app, enabled);
     detection::sync_tray(&app, enabled);
     Ok(())
+}
+
+#[tauri::command]
+pub fn sync_status(state: State<'_, AppState>) -> SyncStatus {
+    state.syncer.status()
+}
+
+/// Chooses where to sync (or turns it off) and starts a round right away.
+#[tauri::command]
+pub fn set_sync_target(state: State<'_, AppState>, target: SyncTarget) -> CmdResult<()> {
+    if let SyncTarget::Folder { path } = &target {
+        syncing::check_folder(path)?;
+    }
+    if target == SyncTarget::Off {
+        state.db.disable_sync().map_err(err)?;
+    }
+    settings::update(&state.data_dir, |s| s.sync = target).map_err(err)?;
+    state.syncer.wake();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn sync_now(state: State<'_, AppState>) {
+    state.syncer.wake();
+}
+
+#[tauri::command]
+pub fn sync_folder_suggestions() -> Vec<FolderSuggestion> {
+    syncing::folder_suggestions()
+}
+
+#[tauri::command]
+pub fn detection_enabled(state: State<'_, AppState>) -> bool {
+    state.detector.enabled()
 }

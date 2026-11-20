@@ -2289,6 +2289,7 @@ dependencies = [
  "multitasker-activity",
  "multitasker-core",
  "multitasker-provider-sqlite",
+ "multitasker-sync",
  "serde",
  "serde_json",
  "tauri",
@@ -2328,6 +2329,21 @@ dependencies = [
  "chrono",
  "multitasker-core",
  "rusqlite",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "multitasker-sync"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "multitasker-core",
+ "multitasker-provider-sqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
  "tokio",
  "uuid",
 ]

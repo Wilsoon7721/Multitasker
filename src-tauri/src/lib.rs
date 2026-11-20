@@ -2,6 +2,7 @@ mod commands;
 mod detection;
 mod device;
 mod settings;
+mod syncing;
 mod tray;
 mod windows;
 
@@ -18,6 +19,9 @@ pub struct AppState {
     pub state: Arc<dyn StateStore>,
     pub device: device::Device,
     pub detector: Arc<detection::Detector>,
+    pub syncer: Arc<syncing::Syncer>,
+    /// The local database itself, for sync; `provider` and `state` are the same object behind their traits.
+    pub db: Arc<SqliteDb>,
     pub data_dir: PathBuf,
 }
 
@@ -32,17 +36,21 @@ pub fn run() {
             let db = Arc::new(SqliteDb::open(data_dir.join("multitasker.db"))?);
             let prefs = settings::load(&data_dir);
             let detector = detection::Detector::new(prefs.detection);
+            let syncer = syncing::Syncer::new(prefs.sync.clone());
             app.manage(AppState {
                 provider: db.clone(),
-                state: db,
+                state: db.clone(),
                 device: device::load_or_create(&data_dir)?,
                 detector: detector.clone(),
+                syncer: syncer.clone(),
+                db,
                 data_dir,
             });
 
             tray::build(app.handle(), prefs.detection)?;
             windows::set_widget_visible(app.handle(), true)?;
             detection::start(app.handle(), detector);
+            syncing::start(app.handle(), syncer);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -72,6 +80,11 @@ pub fn run() {
             commands::activity,
             commands::dismiss_suggestion,
             commands::set_detection,
+            commands::detection_enabled,
+            commands::sync_status,
+            commands::set_sync_target,
+            commands::sync_now,
+            commands::sync_folder_suggestions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MultiTasker");

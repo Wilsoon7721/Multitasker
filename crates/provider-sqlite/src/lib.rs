@@ -1,11 +1,13 @@
+mod sync;
+
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use multitasker_core::{
-    check_category, check_title, clean, Attachment, AttachmentKind, Error, FocusEntry, NewTask, Result, StateStore, Task,
-    TaskChanges, TaskId, TaskProvider, TaskStatus,
+    check_category, check_title, clean, Attachment, AttachmentKind, Change, Error, FocusEntry, NewTask, Result, StateStore,
+    Task, TaskChanges, TaskFields, TaskId, TaskProvider, TaskStatus,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
@@ -44,6 +46,19 @@ const MIGRATIONS: &[&str] = &[r#"
         added_at  TEXT NOT NULL,
         UNIQUE (provider, task_id, target)
     );
+"#, r#"
+    CREATE TABLE sync_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE sync_outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, op TEXT NOT NULL);
+    CREATE TABLE sync_clocks (
+        entity  TEXT NOT NULL,
+        key     TEXT NOT NULL,
+        field   TEXT NOT NULL,
+        stamp   TEXT NOT NULL,
+        PRIMARY KEY (entity, key, field)
+    );
+    CREATE TABLE sync_tombstones (entity TEXT NOT NULL, key TEXT NOT NULL, stamp TEXT NOT NULL, PRIMARY KEY (entity, key));
+    CREATE TABLE sync_cursors (device TEXT PRIMARY KEY, segment INTEGER NOT NULL);
+    CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, last_seen TEXT NOT NULL);
 "#];
 
 /// Tasks and MultiTasker's own state in one local file, on separate tables so either can be paired with others.
@@ -119,29 +134,34 @@ impl TaskProvider for SqliteDb {
             completed_at: None,
         };
 
-        self.conn()
-            .execute(
-                "INSERT INTO tasks (id, title, description, category, due_date, status, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![
-                    task.id,
-                    task.title,
-                    task.description,
-                    task.category,
-                    task.due_date,
-                    task.status.as_str(),
-                    task.created_at,
-                    task.updated_at
-                ],
-            )
-            .map_err(storage)?;
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        tx.execute(
+            "INSERT INTO tasks (id, title, description, category, due_date, status, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                task.id,
+                task.title,
+                task.description,
+                task.category,
+                task.due_date,
+                task.status.as_str(),
+                task.created_at,
+                task.updated_at
+            ],
+        )
+        .map_err(storage)?;
+        sync::record(&tx, Change::Task { id: task.id.clone(), fields: sync::all_fields(&task) })?;
+        tx.commit().map_err(storage)?;
 
         Ok(task)
     }
 
     async fn update(&self, id: &TaskId, changes: TaskChanges) -> Result<Task> {
-        let conn = self.conn();
-        let mut task = Self::get(&conn, id)?;
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        let mut task = Self::get(&tx, id)?;
+        let before = task.clone();
 
         if let Some(title) = changes.title {
             task.title = check_title(&title)?;
@@ -163,7 +183,7 @@ impl TaskProvider for SqliteDb {
         }
         task.updated_at = Utc::now();
 
-        conn.execute(
+        tx.execute(
             "UPDATE tasks SET title = ?2, description = ?3, category = ?4, due_date = ?5, status = ?6,
                               updated_at = ?7, completed_at = ?8
              WHERE id = ?1",
@@ -179,16 +199,24 @@ impl TaskProvider for SqliteDb {
             ],
         )
         .map_err(storage)?;
+        let fields = sync::changed_fields(&before, &task);
+        if fields != TaskFields::default() {
+            sync::record(&tx, Change::Task { id: task.id.clone(), fields })?;
+        }
+        tx.commit().map_err(storage)?;
 
         Ok(task)
     }
 
     async fn delete(&self, id: &TaskId) -> Result<()> {
-        let removed = self.conn().execute("DELETE FROM tasks WHERE id = ?1", [id]).map_err(storage)?;
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        let removed = tx.execute("DELETE FROM tasks WHERE id = ?1", [id]).map_err(storage)?;
         if removed == 0 {
             return Err(Error::NotFound(id.clone()));
         }
-        Ok(())
+        sync::record(&tx, Change::TaskDeleted { id: id.clone() })?;
+        tx.commit().map_err(storage)
     }
 }
 
@@ -208,29 +236,42 @@ impl StateStore for SqliteDb {
     }
 
     async fn start(&self, provider: &str, task_id: &TaskId, device: &String) -> Result<FocusEntry> {
-        let conn = self.conn();
-        conn.execute(
-            "INSERT OR IGNORE INTO focus (provider, task_id, device, started_at) VALUES (?1, ?2, ?3, ?4)",
-            params![provider, task_id, device, Utc::now()],
-        )
-        .map_err(storage)?;
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        let now = Utc::now();
+        let added = tx
+            .execute(
+                "INSERT OR IGNORE INTO focus (provider, task_id, device, started_at) VALUES (?1, ?2, ?3, ?4)",
+                params![provider, task_id, device, now],
+            )
+            .map_err(storage)?;
+        if added > 0 {
+            let change = Change::Focus {
+                provider: provider.to_owned(),
+                task_id: task_id.clone(),
+                device: device.clone(),
+                started_at: Some(now),
+            };
+            sync::record(&tx, change)?;
+        }
 
-        let started_at: DateTime<Utc> = conn
+        let started_at: DateTime<Utc> = tx
             .query_row(
                 "SELECT started_at FROM focus WHERE provider = ?1 AND task_id = ?2 AND device = ?3",
                 params![provider, task_id, device],
                 |r| r.get(0),
             )
             .map_err(storage)?;
+        tx.commit().map_err(storage)?;
 
         Ok(FocusEntry { provider: provider.to_owned(), task_id: task_id.clone(), device: device.clone(), started_at })
     }
 
     async fn stop(&self, provider: &str, task_id: &TaskId) -> Result<()> {
-        self.conn()
-            .execute("DELETE FROM focus WHERE provider = ?1 AND task_id = ?2", params![provider, task_id])
-            .map_err(storage)?;
-        Ok(())
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        sync::stop_focus(&tx, provider, task_id)?;
+        tx.commit().map_err(storage)
     }
 
     async fn attachments(&self) -> Result<Vec<Attachment>> {
@@ -241,39 +282,63 @@ impl StateStore for SqliteDb {
     }
 
     async fn add_attachment(&self, a: Attachment) -> Result<Attachment> {
-        let conn = self.conn();
-        conn.execute(
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        if insert_attachment(&tx, &a)? {
+            sync::record(&tx, Change::AttachmentAdded { attachment: a.clone() })?;
+        }
+
+        // Either the row just added, or the one already there for the same target.
+        let stored = tx
+            .query_row(
+                "SELECT * FROM attachments WHERE provider = ?1 AND task_id = ?2 AND target = ?3",
+                params![a.provider, a.task_id, a.target],
+                attachment_from_row,
+            )
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+        Ok(stored)
+    }
+
+    async fn remove_attachment(&self, id: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        let removed = tx.execute("DELETE FROM attachments WHERE id = ?1", [id]).map_err(storage)?;
+        if removed == 0 {
+            return Err(Error::NotFound(id.to_owned()));
+        }
+        sync::record(&tx, Change::AttachmentRemoved { id: id.to_owned() })?;
+        tx.commit().map_err(storage)
+    }
+
+    async fn forget(&self, provider: &str, task_id: &TaskId) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        sync::stop_focus(&tx, provider, task_id)?;
+        let ids: Vec<String> = {
+            let mut stmt =
+                tx.prepare("SELECT id FROM attachments WHERE provider = ?1 AND task_id = ?2").map_err(storage)?;
+            let rows = stmt.query_map(params![provider, task_id], |r| r.get(0)).map_err(storage)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(storage)?
+        };
+        for id in ids {
+            tx.execute("DELETE FROM attachments WHERE id = ?1", [&id]).map_err(storage)?;
+            sync::record(&tx, Change::AttachmentRemoved { id })?;
+        }
+        tx.commit().map_err(storage)
+    }
+}
+
+/// Adds an attachment unless one with the same id or target is already there; returns whether it was added.
+fn insert_attachment(conn: &Connection, a: &Attachment) -> Result<bool> {
+    let added = conn
+        .execute(
             "INSERT OR IGNORE INTO attachments (id, provider, task_id, kind, name, target, device, added_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![a.id, a.provider, a.task_id, a.kind.as_str(), a.name, a.target, a.device, a.added_at],
         )
         .map_err(storage)?;
-
-        // Either the row just added, or the one already there for the same target.
-        conn.query_row(
-            "SELECT * FROM attachments WHERE provider = ?1 AND task_id = ?2 AND target = ?3",
-            params![a.provider, a.task_id, a.target],
-            attachment_from_row,
-        )
-        .map_err(storage)
-    }
-
-    async fn remove_attachment(&self, id: &str) -> Result<()> {
-        let removed = self.conn().execute("DELETE FROM attachments WHERE id = ?1", [id]).map_err(storage)?;
-        if removed == 0 {
-            return Err(Error::NotFound(id.to_owned()));
-        }
-        Ok(())
-    }
-
-    async fn forget(&self, provider: &str, task_id: &TaskId) -> Result<()> {
-        let conn = self.conn();
-        for table in ["focus", "attachments"] {
-            conn.execute(&format!("DELETE FROM {table} WHERE provider = ?1 AND task_id = ?2"), params![provider, task_id])
-                .map_err(storage)?;
-        }
-        Ok(())
-    }
+    Ok(added > 0)
 }
 
 fn attachment_from_row(row: &Row) -> rusqlite::Result<Attachment> {

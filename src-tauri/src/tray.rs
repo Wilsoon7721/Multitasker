@@ -51,8 +51,6 @@ pub fn build(app: &AppHandle, detection: bool) -> tauri::Result<()> {
 fn toggle_detection(app: &AppHandle) {
     let Some(enabled) = app.try_state::<TrayToggle>().and_then(|t| t.0.is_checked().ok()) else { return };
     let state = app.state::<AppState>();
-    let mut current = settings::load(&state.data_dir);
-    current.detection = enabled;
-    let _ = settings::save(&state.data_dir, &current);
+    let _ = settings::update(&state.data_dir, |s| s.detection = enabled);
     state.detector.set_enabled(app, enabled);
 }
