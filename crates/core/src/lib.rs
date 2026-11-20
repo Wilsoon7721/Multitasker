@@ -7,7 +7,7 @@ mod task;
 
 pub use attachment::{normalize_url, Attachment, AttachmentKind, NewAttachment};
 pub use error::{Error, Result};
-pub use provider::TaskProvider;
+pub use provider::{ExtrasStore, TaskExtras, TaskProvider};
 pub use state::{DeviceId, FocusEntry, StateStore};
 pub use sync::{Change, DeviceInfo, Op, Stamp, TaskFields};
 pub use task::{

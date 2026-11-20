@@ -59,6 +59,7 @@ function task(title: string, extra: Partial<TaskView> = {}): TaskView {
     in_progress: false,
     started_at: null,
     in_progress_on: [],
+    started_on_name: null,
     attachments: [],
     ...extra,
   };

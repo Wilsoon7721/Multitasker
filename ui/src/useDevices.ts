@@ -23,6 +23,7 @@ export function useDevices() {
   /** The computer(s) a task in progress was started on, when it wasn't started here. */
   const startedOn = (task: TaskView): string | null => {
     if (!task.in_progress || (thisId !== null && task.in_progress_on.includes(thisId))) return null;
+    if (task.started_on_name) return task.started_on_name;
     const names = [...new Set(task.in_progress_on.map(nameOf))];
     return names.length ? names.join(', ') : null;
   };

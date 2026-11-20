@@ -105,6 +105,8 @@ when they start.
 3. Put its `cl_…` client ID in `.env` as `WILSOON_CLIENT_ID`.
 
 JavaDashboard tasks have a due date but no due time, so MultiTasker hides the time field while it's the source.
+In-progress marks and attachments are kept in JavaDashboard too, so they follow you to any computer signed in to it;
+Sync pauses and leaves Settings while JavaDashboard is the source, and picks up again when you go back to local tasks.
 
 The **Task list** section only appears in builds made with `WILSOON_CLIENT_ID`. Public release builds leave it unset,
 so people who can't use JavaDashboard never see the option.

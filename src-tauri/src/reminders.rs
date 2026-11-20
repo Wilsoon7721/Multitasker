@@ -96,6 +96,7 @@ mod tests {
             in_progress: false,
             started_at: None,
             in_progress_on: Vec::new(),
+            started_on_name: None,
             attachments: Vec::new(),
         }
     }

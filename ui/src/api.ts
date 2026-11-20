@@ -21,6 +21,8 @@ export interface TaskView {
   started_at: string | null;
   /** Device ids it's in progress on. */
   in_progress_on: string[];
+  /** Name of the computer it was started on, when the task list keeps it. */
+  started_on_name: string | null;
   attachments: Attachment[];
 }
 
@@ -100,7 +102,7 @@ export interface SyncDevice {
 
 export interface SyncStatus {
   target: SyncTarget;
-  state: 'off' | 'syncing' | 'ok' | 'error';
+  state: 'off' | 'paused' | 'syncing' | 'ok' | 'error';
   last_synced: string | null;
   error: string | null;
   devices: SyncDevice[];

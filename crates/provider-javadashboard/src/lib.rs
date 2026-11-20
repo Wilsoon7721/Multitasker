@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
-use multitasker_core::{check_category, check_title, clean, Error, NewTask, Result, Task, TaskChanges, TaskId, TaskProvider, TaskStatus};
+use multitasker_core::{
+    check_category, check_title, clean, Attachment, AttachmentKind, DeviceId, Error, ExtrasStore, NewTask, Result, Task,
+    TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus,
+};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -28,7 +32,7 @@ struct Inner {
     base: String,
     bearer: Arc<dyn Bearer>,
     agent: ureq::Agent,
-    cache: Mutex<Option<(Instant, Vec<Task>)>>,
+    cache: Mutex<Option<(Instant, Vec<RemoteTask>)>>,
 }
 
 impl JavaDashboard {
@@ -52,6 +56,10 @@ impl JavaDashboard {
 impl Inner {
     fn url(&self) -> String {
         format!("{}/api/calendar/tasks", self.base)
+    }
+
+    fn links_url(&self) -> String {
+        format!("{}/api/calendar/tasks/links", self.base)
     }
 
     fn send(&self, method: &str, url: &str, body: Option<&Value>) -> Result<Value> {
@@ -96,20 +104,20 @@ impl Inner {
         *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
-    fn list(&self) -> Result<Vec<Task>> {
+    /// Every task as JavaDashboard returns it, extras included; one request serves both the tasks and the extras.
+    fn remote(&self) -> Result<Vec<RemoteTask>> {
         if let Some((at, tasks)) = self.cache.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             if at.elapsed() < CACHE_FOR {
                 return Ok(tasks.clone());
             }
         }
         let body = self.send("GET", &self.url(), None)?;
-        let tasks: Vec<Task> = body
+        let tasks: Vec<RemoteTask> = body
             .get("tasks")
             .and_then(|t| t.as_array())
             .into_iter()
             .flatten()
             .filter_map(|v| serde_json::from_value::<RemoteTask>(v.clone()).ok())
-            .map(Task::from)
             .collect();
         *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), tasks.clone()));
         Ok(tasks)
@@ -118,12 +126,46 @@ impl Inner {
     fn task_from(&self, body: Value) -> Result<Task> {
         self.forget_cache();
         let task = body.get("task").cloned().ok_or_else(|| Error::Storage("JavaDashboard sent no task back.".into()))?;
-        serde_json::from_value::<RemoteTask>(task).map(Task::from).map_err(|e| Error::Storage(e.to_string()))
+        serde_json::from_value::<RemoteTask>(task).map(|r| Task::from(&r)).map_err(|e| Error::Storage(e.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RemoteDevice {
+    id: String,
+    #[serde(default)]
+    name: Option<String>,
+}
+
+/// An attachment as JavaDashboard stores it (`calendar.task_links`).
+#[derive(Debug, Clone, Deserialize)]
+struct RemoteLink {
+    id: String,
+    kind: String,
+    name: String,
+    target: String,
+    #[serde(default)]
+    device: Option<String>,
+    added_at: DateTime<Utc>,
+}
+
+impl RemoteLink {
+    fn into_attachment(self, task_id: &str) -> Option<Attachment> {
+        Some(Attachment {
+            id: self.id,
+            provider: PROVIDER_KEY.into(),
+            task_id: task_id.into(),
+            kind: AttachmentKind::parse(&self.kind).ok()?,
+            name: self.name,
+            target: self.target,
+            device: self.device,
+            added_at: self.added_at,
+        })
     }
 }
 
 /// A task as JavaDashboard's API returns it.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct RemoteTask {
     id: String,
     title: String,
@@ -138,15 +180,32 @@ struct RemoteTask {
     updated_at: DateTime<Utc>,
     #[serde(default)]
     completed_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    started_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    started_on: Option<RemoteDevice>,
+    #[serde(default)]
+    links: Vec<RemoteLink>,
 }
 
-impl From<RemoteTask> for Task {
-    fn from(r: RemoteTask) -> Self {
+impl RemoteTask {
+    fn extras(&self) -> TaskExtras {
+        TaskExtras {
+            started_at: self.started_at,
+            started_on: self.started_on.as_ref().map(|d| d.id.clone()),
+            started_on_name: self.started_on.as_ref().and_then(|d| d.name.clone()),
+            attachments: self.links.iter().cloned().filter_map(|l| l.into_attachment(&self.id)).collect(),
+        }
+    }
+}
+
+impl From<&RemoteTask> for Task {
+    fn from(r: &RemoteTask) -> Self {
         Task {
-            id: r.id,
-            title: r.title,
-            description: r.description,
-            category: r.category,
+            id: r.id.clone(),
+            title: r.title.clone(),
+            description: r.description.clone(),
+            category: r.category.clone(),
             due_date: r.due_date,
             due_at: None,
             status: TaskStatus::parse(&r.status).unwrap_or(TaskStatus::Todo),
@@ -193,8 +252,12 @@ impl TaskProvider for JavaDashboard {
         false
     }
 
+    fn extras(&self) -> Option<&dyn ExtrasStore> {
+        Some(self)
+    }
+
     async fn list(&self) -> Result<Vec<Task>> {
-        self.call(|inner| inner.list()).await
+        self.call(|inner| inner.remote().map(|tasks| tasks.iter().map(Task::from).collect())).await
     }
 
     async fn create(&self, task: NewTask) -> Result<Task> {
@@ -223,6 +286,61 @@ impl TaskProvider for JavaDashboard {
     }
 }
 
+#[async_trait]
+impl ExtrasStore for JavaDashboard {
+    async fn extras(&self) -> Result<HashMap<TaskId, TaskExtras>> {
+        self.call(|inner| {
+            Ok(inner
+                .remote()?
+                .iter()
+                .filter(|t| t.started_at.is_some() || !t.links.is_empty())
+                .map(|t| (t.id.clone(), t.extras()))
+                .collect())
+        })
+        .await
+    }
+
+    async fn start(&self, id: &TaskId, device: &DeviceId, device_name: &str) -> Result<()> {
+        let body = json!({ "id": id, "started": true, "device": { "id": device, "name": device_name } });
+        self.call(move |inner| inner.send("PATCH", &inner.url(), Some(&body)).map(|_| inner.forget_cache())).await
+    }
+
+    async fn stop(&self, id: &TaskId) -> Result<()> {
+        let body = json!({ "id": id, "started": false });
+        self.call(move |inner| inner.send("PATCH", &inner.url(), Some(&body)).map(|_| inner.forget_cache())).await
+    }
+
+    async fn add_attachment(&self, a: Attachment) -> Result<Attachment> {
+        let body = json!({
+            "task_id": a.task_id,
+            "kind": a.kind.as_str(),
+            "name": a.name,
+            "target": a.target,
+            "device": a.device,
+        });
+        let task_id = a.task_id.clone();
+        self.call(move |inner| {
+            let response = inner.send("POST", &inner.links_url(), Some(&body))?;
+            inner.forget_cache();
+            let link = response.get("link").cloned().ok_or_else(|| Error::Storage("JavaDashboard sent no link back.".into()))?;
+            serde_json::from_value::<RemoteLink>(link)
+                .ok()
+                .and_then(|l| l.into_attachment(&task_id))
+                .ok_or_else(|| Error::Storage("JavaDashboard sent back a link MultiTasker can't read.".into()))
+        })
+        .await
+    }
+
+    async fn remove_attachment(&self, id: &str) -> Result<()> {
+        let id = id.to_owned();
+        self.call(move |inner| {
+            inner.forget_cache();
+            inner.send("DELETE", &format!("{}?id={id}", inner.links_url()), None).map(|_| ())
+        })
+        .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,10 +354,29 @@ mod tests {
             "completed_at": "2026-11-02T02:00:00.000Z", "delete_at": null, "days_left": 29, "event_id": null,
             "is_blocked": false, "blocking_reason": null, "blocking_expiry": null
         });
-        let task = Task::from(serde_json::from_value::<RemoteTask>(v).unwrap());
+        let task = Task::from(&serde_json::from_value::<RemoteTask>(v).unwrap());
         assert_eq!((task.title.as_str(), task.status), ("GS essay", TaskStatus::Done));
         assert_eq!(task.due_date, NaiveDate::from_ymd_opt(2026, 12, 1));
         assert_eq!((task.due_at, task.category.as_deref()), (None, Some("School")));
+    }
+
+    #[test]
+    fn reads_in_progress_marks_and_links() {
+        let v = json!({
+            "id": "t1", "title": "Essay", "status": "todo",
+            "created_at": "2026-11-01T02:00:00.000Z", "updated_at": "2026-11-02T02:00:00.000Z",
+            "started_at": "2026-11-21T03:00:00.000Z", "started_on": { "id": "pc-1", "name": "LAPTOP" },
+            "links": [
+                { "id": "l1", "kind": "link", "name": "Claude chat", "target": "https://claude.ai/chat/1", "device": null,
+                  "added_at": "2026-11-21T03:05:00.000Z" },
+                { "id": "l2", "kind": "hologram", "name": "?", "target": "?", "added_at": "2026-11-21T03:05:00.000Z" }
+            ]
+        });
+        let extras = serde_json::from_value::<RemoteTask>(v).unwrap().extras();
+        assert_eq!(extras.started_on.as_deref(), Some("pc-1"));
+        assert_eq!(extras.started_on_name.as_deref(), Some("LAPTOP"));
+        assert_eq!(extras.attachments.len(), 1, "kinds MultiTasker doesn't know are skipped");
+        assert_eq!((extras.attachments[0].task_id.as_str(), extras.attachments[0].provider.as_str()), ("t1", PROVIDER_KEY));
     }
 
     #[test]

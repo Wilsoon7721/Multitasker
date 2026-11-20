@@ -32,7 +32,7 @@ pub struct DeviceView {
 #[derive(Debug, Clone, Serialize)]
 pub struct SyncStatus {
     pub target: SyncTarget,
-    /// "off", "syncing", "ok" or "error".
+    /// "off", "paused", "syncing", "ok" or "error".
     pub state: &'static str,
     pub last_synced: Option<DateTime<Utc>>,
     pub error: Option<String>,
@@ -179,6 +179,14 @@ pub fn start(app: &AppHandle, syncer: Arc<Syncer>) {
 fn run_once(app: &AppHandle, syncer: &Syncer) {
     let state = app.state::<AppState>();
     let target = settings::load(&state.data_dir).sync;
+
+    // A task list that keeps the extras itself needs no syncing; the target is kept for switching back.
+    if state.provider().extras().is_some() {
+        syncer.update(app, |s| {
+            *s = SyncStatus { target, state: "paused", last_synced: None, error: None, devices: Vec::new(), client: None }
+        });
+        return;
+    }
 
     let remote: Box<dyn Remote> = match &target {
         SyncTarget::Off => {

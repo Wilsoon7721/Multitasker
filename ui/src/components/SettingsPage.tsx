@@ -35,6 +35,7 @@ import {
 import { guessProvider, providerById, S3_PROVIDERS } from '../s3Providers';
 import { elapsed, useNow } from '../time';
 import type { Run } from '../useTasks';
+import { useTaskSource } from '../useTaskSource';
 
 const ago = (iso: string, now: number) => {
   const e = elapsed(iso, now);
@@ -42,10 +43,13 @@ const ago = (iso: string, now: number) => {
 };
 
 export function SettingsPage({ run }: { run: Run }) {
+  const source = useTaskSource();
+  // An online task list keeps in-progress marks and attachments itself, so there's nothing to sync.
+  const syncs = source?.active === 'sqlite';
   return (
     <>
       <TaskListSection run={run} />
-      <SyncSection run={run} />
+      {syncs && <SyncSection run={run} />}
       <WidgetSection run={run} />
       <RemindersSection run={run} />
       <DetectionSection run={run} />

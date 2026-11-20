@@ -32,11 +32,29 @@ pub async fn list_tasks(state: State<'_, AppState>) -> CmdResult<Vec<TaskView>> 
     task_views(&state).await
 }
 
-/// Every task with MultiTasker's own state joined in.
+/// Every task with MultiTasker's extras joined in, from the task list itself when it keeps them.
 pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
     let provider = state.provider();
     let tasks = provider.list().await.map_err(err)?;
     let key = provider.key();
+
+    if let Some(store) = provider.extras() {
+        let mut extras = store.extras().await.map_err(err)?;
+        return Ok(tasks
+            .into_iter()
+            .map(|task| {
+                let e = extras.remove(&task.id).unwrap_or_default();
+                TaskView {
+                    in_progress: e.started_at.is_some(),
+                    started_at: e.started_at,
+                    in_progress_on: e.started_on.into_iter().collect(),
+                    started_on_name: e.started_on_name,
+                    attachments: e.attachments,
+                    task,
+                }
+            })
+            .collect());
+    }
 
     // Earliest start per task across every device: "in progress since" means since anyone picked it up.
     let mut started = HashMap::new();
@@ -58,7 +76,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
             let started_at = started.get(&task.id).copied();
             let attachments = attachments.remove(&task.id).unwrap_or_default();
             let in_progress_on = devices.remove(&task.id).unwrap_or_default();
-            TaskView { task, in_progress: started_at.is_some(), started_at, in_progress_on, attachments }
+            TaskView { task, in_progress: started_at.is_some(), started_at, in_progress_on, started_on_name: None, attachments }
         })
         .collect())
 }
@@ -79,8 +97,8 @@ pub async fn update_task(
 ) -> CmdResult<Task> {
     let provider = state.provider();
     let task = provider.update(&id, changes).await.map_err(err)?;
-    // A finished task is no longer in progress anywhere.
-    if task.status == TaskStatus::Done {
+    // A finished task is no longer in progress anywhere; a task list that keeps extras clears that itself.
+    if task.status == TaskStatus::Done && provider.extras().is_none() {
         state.state.stop(provider.key(), &id).await.map_err(err)?;
     }
     changed(&app);
@@ -91,7 +109,9 @@ pub async fn update_task(
 pub async fn delete_task(app: AppHandle, state: State<'_, AppState>, id: TaskId) -> CmdResult<()> {
     let provider = state.provider();
     provider.delete(&id).await.map_err(err)?;
-    state.state.forget(provider.key(), &id).await.map_err(err)?;
+    if provider.extras().is_none() {
+        state.state.forget(provider.key(), &id).await.map_err(err)?;
+    }
     changed(&app);
     Ok(())
 }
@@ -116,9 +136,17 @@ pub async fn set_in_progress(
             }
             Some(_) => {}
         }
-        state.state.start(key, &id, &state.device.id).await.map_err(err)?;
+        match provider.extras() {
+            Some(store) => store.start(&id, &state.device.id, &state.device.name).await.map_err(err)?,
+            None => {
+                state.state.start(key, &id, &state.device.id).await.map_err(err)?;
+            }
+        }
     } else {
-        state.state.stop(key, &id).await.map_err(err)?;
+        match provider.extras() {
+            Some(store) => store.stop(&id).await.map_err(err)?,
+            None => state.state.stop(key, &id).await.map_err(err)?,
+        }
     }
     changed(&app);
     Ok(())
@@ -140,8 +168,19 @@ pub async fn add_attachments(
 
     let (mut added, mut problems) = (Vec::new(), Vec::new());
     for item in items {
-        match Attachment::new(key, &id, &state.device.id, item) {
-            Ok(a) => added.push(state.state.add_attachment(a).await.map_err(err)?),
+        let attachment = match Attachment::new(key, &id, &state.device.id, item) {
+            Ok(a) => a,
+            Err(e) => {
+                problems.push(e.to_string());
+                continue;
+            }
+        };
+        let stored = match provider.extras() {
+            Some(store) => store.add_attachment(attachment).await,
+            None => state.state.add_attachment(attachment).await,
+        };
+        match stored {
+            Ok(a) => added.push(a),
             Err(e) => problems.push(e.to_string()),
         }
     }
@@ -158,18 +197,21 @@ pub async fn add_attachments(
 
 #[tauri::command]
 pub async fn remove_attachment(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    state.state.remove_attachment(&id).await.map_err(err)?;
+    let provider = state.provider();
+    match provider.extras() {
+        Some(store) => store.remove_attachment(&id).await.map_err(err)?,
+        None => state.state.remove_attachment(&id).await.map_err(err)?,
+    }
     changed(&app);
     Ok(())
 }
 
+/// An attachment on any task in the current list, wherever its extras are kept.
 async fn find_attachment(state: &AppState, id: &str) -> CmdResult<Attachment> {
-    state
-        .state
-        .attachments()
-        .await
-        .map_err(err)?
+    task_views(state)
+        .await?
         .into_iter()
+        .flat_map(|t| t.attachments)
         .find(|a| a.id == id)
         .ok_or_else(|| "That attachment no longer exists.".to_owned())
 }
@@ -470,6 +512,7 @@ pub async fn sign_in_wilsoon(app: AppHandle, state: State<'_, AppState>) -> CmdR
     settings::update(&state.data_dir, |s| s.tasks = settings::TaskSource::JavaDashboard { account: account.clone() })
         .map_err(err)?;
     state.set_provider(Arc::new(provider));
+    state.syncer.wake();
     let _ = windows::show_main(&app);
     changed(&app);
     Ok(account)
@@ -481,6 +524,7 @@ pub fn use_local_tasks(app: AppHandle, state: State<'_, AppState>) -> CmdResult<
     settings::update(&state.data_dir, |s| s.tasks = settings::TaskSource::Local).map_err(err)?;
     wilsoon::sign_out();
     state.set_provider(state.db.clone());
+    state.syncer.wake();
     changed(&app);
     Ok(())
 }
