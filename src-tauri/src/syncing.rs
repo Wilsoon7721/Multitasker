@@ -53,8 +53,16 @@ pub struct Syncer {
     status: Mutex<SyncStatus>,
     /// The signed-in service's tokens, kept between rounds so the access token isn't renewed every time.
     tokens: Mutex<Option<(SyncTarget, Arc<TokenSource>)>>,
-    woken: Mutex<bool>,
+    woken: Mutex<Wake>,
     wake: Condvar,
+}
+
+/// Why the sync thread woke: local edits settle for a moment first; things done on purpose run at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Wake {
+    None,
+    Soon,
+    Now,
 }
 
 impl Syncer {
@@ -69,7 +77,7 @@ impl Syncer {
                 devices: Vec::new(),
                 client: None,
             }),
-            woken: Mutex::new(false),
+            woken: Mutex::new(Wake::None),
             wake: Condvar::new(),
             tokens: Mutex::new(None),
         })
@@ -100,17 +108,38 @@ impl Syncer {
         self.lock().clone()
     }
 
-    /// Asks for a sync round now instead of at the next interval.
+    /// Asks for a sync round right away, for things the person did on purpose.
     pub fn wake(&self) {
-        *self.woken.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        self.raise(Wake::Now);
+    }
+
+    /// Asks for a sync round shortly, after local edits have had a moment to settle.
+    fn wake_soon(&self) {
+        self.raise(Wake::Soon);
+    }
+
+    fn raise(&self, level: Wake) {
+        let mut woken = self.woken.lock().unwrap_or_else(|e| e.into_inner());
+        *woken = (*woken).max(level);
         self.wake.notify_one();
     }
 
-    /// Sleeps until woken or the interval passes; returns whether it was woken.
-    fn sleep(&self) -> bool {
+    /// Sleeps until woken or the interval passes; returns why it woke.
+    fn sleep(&self) -> Wake {
         let woken = self.woken.lock().unwrap_or_else(|e| e.into_inner());
-        let (mut woken, _) = self.wake.wait_timeout_while(woken, INTERVAL, |w| !*w).unwrap_or_else(|e| e.into_inner());
-        std::mem::replace(&mut *woken, false)
+        let (mut woken, _) =
+            self.wake.wait_timeout_while(woken, INTERVAL, |w| *w == Wake::None).unwrap_or_else(|e| e.into_inner());
+        std::mem::replace(&mut *woken, Wake::None)
+    }
+
+    /// Shows a new location straight away, before its first round finishes, so the UI never shows the old one.
+    pub fn retarget(&self, app: &AppHandle, target: SyncTarget) {
+        let client = match &target {
+            SyncTarget::Folder { path } => folder_client(path),
+            _ => None,
+        };
+        let state = if target == SyncTarget::Off { "off" } else { "syncing" };
+        self.update(app, |s| *s = SyncStatus { target, state, last_synced: None, error: None, devices: Vec::new(), client });
     }
 
     fn update(&self, app: &AppHandle, f: impl FnOnce(&mut SyncStatus)) {
@@ -131,7 +160,7 @@ pub fn start(app: &AppHandle, syncer: Arc<Syncer>) {
     app.listen_any(TASKS_CHANGED, move |_| {
         let state = handle.state::<AppState>();
         if state.db.pending_ops(1).is_ok_and(|p| !p.is_empty()) {
-            waker.wake();
+            waker.wake_soon();
         }
     });
 
@@ -140,7 +169,7 @@ pub fn start(app: &AppHandle, syncer: Arc<Syncer>) {
         .name("sync".into())
         .spawn(move || loop {
             run_once(&app, &syncer);
-            if syncer.sleep() {
+            if syncer.sleep() == Wake::Soon {
                 std::thread::sleep(SETTLE);
             }
         })
@@ -311,4 +340,20 @@ pub fn folder_suggestions() -> Vec<FolderSuggestion> {
         add("Dropbox", Path::new(&home).join("Dropbox"));
     }
     found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deliberate_wakes_outrank_settling_ones() {
+        let syncer = Syncer::new(SyncTarget::Off);
+        syncer.wake_soon();
+        syncer.wake();
+        syncer.wake_soon();
+        let started = std::time::Instant::now();
+        assert_eq!(syncer.sleep(), Wake::Now);
+        assert!(started.elapsed() < Duration::from_secs(1), "a pending wake returns at once");
+    }
 }

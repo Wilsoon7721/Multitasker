@@ -268,7 +268,12 @@ pub fn sync_status(state: State<'_, AppState>) -> SyncStatus {
 
 /// Chooses where to sync (or turns it off) and starts a round right away. A new S3 secret goes to the credential store.
 #[tauri::command]
-pub async fn set_sync_target(state: State<'_, AppState>, target: SyncTarget, secret: Option<String>) -> CmdResult<()> {
+pub async fn set_sync_target(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    target: SyncTarget,
+    secret: Option<String>,
+) -> CmdResult<()> {
     match &target {
         SyncTarget::Off => state.db.disable_sync().map_err(err)?,
         SyncTarget::Folder { path } => syncing::check_folder(path)?,
@@ -291,6 +296,7 @@ pub async fn set_sync_target(state: State<'_, AppState>, target: SyncTarget, sec
     settings::update(&state.data_dir, |s| s.sync = target.clone()).map_err(err)?;
     moved(&state, &previous, &target)?;
     forget_replaced(&previous, &target);
+    state.syncer.retarget(&app, target);
     state.syncer.wake();
     Ok(())
 }
@@ -364,7 +370,8 @@ pub async fn sign_in_cloud(
     if Cloud::of(&previous).map(|(c, _)| c) != Some(cloud) {
         forget_replaced(&previous, &target);
     }
-    state.syncer.use_tokens(target, tokens);
+    state.syncer.use_tokens(target.clone(), tokens);
+    state.syncer.retarget(&app, target);
     state.syncer.wake();
     Ok(account)
 }
