@@ -258,16 +258,31 @@ pub fn sync_status(state: State<'_, AppState>) -> SyncStatus {
     state.syncer.status()
 }
 
-/// Chooses where to sync (or turns it off) and starts a round right away.
+/// Chooses where to sync (or turns it off) and starts a round right away. A new S3 secret goes to the credential store.
 #[tauri::command]
-pub fn set_sync_target(state: State<'_, AppState>, target: SyncTarget) -> CmdResult<()> {
-    if let SyncTarget::Folder { path } = &target {
-        syncing::check_folder(path)?;
+pub async fn set_sync_target(state: State<'_, AppState>, target: SyncTarget, secret: Option<String>) -> CmdResult<()> {
+    match &target {
+        SyncTarget::Off => state.db.disable_sync().map_err(err)?,
+        SyncTarget::Folder { path } => syncing::check_folder(path)?,
+        SyncTarget::S3(config) => {
+            if let Some(secret) = secret.as_deref().filter(|s| !s.is_empty()) {
+                syncing::save_s3_secret(config, secret)?;
+            }
+            let config = config.clone();
+            // A network round trip; keep it off the main thread.
+            tauri::async_runtime::spawn_blocking(move || syncing::s3_remote(&config).and_then(|r| syncing::check_s3(&r)))
+                .await
+                .map_err(err)??;
+        }
     }
-    if target == SyncTarget::Off {
-        state.db.disable_sync().map_err(err)?;
+
+    let previous = settings::load(&state.data_dir).sync;
+    settings::update(&state.data_dir, |s| s.sync = target.clone()).map_err(err)?;
+    if let SyncTarget::S3(old) = previous {
+        if !matches!(&target, SyncTarget::S3(new) if new.access_key_id == old.access_key_id && new.endpoint == old.endpoint) {
+            syncing::forget_s3_secret(&old);
+        }
     }
-    settings::update(&state.data_dir, |s| s.sync = target).map_err(err)?;
     state.syncer.wake();
     Ok(())
 }

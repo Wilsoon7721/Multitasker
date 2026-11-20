@@ -1,4 +1,5 @@
 mod remote;
+mod s3;
 
 use std::collections::BTreeMap;
 
@@ -8,6 +9,7 @@ use multitasker_provider_sqlite::SqliteDb;
 use thiserror::Error;
 
 pub use remote::{FolderRemote, Remote, RemoteError};
+pub use s3::{S3Config, S3Remote};
 
 /// Everything MultiTasker writes lives under this key, so a shared folder can hold other files too.
 const ROOT: &str = "multitasker/v1";

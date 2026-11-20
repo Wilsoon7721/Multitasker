@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use multitasker_core::DeviceInfo;
-use multitasker_sync::{sync_once, FolderRemote, Remote};
+use multitasker_sync::{sync_once, FolderRemote, Remote, S3Config, S3Remote};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
@@ -126,6 +126,10 @@ fn run_once(app: &AppHandle, syncer: &Syncer) {
             Ok(remote) => Box::new(remote),
             Err(e) => return fail(app, syncer, target.clone(), e.to_string()),
         },
+        SyncTarget::S3(config) => match s3_remote(config) {
+            Ok(remote) => Box::new(remote),
+            Err(e) => return fail(app, syncer, target.clone(), e),
+        },
     };
 
     syncer.update(app, |s| {
@@ -157,6 +161,39 @@ fn fail(app: &AppHandle, syncer: &Syncer, target: SyncTarget, error: String) {
         s.state = "error";
         s.error = Some(error);
     });
+}
+
+const KEYRING_SERVICE: &str = "MultiTasker";
+
+fn keyring_user(config: &S3Config) -> String {
+    let endpoint = config.endpoint.as_deref().filter(|e| !e.is_empty()).unwrap_or("aws");
+    format!("s3:{endpoint}:{}", config.access_key_id)
+}
+
+fn keyring_entry(config: &S3Config) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(KEYRING_SERVICE, &keyring_user(config)).map_err(|e| format!("Can't open the credential store: {e}"))
+}
+
+pub fn save_s3_secret(config: &S3Config, secret: &str) -> Result<(), String> {
+    keyring_entry(config)?.set_password(secret).map_err(|e| format!("Can't save the secret key: {e}"))
+}
+
+pub fn forget_s3_secret(config: &S3Config) {
+    if let Ok(entry) = keyring_entry(config) {
+        let _ = entry.delete_credential();
+    }
+}
+
+pub fn s3_remote(config: &S3Config) -> Result<S3Remote, String> {
+    let secret = keyring_entry(config)?
+        .get_password()
+        .map_err(|_| "The secret key for this bucket isn't saved on this computer; enter it again in Settings.".to_owned())?;
+    S3Remote::new(config.clone(), secret).map_err(|e| e.to_string())
+}
+
+/// Lists the bucket once, so wrong keys or names show up when saving rather than on the next sync.
+pub fn check_s3(remote: &S3Remote) -> Result<(), String> {
+    remote.list("multitasker/v1/devices/").map(|_| ()).map_err(|e| format!("Couldn't reach the bucket: {e}"))
 }
 
 /// Checks a chosen folder exists and can be written to before syncing into it.

@@ -66,7 +66,17 @@ export interface Device {
   name: string;
 }
 
-export type SyncTarget = { kind: 'off' } | { kind: 'folder'; path: string };
+export interface S3Settings {
+  /** Empty for AWS; the service URL for Cloudflare R2, MinIO and others. */
+  endpoint: string | null;
+  region: string;
+  bucket: string;
+  /** A folder inside the bucket. */
+  prefix: string | null;
+  access_key_id: string;
+}
+
+export type SyncTarget = { kind: 'off' } | { kind: 'folder'; path: string } | ({ kind: 's3' } & S3Settings);
 
 export interface SyncDevice {
   id: string;
@@ -121,7 +131,8 @@ export const api = {
   setDetection: (enabled: boolean) => invoke('set_detection', { enabled }),
   detectionEnabled: () => invoke<boolean>('detection_enabled'),
   syncStatus: () => invoke<SyncStatus>('sync_status'),
-  setSyncTarget: (target: SyncTarget) => invoke('set_sync_target', { target }),
+  /** `secret` is only sent for S3, and only when it changed; it's kept in the system credential store. */
+  setSyncTarget: (target: SyncTarget, secret?: string) => invoke('set_sync_target', { target, secret: secret || null }),
   syncNow: () => invoke('sync_now'),
   syncFolderSuggestions: () => invoke<FolderSuggestion[]>('sync_folder_suggestions'),
   /** Asks for a folder with the system picker; null if cancelled. */

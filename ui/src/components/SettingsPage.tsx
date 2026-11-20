@@ -1,6 +1,25 @@
-import { CircleAlert, CloudOff, Folder, FolderSync, Laptop, LoaderCircle, Radar, RefreshCw } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
-import { api, onActivity, onSyncStatus, type FolderSuggestion, type SyncStatus, type SyncTarget } from '../api';
+import {
+  CircleAlert,
+  CloudOff,
+  Database,
+  Folder,
+  FolderSync,
+  KeyRound,
+  Laptop,
+  LoaderCircle,
+  Radar,
+  RefreshCw,
+} from 'lucide-react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  api,
+  onActivity,
+  onSyncStatus,
+  type FolderSuggestion,
+  type S3Settings,
+  type SyncStatus,
+  type SyncTarget,
+} from '../api';
 import { elapsed, useNow } from '../time';
 import type { Run } from '../useTasks';
 
@@ -18,7 +37,17 @@ export function SettingsPage({ run }: { run: Run }) {
   );
 }
 
-function Section({ icon, title, aside, children }: { icon: ReactNode; title: string; aside?: ReactNode; children: ReactNode }) {
+function Section({
+  icon,
+  title,
+  aside,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className="settings-section">
       <header>
@@ -34,7 +63,7 @@ function Section({ icon, title, aside, children }: { icon: ReactNode; title: str
 function SyncSection({ run }: { run: Run }) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [suggestions, setSuggestions] = useState<FolderSuggestion[]>([]);
-  const [choosingFolder, setChoosingFolder] = useState(false);
+  const [choosing, setChoosing] = useState<SyncTarget['kind'] | null>(null);
   const now = useNow(15_000);
 
   useEffect(() => {
@@ -51,7 +80,7 @@ function SyncSection({ run }: { run: Run }) {
       if (path) await api.setSyncTarget({ kind: 'folder', path });
     });
 
-  const folderMode = target.kind === 'folder' || choosingFolder;
+  const mode = choosing ?? target.kind;
 
   return (
     <Section icon={<FolderSync size={18} />} title="Sync" aside={status && <SyncBadge status={status} now={now} />}>
@@ -62,9 +91,9 @@ function SyncSection({ run }: { run: Run }) {
 
       <div className="choice-list" role="radiogroup" aria-label="Where to sync">
         <Choice
-          selected={!folderMode}
+          selected={mode === 'off'}
           onSelect={() => {
-            setChoosingFolder(false);
+            setChoosing(null);
             if (target.kind !== 'off') void choose({ kind: 'off' });
           }}
           icon={<CloudOff size={18} />}
@@ -72,15 +101,34 @@ function SyncSection({ run }: { run: Run }) {
           detail="Tasks stay on this computer only."
         />
         <Choice
-          selected={folderMode}
-          onSelect={() => setChoosingFolder(true)}
+          selected={mode === 'folder'}
+          onSelect={() => setChoosing('folder')}
           icon={<Folder size={18} />}
           title="Shared folder"
           detail="Pick a folder in OneDrive, Google Drive or Dropbox; their desktop apps carry it between computers."
         />
+        <Choice
+          selected={mode === 's3'}
+          onSelect={() => setChoosing('s3')}
+          icon={<Database size={18} />}
+          title="S3-compatible storage"
+          detail="AWS S3, Cloudflare R2, MinIO or any service with the S3 API."
+        />
       </div>
 
-      {folderMode && (
+      {mode === 's3' && (
+        <S3Form
+          current={target.kind === 's3' ? target : null}
+          onSave={(settings, secret) =>
+            run(async () => {
+              await api.setSyncTarget({ kind: 's3', ...settings }, secret);
+              setChoosing(null);
+            })
+          }
+        />
+      )}
+
+      {mode === 'folder' && (
         <div className="folder-setup">
           {target.kind === 'folder' ? (
             <div className="folder-current">
@@ -98,7 +146,12 @@ function SyncSection({ run }: { run: Run }) {
                 <div className="suggestions">
                   <span className="muted">Found on this computer:</span>
                   {suggestions.map((s) => (
-                    <button key={s.path} className="secondary" onClick={() => void choose({ kind: 'folder', path: s.path })} title={s.path}>
+                    <button
+                      key={s.path}
+                      className="secondary"
+                      onClick={() => void choose({ kind: 'folder', path: s.path })}
+                      title={s.path}
+                    >
                       <Folder size={14} /> {s.label}
                     </button>
                   ))}
@@ -110,8 +163,8 @@ function SyncSection({ run }: { run: Run }) {
             </>
           )}
           <p className="settings-hint">
-            MultiTasker keeps its files in a <code>multitasker</code> folder inside the one you choose. Use the same folder
-            on each computer.
+            MultiTasker keeps its files in a <code>multitasker</code> folder inside the one you choose. Use the same
+            folder on each computer.
           </p>
         </div>
       )}
@@ -137,7 +190,9 @@ function SyncSection({ run }: { run: Run }) {
                   <li key={d.id}>
                     <Laptop size={16} />
                     <span className="device-name">{d.name}</span>
-                    <span className="muted">{d.this_device ? 'This computer' : `Last synced ${ago(d.last_seen, now)}`}</span>
+                    <span className="muted">
+                      {d.this_device ? 'This computer' : `Last synced ${ago(d.last_seen, now)}`}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -164,7 +219,12 @@ function SyncBadge({ status, now }: { status: SyncStatus; now: number }) {
 
 function Choice(props: { selected: boolean; onSelect: () => void; icon: ReactNode; title: string; detail: string }) {
   return (
-    <button className={`choice${props.selected ? ' selected' : ''}`} role="radio" aria-checked={props.selected} onClick={props.onSelect}>
+    <button
+      className={`choice${props.selected ? ' selected' : ''}`}
+      role="radio"
+      aria-checked={props.selected}
+      onClick={props.onSelect}
+    >
       <span className="choice-icon">{props.icon}</span>
       <span className="choice-text">
         <span className="choice-title">{props.title}</span>
@@ -203,5 +263,91 @@ function DetectionSection({ run }: { run: Run }) {
         />
       </label>
     </Section>
+  );
+}
+
+const EMPTY_S3: S3Settings = { endpoint: '', region: 'us-east-1', bucket: '', prefix: '', access_key_id: '' };
+
+function S3Form(props: { current: S3Settings | null; onSave: (s: S3Settings, secret: string) => Promise<boolean> }) {
+  const { current, onSave } = props;
+  const [form, setForm] = useState<S3Settings>(() => ({ ...EMPTY_S3, ...current }));
+  const [secret, setSecret] = useState('');
+  const [saving, setSaving] = useState(false);
+  const set = (key: keyof S3Settings) => (e: { target: { value: string } }) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+  const sameKey = current?.access_key_id === form.access_key_id && (current?.endpoint ?? '') === (form.endpoint ?? '');
+  const ready = form.bucket.trim() && form.region.trim() && form.access_key_id.trim() && (secret || sameKey);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    const clean = (v: string | null) => (v?.trim() ? v.trim() : null);
+    await onSave(
+      {
+        endpoint: clean(form.endpoint),
+        region: form.region.trim(),
+        bucket: form.bucket.trim(),
+        prefix: clean(form.prefix),
+        access_key_id: form.access_key_id.trim(),
+      },
+      secret,
+    );
+    setSaving(false);
+    setSecret('');
+  };
+
+  return (
+    <form className="s3-form" onSubmit={submit}>
+      <label className="field wide">
+        <span>Endpoint</span>
+        <input
+          value={form.endpoint ?? ''}
+          onChange={set('endpoint')}
+          placeholder="Leave empty for AWS, e.g. https://ACCOUNT.r2.cloudflarestorage.com"
+        />
+      </label>
+      <label className="field">
+        <span>Bucket</span>
+        <input value={form.bucket} onChange={set('bucket')} required />
+      </label>
+      <label className="field">
+        <span>Region</span>
+        <input value={form.region} onChange={set('region')} placeholder="us-east-1, or auto for R2" required />
+      </label>
+      <label className="field wide">
+        <span>Folder in bucket (optional)</span>
+        <input value={form.prefix ?? ''} onChange={set('prefix')} placeholder="e.g. multitasker-sync" />
+      </label>
+      <label className="field">
+        <span>Access key ID</span>
+        <input
+          value={form.access_key_id}
+          onChange={set('access_key_id')}
+          autoComplete="off"
+          spellCheck={false}
+          required
+        />
+      </label>
+      <label className="field">
+        <span>Secret access key</span>
+        <input
+          type="password"
+          value={secret}
+          onChange={(e) => setSecret(e.target.value)}
+          placeholder={sameKey && current ? 'Saved, leave empty to keep it' : ''}
+          autoComplete="off"
+        />
+      </label>
+      <p className="settings-hint wide">
+        <KeyRound size={13} /> The secret is kept in Windows Credential Manager, never in MultiTasker's files. Use a key
+        that can only reach this bucket.
+      </p>
+      <div className="wide">
+        <button type="submit" className="primary" disabled={!ready || saving}>
+          {saving && <LoaderCircle size={14} className="spin" />}
+          {current ? 'Save and reconnect' : 'Connect'}
+        </button>
+      </div>
+    </form>
   );
 }

@@ -1693,3 +1693,48 @@ button.primary.small {
 .switch:checked::after {
   transform: translateX(16px);
 }
+
+.s3-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.s3-form .wide {
+  grid-column: 1 / -1;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.field input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-weight: 400;
+}
+
+.field input:focus {
+  border-color: var(--accent);
+}
+
+.s3-form .settings-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .s3-form {
+    grid-template-columns: 1fr;
+  }
+}
