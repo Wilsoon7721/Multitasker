@@ -1874,3 +1874,9 @@ button.primary.small {
 .reminder-row {
   margin-top: 14px;
 }
+
+/* Views without group headings put the list straight under the add-task box. */
+.composer + .cards,
+.composer + .empty {
+  margin-top: 16px;
+}
