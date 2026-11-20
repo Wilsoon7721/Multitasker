@@ -26,7 +26,8 @@ let tasks: TaskView[] = [
   task('Review AI-generated GS module notes', {
     description: 'Check the summary against the lecture slides.\nFlag anything that needs a second pass.',
     category: 'School',
-    due_date: day(1),
+    due_date: day(0),
+    due_at: new Date(now + (2 * 60 + 15) * 60_000).toISOString(),
     in_progress: true,
     started_at: iso(95 * 60_000),
     in_progress_on: ['preview-device'],
@@ -50,6 +51,7 @@ function task(title: string, extra: Partial<TaskView> = {}): TaskView {
     description: null,
     category: null,
     due_date: null,
+    due_at: null,
     status: 'todo',
     created_at: iso(3 * 86_400_000),
     updated_at: iso(3 * 86_400_000),
@@ -152,6 +154,7 @@ function syncTo(target: SyncTarget) {
 }
 
 let signInCancelled = false;
+let reminders = { minutes_before: 15 as number | null, at_due_time: true };
 
 function activityChanged() {
   setTimeout(() => void emit('activity', activity), 0);
@@ -187,6 +190,7 @@ mockIPC(
           description: blank(input.description),
           category: blank(input.category),
           due_date: input.due_date ?? null,
+          due_at: input.due_at ?? null,
           created_at: new Date().toISOString(),
         });
         tasks.push(t);
@@ -204,6 +208,8 @@ mockIPC(
         if (c.description !== undefined) t.description = blank(c.description);
         if (c.category !== undefined) t.category = blank(c.category);
         if (c.due_date !== undefined) t.due_date = c.due_date;
+        if (c.due_date === null) t.due_at = null;
+        if (c.due_at !== undefined) t.due_at = c.due_at;
         if (c.status !== undefined && c.status !== t.status) {
           t.status = c.status;
           t.completed_at = c.status === 'done' ? new Date().toISOString() : null;
@@ -266,6 +272,13 @@ mockIPC(
 
       case 'set_sync_target':
         syncTo(a.target as SyncTarget);
+        return null;
+
+      case 'reminder_settings':
+        return reminders;
+
+      case 'set_reminder_settings':
+        reminders = a.reminders as typeof reminders;
         return null;
 
       case 'built_in_clients':

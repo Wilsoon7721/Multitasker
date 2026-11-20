@@ -292,6 +292,7 @@ mod tests {
                 description: None,
                 category: None,
                 due_date: None,
+                due_at: None,
                 status: TaskStatus::Todo,
                 created_at: now,
                 updated_at: now,

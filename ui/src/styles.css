@@ -1845,3 +1845,32 @@ button.primary.small {
   gap: 8px;
   margin-top: 16px;
 }
+
+.soon {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.field-pill input[type='time'] {
+  width: 96px;
+}
+
+.inline-select {
+  flex: none;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.inline-select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.reminder-row {
+  margin-top: 14px;
+}

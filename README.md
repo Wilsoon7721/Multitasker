@@ -11,6 +11,8 @@ of sight.
 Early development. What works today:
 
 - A task list (add, edit, complete, delete) stored locally in SQLite.
+- **Due dates with an optional time.** Timed tasks count down ("in 2h 15m") once they're within a day, and
+  MultiTasker reminds you with a Windows notification beforehand (15 minutes by default) and when they're due.
 - Mark tasks **in progress**; they appear in an always-on-top widget pinned to the top-right of your screen, with how
   long they've been going.
 - Attach files, folders and links to tasks (by picker, or by dragging files from the desktop onto a task in the main

@@ -41,6 +41,8 @@ pub struct Task {
     pub description: Option<String>,
     pub category: Option<String>,
     pub due_date: Option<NaiveDate>,
+    /// The exact moment it's due, when a time was given; `due_date` is that moment's date where it was set.
+    pub due_at: Option<DateTime<Utc>>,
     pub status: TaskStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -57,6 +59,8 @@ pub struct NewTask {
     pub category: Option<String>,
     #[serde(default)]
     pub due_date: Option<NaiveDate>,
+    #[serde(default)]
+    pub due_at: Option<DateTime<Utc>>,
 }
 
 /// A partial edit. `None` leaves a field alone; `Some(None)` clears an optional one.
@@ -70,6 +74,8 @@ pub struct TaskChanges {
     pub category: Option<Option<String>>,
     #[serde(default, with = "double_option")]
     pub due_date: Option<Option<NaiveDate>>,
+    #[serde(default, with = "double_option")]
+    pub due_at: Option<Option<DateTime<Utc>>>,
     #[serde(default)]
     pub status: Option<TaskStatus>,
 }

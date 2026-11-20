@@ -1,7 +1,7 @@
 import { CalendarDays, ChevronDown, GripVertical, Play } from 'lucide-react';
 import { useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { api, type TaskView } from '../api';
-import { dueLabel } from '../time';
+import { dueInfo, useNow } from '../time';
 import type { Run } from '../useTasks';
 
 /** How far the pointer must move before a press becomes a drag (so clicks still work). */
@@ -26,6 +26,7 @@ export function WidgetTodo(props: {
   const { tasks, run, target, onDragChange, onCollapse } = props;
   const [drag, setDrag] = useState<Drag | null>(null);
   const origin = useRef({ x: 0, y: 0 });
+  const now = useNow();
 
   const start = (task: TaskView) => void run(() => api.setInProgress(task.id, true));
 
@@ -72,7 +73,7 @@ export function WidgetTodo(props: {
       ) : (
         <ul className="widget-list widget-todo-list">
           {tasks.map((t) => {
-            const due = t.due_date ? dueLabel(t.due_date) : null;
+            const due = dueInfo(t, now);
             const dragging = drag?.started && drag.task.id === t.id;
             return (
               <li
@@ -92,7 +93,7 @@ export function WidgetTodo(props: {
                     <span className="card-meta">
                       {t.category && <span className="tag">{t.category}</span>}
                       {due && (
-                        <span className={`meta${due.late ? ' late' : ''}`}>
+                        <span className={`meta${due.late ? ' late' : due.soon ? ' soon' : ''}`}>
                           <CalendarDays size={11} /> {due.text}
                         </span>
                       )}

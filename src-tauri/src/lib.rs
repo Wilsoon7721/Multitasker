@@ -2,6 +2,7 @@ mod cloud;
 mod commands;
 mod detection;
 mod device;
+mod reminders;
 mod settings;
 mod syncing;
 mod tray;
@@ -33,6 +34,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             move_old_data_dir(&data_dir);
@@ -57,6 +59,7 @@ pub fn run() {
             windows::set_widget_visible(app.handle(), true)?;
             detection::start(app.handle(), detector);
             syncing::start(app.handle(), syncer);
+            reminders::start(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -94,6 +97,8 @@ pub fn run() {
             commands::sign_in_cloud,
             commands::cancel_sign_in,
             commands::built_in_clients,
+            commands::reminder_settings,
+            commands::set_reminder_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MultiTasker");

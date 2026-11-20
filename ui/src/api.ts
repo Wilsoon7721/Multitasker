@@ -11,6 +11,8 @@ export interface TaskView {
   category: string | null;
   /** YYYY-MM-DD */
   due_date: string | null;
+  /** The exact moment it's due, when a time was given. */
+  due_at: string | null;
   status: TaskStatus;
   created_at: string;
   updated_at: string;
@@ -106,6 +108,12 @@ export interface SyncStatus {
   client: { name: string; running: boolean | null } | null;
 }
 
+export interface ReminderSettings {
+  /** How long before a due time to remind; null for no early reminder. */
+  minutes_before: number | null;
+  at_due_time: boolean;
+}
+
 export interface FolderSuggestion {
   label: string;
   path: string;
@@ -116,6 +124,7 @@ export interface NewTask {
   description?: string | null;
   category?: string | null;
   due_date?: string | null;
+  due_at?: string | null;
 }
 
 /** Only the fields sent change; `null` clears an optional field. */
@@ -124,6 +133,7 @@ export interface TaskChanges {
   description?: string | null;
   category?: string | null;
   due_date?: string | null;
+  due_at?: string | null;
   status?: TaskStatus;
 }
 
@@ -152,6 +162,8 @@ export const api = {
     invoke<string>('sign_in_cloud', { service, clientId: clientId || null, clientSecret: clientSecret || null }),
   cancelSignIn: () => invoke('cancel_sign_in'),
   /** Which services this build can sign in to without a client ID being entered. */
+  reminderSettings: () => invoke<ReminderSettings>('reminder_settings'),
+  setReminderSettings: (reminders: ReminderSettings) => invoke('set_reminder_settings', { reminders }),
   builtInClients: () => invoke<Record<CloudService, boolean>>('built_in_clients'),
   syncFolderSuggestions: () => invoke<FolderSuggestion[]>('sync_folder_suggestions'),
   /** Asks for a folder with the system picker; null if cancelled. */

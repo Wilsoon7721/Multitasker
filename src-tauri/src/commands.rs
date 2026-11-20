@@ -400,3 +400,14 @@ pub fn sync_folder_suggestions() -> Vec<FolderSuggestion> {
 pub fn detection_enabled(state: State<'_, AppState>) -> bool {
     state.detector.enabled()
 }
+
+#[tauri::command]
+pub fn reminder_settings(state: State<'_, AppState>) -> settings::Reminders {
+    settings::load(&state.data_dir).reminders
+}
+
+#[tauri::command]
+pub fn set_reminder_settings(state: State<'_, AppState>, reminders: settings::Reminders) -> CmdResult<()> {
+    settings::update(&state.data_dir, |s| s.reminders = reminders).map_err(err)?;
+    Ok(())
+}

@@ -26,6 +26,7 @@ pub(crate) fn all_fields(task: &Task) -> TaskFields {
         description: Some(task.description.clone()),
         category: Some(task.category.clone()),
         due_date: Some(task.due_date),
+        due_at: Some(task.due_at),
         status: Some(task.status),
         completed_at: Some(task.completed_at),
         created_at: Some(task.created_at),
@@ -38,6 +39,7 @@ pub(crate) fn changed_fields(before: &Task, after: &Task) -> TaskFields {
         description: (before.description != after.description).then(|| after.description.clone()),
         category: (before.category != after.category).then(|| after.category.clone()),
         due_date: (before.due_date != after.due_date).then_some(after.due_date),
+        due_at: (before.due_at != after.due_at).then_some(after.due_at),
         status: (before.status != after.status).then_some(after.status),
         completed_at: (before.completed_at != after.completed_at).then_some(after.completed_at),
         created_at: None,
@@ -83,6 +85,7 @@ fn field_names(fields: &TaskFields) -> Vec<&'static str> {
     add(fields.description.is_some(), "description");
     add(fields.category.is_some(), "category");
     add(fields.due_date.is_some(), "due_date");
+    add(fields.due_at.is_some(), "due_at");
     add(fields.status.is_some(), "status");
     add(fields.completed_at.is_some(), "completed_at");
     add(fields.created_at.is_some(), "created_at");
@@ -233,6 +236,7 @@ fn set_field(conn: &Connection, id: &str, name: &str, f: &TaskFields) -> Result<
         "description" => set("description", &f.description.clone().flatten()),
         "category" => set("category", &f.category.clone().flatten()),
         "due_date" => set("due_date", &f.due_date.flatten()),
+        "due_at" => set("due_at", &f.due_at.flatten()),
         "status" => set("status", &f.status.unwrap_or(TaskStatus::Todo).as_str()),
         "completed_at" => set("completed_at", &f.completed_at.flatten()),
         _ => set("created_at", &f.created_at),
@@ -466,6 +470,20 @@ mod tests {
 
         assert_eq!(a.list().await.unwrap()[0].title, "From B");
         assert_eq!(b.list().await.unwrap()[0].title, "From B");
+    }
+
+    #[tokio::test]
+    async fn due_times_reach_the_other_device() {
+        let (a, b) = pair().await;
+        let task = a.create(new("Timed")).await.unwrap();
+        ship(&a, "pc-a", &b);
+        drain(&a);
+
+        let at = Utc::now() + chrono::Duration::hours(3);
+        a.update(&task.id, TaskChanges { due_at: Some(Some(at)), ..Default::default() }).await.unwrap();
+        ship(&a, "pc-a", &b);
+        let t = &b.list().await.unwrap()[0];
+        assert_eq!((t.due_at.map(|d| d.timestamp()), t.due_date), (Some(at.timestamp()), Some(at.date_naive())));
     }
 
     #[tokio::test]

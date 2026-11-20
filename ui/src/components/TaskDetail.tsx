@@ -1,7 +1,7 @@
-import { CalendarDays, Pause, Play, Tag, Trash2, X } from 'lucide-react';
+import { CalendarDays, Clock, Pause, Play, Tag, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, type Activity, type TaskChanges, type TaskView } from '../api';
-import { elapsed } from '../time';
+import { elapsed, localDate, localTime, toDueAt } from '../time';
 import type { Run } from '../useTasks';
 import { AttachmentList } from './Attachments';
 import { AutoTextarea } from './AutoTextarea';
@@ -23,6 +23,9 @@ export function TaskDetail(props: {
   const [category, setCategory] = useState(task.category ?? '');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const done = task.status === 'done';
+  // A timed task's date and time are shown in this computer's time zone.
+  const dueDate = task.due_at ? localDate(task.due_at) : (task.due_date ?? '');
+  const dueTime = task.due_at ? localTime(task.due_at) : '';
 
   // Follow changes made elsewhere (the widget, another window) and switching tasks.
   useEffect(() => {
@@ -97,15 +100,34 @@ export function TaskDetail(props: {
               aria-label="Category"
             />
           </label>
-          <label className={`field-pill${task.due_date ? '' : ' empty'}`} title="Due date">
+          <label className={`field-pill${dueDate ? '' : ' empty'}`} title="Due date">
             <CalendarDays size={14} />
             <input
               type="date"
-              value={task.due_date ?? ''}
-              onChange={(e) => save({ due_date: e.target.value || null })}
+              value={dueDate}
+              onChange={(e) => {
+                const date = e.target.value;
+                if (!date) save({ due_date: null });
+                else save(dueTime ? { due_date: date, due_at: toDueAt(date, dueTime) } : { due_date: date });
+              }}
               aria-label="Due date"
             />
           </label>
+          {dueDate && (
+            <label className={`field-pill${dueTime ? '' : ' empty'}`} title="Due time (optional)">
+              <Clock size={14} />
+              <input
+                type="time"
+                value={dueTime}
+                onChange={(e) =>
+                  save(
+                    e.target.value ? { due_date: dueDate, due_at: toDueAt(dueDate, e.target.value) } : { due_at: null },
+                  )
+                }
+                aria-label="Due time"
+              />
+            </label>
+          )}
         </div>
 
         <AttachmentList taskId={task.id} attachments={task.attachments} run={run} deviceId={deviceId} />

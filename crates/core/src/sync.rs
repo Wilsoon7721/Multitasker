@@ -51,6 +51,8 @@ pub struct TaskFields {
     pub category: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::task::double_option")]
     pub due_date: Option<Option<NaiveDate>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::task::double_option")]
+    pub due_at: Option<Option<DateTime<Utc>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<TaskStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::task::double_option")]

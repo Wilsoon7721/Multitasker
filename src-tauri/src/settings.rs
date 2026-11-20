@@ -12,11 +12,28 @@ pub struct Settings {
     pub detection: bool,
     /// Where tasks and MultiTasker's own state are shared with other computers.
     pub sync: SyncTarget,
+    /// Notifications for tasks with a due time.
+    pub reminders: Reminders,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { detection: true, sync: SyncTarget::Off }
+        Self { detection: true, sync: SyncTarget::Off, reminders: Reminders::default() }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Reminders {
+    /// How long before a due time to remind, if at all.
+    pub minutes_before: Option<u32>,
+    /// Remind again when it's due.
+    pub at_due_time: bool,
+}
+
+impl Default for Reminders {
+    fn default() -> Self {
+        Self { minutes_before: Some(15), at_due_time: true }
     }
 }
 

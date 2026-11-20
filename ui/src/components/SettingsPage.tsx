@@ -1,4 +1,5 @@
 import {
+  BellRing,
   CircleAlert,
   Cloud,
   CloudOff,
@@ -20,6 +21,7 @@ import {
   onSyncStatus,
   type CloudService,
   type FolderSuggestion,
+  type ReminderSettings,
   type S3Settings,
   type SyncStatus,
   type SyncTarget,
@@ -37,6 +39,7 @@ export function SettingsPage({ run }: { run: Run }) {
   return (
     <>
       <SyncSection run={run} />
+      <RemindersSection run={run} />
       <DetectionSection run={run} />
     </>
   );
@@ -323,6 +326,63 @@ function Choice(props: { selected: boolean; onSelect: () => void; icon: ReactNod
       </span>
       <span className="choice-dot" aria-hidden />
     </button>
+  );
+}
+
+const EARLY_OPTIONS = [null, 5, 10, 15, 30, 60];
+
+function RemindersSection({ run }: { run: Run }) {
+  const [prefs, setPrefs] = useState<ReminderSettings | null>(null);
+
+  useEffect(() => {
+    void api.reminderSettings().then(setPrefs, () => {});
+  }, []);
+
+  const change = (next: ReminderSettings) => {
+    setPrefs(next);
+    void run(() => api.setReminderSettings(next));
+  };
+
+  return (
+    <Section icon={<BellRing size={18} />} title="Reminders">
+      <p className="settings-lead">
+        For tasks with a due time. They show as Windows notifications while MultiTasker is running.
+      </p>
+      <label className="toggle-row">
+        <span>
+          <span className="choice-title">Before it's due</span>
+          <span className="choice-detail">A heads-up so there's time to wrap up.</span>
+        </span>
+        <select
+          className="inline-select"
+          value={prefs?.minutes_before ?? ''}
+          disabled={!prefs}
+          onChange={(e) =>
+            prefs && change({ ...prefs, minutes_before: e.target.value ? Number(e.target.value) : null })
+          }
+        >
+          {EARLY_OPTIONS.map((m) => (
+            <option key={m ?? 'off'} value={m ?? ''}>
+              {m === null ? 'Off' : m === 60 ? '1 hour before' : `${m} minutes before`}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="toggle-row reminder-row">
+        <span>
+          <span className="choice-title">When it's due</span>
+          <span className="choice-detail">Another reminder at the due time itself.</span>
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          className="switch"
+          checked={!!prefs?.at_due_time}
+          disabled={!prefs}
+          onChange={(e) => prefs && change({ ...prefs, at_due_time: e.target.checked })}
+        />
+      </label>
+    </Section>
   );
 }
 

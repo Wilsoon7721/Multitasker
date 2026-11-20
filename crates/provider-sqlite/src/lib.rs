@@ -59,6 +59,8 @@ const MIGRATIONS: &[&str] = &[r#"
     CREATE TABLE sync_tombstones (entity TEXT NOT NULL, key TEXT NOT NULL, stamp TEXT NOT NULL, PRIMARY KEY (entity, key));
     CREATE TABLE sync_cursors (device TEXT PRIMARY KEY, segment INTEGER NOT NULL);
     CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, last_seen TEXT NOT NULL);
+"#, r#"
+    ALTER TABLE tasks ADD COLUMN due_at TEXT;
 "#];
 
 /// Tasks and MultiTasker's own state in one local file, on separate tables so either can be paired with others.
@@ -114,7 +116,7 @@ impl TaskProvider for SqliteDb {
     async fn list(&self) -> Result<Vec<Task>> {
         let conn = self.conn();
         let mut stmt = conn
-            .prepare("SELECT * FROM tasks ORDER BY status = 'done', due_date IS NULL, due_date, created_at")
+            .prepare("SELECT * FROM tasks ORDER BY status = 'done', due_date IS NULL, due_date, due_at IS NULL, due_at, created_at")
             .map_err(storage)?;
         let tasks = stmt.query_map([], task_from_row).map_err(storage)?;
         tasks.collect::<rusqlite::Result<_>>().map_err(storage)
@@ -127,7 +129,8 @@ impl TaskProvider for SqliteDb {
             title: check_title(&new.title)?,
             description: clean(new.description),
             category: check_category(new.category)?,
-            due_date: new.due_date,
+            due_date: new.due_date.or(new.due_at.map(|at| at.date_naive())),
+            due_at: new.due_at,
             status: TaskStatus::Todo,
             created_at: now,
             updated_at: now,
@@ -137,14 +140,15 @@ impl TaskProvider for SqliteDb {
         let mut conn = self.conn();
         let tx = conn.transaction().map_err(storage)?;
         tx.execute(
-            "INSERT INTO tasks (id, title, description, category, due_date, status, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO tasks (id, title, description, category, due_date, due_at, status, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 task.id,
                 task.title,
                 task.description,
                 task.category,
                 task.due_date,
+                task.due_at,
                 task.status.as_str(),
                 task.created_at,
                 task.updated_at
@@ -174,6 +178,16 @@ impl TaskProvider for SqliteDb {
         }
         if let Some(due_date) = changes.due_date {
             task.due_date = due_date;
+            // A task with no date can't have a time either.
+            if due_date.is_none() {
+                task.due_at = None;
+            }
+        }
+        if let Some(due_at) = changes.due_at {
+            task.due_at = due_at;
+            if task.due_date.is_none() {
+                task.due_date = due_at.map(|at| at.date_naive());
+            }
         }
         if let Some(status) = changes.status {
             if status != task.status {
@@ -184,8 +198,8 @@ impl TaskProvider for SqliteDb {
         task.updated_at = Utc::now();
 
         tx.execute(
-            "UPDATE tasks SET title = ?2, description = ?3, category = ?4, due_date = ?5, status = ?6,
-                              updated_at = ?7, completed_at = ?8
+            "UPDATE tasks SET title = ?2, description = ?3, category = ?4, due_date = ?5, due_at = ?6, status = ?7,
+                              updated_at = ?8, completed_at = ?9
              WHERE id = ?1",
             params![
                 task.id,
@@ -193,6 +207,7 @@ impl TaskProvider for SqliteDb {
                 task.description,
                 task.category,
                 task.due_date,
+                task.due_at,
                 task.status.as_str(),
                 task.updated_at,
                 task.completed_at
@@ -367,6 +382,7 @@ fn task_from_row(row: &Row) -> rusqlite::Result<Task> {
         description: row.get("description")?,
         category: row.get("category")?,
         due_date: row.get::<_, Option<NaiveDate>>("due_date")?,
+        due_at: row.get("due_at")?,
         status: TaskStatus::parse(&status).map_err(conversion)?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
@@ -407,6 +423,21 @@ mod tests {
         db.delete(&task.id).await.unwrap();
         assert!(db.list().await.unwrap().is_empty());
         assert!(matches!(db.delete(&task.id).await, Err(Error::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn due_times_keep_their_date_and_go_with_it() {
+        let db = SqliteDb::open_in_memory().unwrap();
+        let at = chrono::DateTime::parse_from_rfc3339("2026-12-01T09:30:00Z").unwrap().with_timezone(&Utc);
+        let task = db.create(NewTask { due_at: Some(at), ..new("Submit essay") }).await.unwrap();
+        assert_eq!((task.due_date, task.due_at), (Some(at.date_naive()), Some(at)));
+
+        let cleared = db.update(&task.id, TaskChanges { due_date: Some(None), ..Default::default() }).await.unwrap();
+        assert_eq!((cleared.due_date, cleared.due_at), (None, None), "no date means no time");
+
+        let later = db.update(&task.id, TaskChanges { due_at: Some(Some(at)), ..Default::default() }).await.unwrap();
+        assert_eq!(later.due_date, Some(at.date_naive()));
+        assert_eq!(db.list().await.unwrap()[0].due_at, Some(at));
     }
 
     #[tokio::test]

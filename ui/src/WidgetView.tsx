@@ -5,7 +5,7 @@ import { api } from './api';
 import { AppPicker } from './components/AppPicker';
 import { CheckButton } from './components/CheckButton';
 import { WidgetTodo } from './components/WidgetTodo';
-import { dueLabel, elapsed, useNow } from './time';
+import { dueInfo, elapsed, useNow } from './time';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 import { useActivity } from './useActivity';
 import { useDevices } from './useDevices';
@@ -148,7 +148,7 @@ export function WidgetView() {
         {active.length > 0 && (
           <ul className="widget-list">
             {active.map((t) => {
-              const due = t.due_date ? dueLabel(t.due_date) : null;
+              const due = dueInfo(t, now);
               const live = activeNow(t.id, now);
               const where = whereLabel(t);
               return (
@@ -173,7 +173,7 @@ export function WidgetView() {
                         )}
                         {t.category && <span className="tag">{t.category}</span>}
                         {due && (
-                          <span className={`meta${due.late ? ' late' : ''}`}>
+                          <span className={`meta${due.late ? ' late' : due.soon ? ' soon' : ''}`}>
                             <CalendarDays size={11} /> {due.text}
                           </span>
                         )}

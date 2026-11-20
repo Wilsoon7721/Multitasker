@@ -1,6 +1,6 @@
 import { CalendarDays, Laptop, Paperclip, Pause, Play, Timer } from 'lucide-react';
 import { api, type Activity, type TaskView } from '../api';
-import { dueLabel, elapsed } from '../time';
+import { dueInfo, elapsed } from '../time';
 import type { Run } from '../useTasks';
 import { CheckButton } from './CheckButton';
 
@@ -17,7 +17,7 @@ export function TaskCard(props: {
   // Started on another computer only: the button picks it up here instead of pausing it everywhere.
   const pausing = task.in_progress && !where?.elsewhereOnly;
   const done = task.status === 'done';
-  const due = task.due_date && !done ? dueLabel(task.due_date) : null;
+  const due = done ? null : dueInfo(task, now);
 
   return (
     <li
@@ -53,7 +53,7 @@ export function TaskCard(props: {
           )}
           {task.category && <span className="tag">{task.category}</span>}
           {due && (
-            <span className={`meta${due.late ? ' late' : ''}`}>
+            <span className={`meta${due.late ? ' late' : due.soon ? ' soon' : ''}`}>
               <CalendarDays size={12} /> {due.text}
             </span>
           )}

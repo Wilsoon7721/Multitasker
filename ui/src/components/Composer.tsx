@@ -1,9 +1,10 @@
-import { CalendarDays, CornerDownLeft, Plus, Tag, X } from 'lucide-react';
+import { CalendarDays, Clock, CornerDownLeft, Plus, Tag, X } from 'lucide-react';
 import { useRef, useState, type Dispatch, type FormEvent, type KeyboardEvent, type SetStateAction } from 'react';
 import { api, type NewAttachment } from '../api';
 import type { Run } from '../useTasks';
 import { AttachButtons, KindIcon, pendingLabel } from './Attachments';
 import { AutoTextarea } from './AutoTextarea';
+import { toDueAt } from '../time';
 
 /** The add-task card; files dropped on it wait in `pending` until the task is created. */
 export function Composer(props: {
@@ -17,6 +18,7 @@ export function Composer(props: {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
   const [due, setDue] = useState('');
+  const [dueTime, setDueTime] = useState('');
   const [focused, setFocused] = useState(false);
   const form = useRef<HTMLFormElement>(null);
 
@@ -27,6 +29,7 @@ export function Composer(props: {
     setTitle('');
     setDescription('');
     setDue('');
+    setDueTime('');
     setPending([]);
   };
 
@@ -34,7 +37,13 @@ export function Composer(props: {
     e?.preventDefault();
     if (!title.trim()) return;
     const ok = await run(async () => {
-      const task = await api.create({ title, description: description || null, category: category || null, due_date: due || null });
+      const task = await api.create({
+        title,
+        description: description || null,
+        category: category || null,
+        due_date: due || null,
+        due_at: due && dueTime ? toDueAt(due, dueTime) : null,
+      });
       reset();
       if (pending.length) await api.addAttachments(task.id, pending);
     });
@@ -133,6 +142,12 @@ export function Composer(props: {
               <CalendarDays size={14} />
               <input type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Due date" />
             </label>
+            {due && (
+              <label className={`field-pill${dueTime ? '' : ' empty'}`} title="Due time (optional)">
+                <Clock size={14} />
+                <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} aria-label="Due time" />
+              </label>
+            )}
 
             <span className="spacer" />
             <span className="hint">
