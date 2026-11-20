@@ -171,7 +171,13 @@ export function WidgetView() {
       </section>
 
       {expanded && tasks !== null && (
-        <WidgetTodo tasks={todo} run={run} target={activeZone} onDragChange={setDragState} />
+        <WidgetTodo
+          tasks={todo}
+          run={run}
+          target={activeZone}
+          onDragChange={setDragState}
+          onCollapse={toggleExpanded}
+        />
       )}
     </div>
   );

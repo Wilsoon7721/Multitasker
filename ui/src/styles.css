@@ -1159,12 +1159,26 @@ html.widget body {
   align-items: center;
   gap: 8px;
   margin: 0;
-  padding: 10px 14px 4px;
+  padding: 6px 14px 2px 8px;
   color: var(--text-3);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+.widget-todo-toggle {
+  gap: 6px;
+  padding: 4px 6px;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+.widget-todo-toggle:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
 }
 
 .widget-todo-hint {

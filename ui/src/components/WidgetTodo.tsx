@@ -1,4 +1,4 @@
-import { CalendarDays, GripVertical, Play } from 'lucide-react';
+import { CalendarDays, ChevronDown, GripVertical, Play } from 'lucide-react';
 import { useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { api, type TaskView } from '../api';
 import { dueLabel } from '../time';
@@ -21,8 +21,9 @@ export function WidgetTodo(props: {
   run: Run;
   target: RefObject<HTMLElement | null>;
   onDragChange: (state: 'idle' | 'dragging' | 'over') => void;
+  onCollapse: () => void;
 }) {
-  const { tasks, run, target, onDragChange } = props;
+  const { tasks, run, target, onDragChange, onCollapse } = props;
   const [drag, setDrag] = useState<Drag | null>(null);
   const origin = useRef({ x: 0, y: 0 });
 
@@ -59,7 +60,10 @@ export function WidgetTodo(props: {
   return (
     <section className="widget-todo">
       <h2>
-        To do <span className="count">{tasks.length}</span>
+        <button className="widget-todo-toggle" onClick={onCollapse} aria-expanded title="Hide to-do list">
+          <ChevronDown size={13} className="chevron" />
+          To do <span className="count">{tasks.length}</span>
+        </button>
         {tasks.length > 0 && <span className="widget-todo-hint">Drag up to start</span>}
       </h2>
 
