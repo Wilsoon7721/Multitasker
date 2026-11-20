@@ -1110,3 +1110,116 @@ html.widget body {
   outline-offset: -2px;
   background: var(--accent-soft) !important;
 }
+
+/* ───────────── Widget: to-do list and drag to start ───────────── */
+
+.icon-btn.expand svg {
+  transition: transform 0.15s;
+}
+
+.icon-btn.expand.on {
+  color: var(--accent);
+}
+
+.icon-btn.expand.on svg {
+  transform: rotate(180deg);
+}
+
+.widget-active {
+  border-radius: var(--radius-sm);
+  transition: background-color 0.12s;
+}
+
+.widget-active.drag-dragging {
+  outline: 2px dashed var(--border-strong);
+  outline-offset: -4px;
+}
+
+.widget-active.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+  background: var(--accent-soft);
+}
+
+.drop-hint {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.widget-todo {
+  border-top: 1px solid var(--border);
+}
+
+.widget-todo h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px 4px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.widget-todo-hint {
+  margin-left: auto;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.widget-todo-empty {
+  margin: 0;
+  padding: 8px 14px 14px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.widget-todo-list {
+  max-height: 220px;
+}
+
+.todo-item {
+  cursor: grab;
+  touch-action: none;
+}
+
+.todo-item .widget-title {
+  color: var(--text-2);
+  font-weight: 400;
+}
+
+.todo-item.dragging {
+  opacity: 0.4;
+}
+
+.grip {
+  flex: none;
+  margin: 0 -2px 0 2px;
+  color: var(--text-3);
+  opacity: 0.6;
+}
+
+.drag-ghost {
+  position: fixed;
+  z-index: 10;
+  max-width: 240px;
+  padding: 6px 10px;
+  overflow: hidden;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transform: translate(-20px, -50%);
+  pointer-events: none;
+}

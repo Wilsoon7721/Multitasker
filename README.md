@@ -15,6 +15,7 @@ Early development. What works today:
   long they've been going.
 - Attach files, folders and links to tasks (by picker, or by dragging files from the desktop onto a task in the main
   window or the widget). Files stay where they are; MultiTasker keeps a reference and opens them in their default app.
+- Expand the widget to see your to-do list and drag a task up into In Progress to start it.
 - Tray icon: closing the main window keeps MultiTasker running with the widget.
 
 Planned:
