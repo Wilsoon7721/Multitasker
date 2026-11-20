@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, onSyncStatus, type SyncDevice, type TaskView } from './api';
 
-/** This computer and the others sync knows about, for labelling where tasks are in progress. */
+/** This computer and the others sync knows about, for saying where a task was started. */
 export function useDevices() {
   const [thisId, setThisId] = useState<string | null>(null);
   const [devices, setDevices] = useState<SyncDevice[]>([]);
@@ -20,14 +20,12 @@ export function useDevices() {
 
   const nameOf = (id: string) => devices.find((d) => d.id === id)?.name ?? 'another computer';
 
-  /** "On LAPTOP" when it's only going elsewhere, "Also on LAPTOP" when here too, or null when only here. */
-  const whereLabel = (task: TaskView): { text: string; elsewhereOnly: boolean } | null => {
-    const others = task.in_progress_on.filter((id) => id !== thisId);
-    if (!task.in_progress || others.length === 0) return null;
-    const names = [...new Set(others.map(nameOf))].join(', ');
-    const here = thisId !== null && task.in_progress_on.includes(thisId);
-    return { text: here ? `Also on ${names}` : `On ${names}`, elsewhereOnly: !here };
+  /** The computer(s) a task in progress was started on, when it wasn't started here. */
+  const startedOn = (task: TaskView): string | null => {
+    if (!task.in_progress || (thisId !== null && task.in_progress_on.includes(thisId))) return null;
+    const names = [...new Set(task.in_progress_on.map(nameOf))];
+    return names.length ? names.join(', ') : null;
   };
 
-  return { thisId, whereLabel };
+  return { thisId, startedOn };
 }

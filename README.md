@@ -30,8 +30,8 @@ Early development. What works today:
     or MinIO.
 
   Sign-ins and secret keys stay in Windows Credential Manager. Tasks, what's in progress and attachments merge across
-  computers, and each computer only writes its own files, so nothing gets overwritten. Tasks show which computer
-  they're in progress on, with "Continue here" to pick one up.
+  computers, and each computer only writes its own files, so nothing gets overwritten. A task started on one
+  computer is in progress on all of them.
 - Tray icon: closing the main window keeps MultiTasker running with the widget.
 
 Planned:
