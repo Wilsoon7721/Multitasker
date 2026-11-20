@@ -23,3 +23,6 @@ Thumbs.db
 
 # Local agent config
 /.claude/
+# @wilsoon/env
+!.env.*.example
+.wilsoon-store/

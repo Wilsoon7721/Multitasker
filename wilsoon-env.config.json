@@ -1,0 +1,36 @@
+{
+  "$schema": "https://wilsoon.dev/schema/env.config.v1.json",
+  "project": "multitasker",
+  "provider": "http",
+  "options": {
+    "url": "https://xzggjlxocwclieepmzki.supabase.co/functions/v1/wilsoon-env"
+  },
+  "auth": {
+    "type": "oidc",
+    "issuer": "https://id.wilsoon.dev",
+    "clientId": "cl_b222b2231227b895008890412be4950b"
+  },
+  "include": [
+    ".env",
+    ".env.*"
+  ],
+  "exclude": [
+    ".env.example",
+    ".env.*.example",
+    ".env.sample",
+    ".env.*.sample",
+    ".env.template",
+    ".env.*.template",
+    "*.enc",
+    "*.bak",
+    "*~",
+    "*.swp"
+  ],
+  "recipients": [
+    {
+      "name": "me",
+      "keyid": "22054a2cfc353a03",
+      "pubkey": "wenv1yw2rx3rgsawtkljvmfjnsxqj6n5bbyl64ygsnm3q35y454n4c4csebkkfq"
+    }
+  ]
+}
