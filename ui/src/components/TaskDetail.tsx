@@ -5,6 +5,7 @@ import { elapsed, localDate, localTime, toDueAt } from '../time';
 import type { Run } from '../useTasks';
 import { AttachmentList } from './Attachments';
 import { AutoTextarea } from './AutoTextarea';
+import { useTaskSource } from '../useTaskSource';
 import { CheckButton } from './CheckButton';
 
 /** The side panel for one task. Fields save as you leave them. */
@@ -27,6 +28,7 @@ export function TaskDetail(props: {
   // A timed task's date and time are shown in this computer's time zone.
   const dueDate = task.due_at ? localDate(task.due_at) : (task.due_date ?? '');
   const dueTime = task.due_at ? localTime(task.due_at) : '';
+  const timesAllowed = useTaskSource()?.supports_due_time ?? true;
 
   // Follow changes made elsewhere (the widget, another window) and switching tasks.
   useEffect(() => {
@@ -114,7 +116,7 @@ export function TaskDetail(props: {
               aria-label="Due date"
             />
           </label>
-          {dueDate && (
+          {dueDate && timesAllowed && (
             <label className={`field-pill${dueTime ? '' : ' empty'}`} title="Due time (optional)">
               <Clock size={14} />
               <input

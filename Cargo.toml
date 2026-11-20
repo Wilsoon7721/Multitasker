@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/provider-sqlite", "crates/activity", "crates/sync", "src-tauri"]
+members = ["crates/core", "crates/provider-sqlite", "crates/provider-javadashboard", "crates/activity", "crates/sync", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,6 +10,7 @@ repository = "https://github.com/Wilsoon7721/Multitasker"
 [workspace.dependencies]
 multitasker-core = { path = "crates/core" }
 multitasker-provider-sqlite = { path = "crates/provider-sqlite" }
+multitasker-provider-javadashboard = { path = "crates/provider-javadashboard" }
 multitasker-activity = { path = "crates/activity" }
 multitasker-sync = { path = "crates/sync" }
 async-trait = "0.1"

@@ -6,19 +6,22 @@ mod reminders;
 mod settings;
 mod syncing;
 mod tray;
+mod wilsoon;
 mod windows;
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use multitasker_core::{StateStore, TaskProvider};
 use multitasker_provider_sqlite::SqliteDb;
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
+use tauri_plugin_deep_link::DeepLinkExt;
 
 /// Where tasks come from, where MultiTasker's own state lives, and which computer this is.
 pub struct AppState {
-    pub provider: Arc<dyn TaskProvider>,
+    /// Where tasks come from right now; switched from Settings.
+    provider: RwLock<Arc<dyn TaskProvider>>,
     pub state: Arc<dyn StateStore>,
     pub device: device::Device,
     pub detector: Arc<detection::Detector>,
@@ -28,10 +31,38 @@ pub struct AppState {
     pub data_dir: PathBuf,
     /// Set to stop waiting for a browser sign-in.
     pub sign_in_cancel: Arc<AtomicBool>,
+    /// A WilsoonID sign-in waiting for the browser to come back through the app link.
+    pub wilsoon_sign_in: wilsoon::SignInSlot,
+}
+
+impl AppState {
+    pub fn provider(&self) -> Arc<dyn TaskProvider> {
+        self.provider.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn set_provider(&self, provider: Arc<dyn TaskProvider>) {
+        *self.provider.write().unwrap_or_else(|e| e.into_inner()) = provider;
+    }
+}
+
+/// The task source settings ask for, falling back to local tasks if the JavaDashboard sign-in is gone.
+fn initial_provider(source: &settings::TaskSource, db: Arc<SqliteDb>) -> Arc<dyn TaskProvider> {
+    match source {
+        settings::TaskSource::JavaDashboard { .. } => match wilsoon::tokens() {
+            Ok(tokens) => Arc::new(wilsoon::provider(tokens)),
+            Err(_) => db,
+        },
+        settings::TaskSource::Local => db,
+    }
 }
 
 pub fn run() {
     tauri::Builder::default()
+        // Another copy started by an app link (a sign-in coming back) hands its URL over here and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = windows::show_main(app);
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -45,7 +76,7 @@ pub fn run() {
             let detector = detection::Detector::new(prefs.detection);
             let syncer = syncing::Syncer::new(prefs.sync.clone());
             app.manage(AppState {
-                provider: db.clone(),
+                provider: RwLock::new(initial_provider(&prefs.tasks, db.clone())),
                 state: db.clone(),
                 device: device::load_or_create(&data_dir)?,
                 detector: detector.clone(),
@@ -53,7 +84,20 @@ pub fn run() {
                 db,
                 data_dir,
                 sign_in_cancel: Arc::new(AtomicBool::new(false)),
+                wilsoon_sign_in: wilsoon::SignInSlot::default(),
             });
+
+            // Installers register the app link; development builds register it here so sign-in works there too.
+            #[cfg(any(windows, target_os = "linux"))]
+            let _ = app.deep_link().register_all();
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                let state = handle.state::<AppState>();
+                for url in event.urls() {
+                    state.wilsoon_sign_in.deliver(url.as_str());
+                }
+            });
+            start_remote_refresh(app.handle());
 
             tray::build(app.handle(), prefs.detection)?;
             windows::set_widget_visible(app.handle(), true)?;
@@ -99,6 +143,9 @@ pub fn run() {
             commands::built_in_clients,
             commands::reminder_settings,
             commands::set_reminder_settings,
+            commands::task_source,
+            commands::sign_in_wilsoon,
+            commands::use_local_tasks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running MultiTasker");
@@ -110,4 +157,18 @@ fn move_old_data_dir(data_dir: &std::path::Path) {
     if !data_dir.exists() && old.is_dir() {
         let _ = std::fs::rename(old, data_dir);
     }
+}
+
+/// Tasks edited in JavaDashboard itself only show up when asked for, so ask every minute while it's the source.
+fn start_remote_refresh(app: &tauri::AppHandle) {
+    let app = app.clone();
+    std::thread::Builder::new()
+        .name("remote-refresh".into())
+        .spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            if app.state::<AppState>().provider().key() != multitasker_provider_sqlite::PROVIDER_KEY {
+                let _ = app.emit(commands::TASKS_CHANGED, ());
+            }
+        })
+        .expect("failed to start the refresh thread");
 }

@@ -44,6 +44,13 @@
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["dev.wilsoon.multitasker"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

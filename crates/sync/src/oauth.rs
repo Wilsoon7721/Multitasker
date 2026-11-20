@@ -27,6 +27,10 @@ pub struct OAuthApp {
     pub client_id: String,
     /// Google's desktop clients have one; it isn't confidential in installed apps, but the token endpoint wants it.
     pub client_secret: Option<String>,
+    /// Another app's API to get tokens for (RFC 8707); asked for at sign-in and on every refresh.
+    pub resource: Option<&'static str>,
+    /// Whether refreshes repeat the scopes, as Microsoft requires for public clients.
+    pub refresh_with_scope: bool,
 }
 
 impl OAuthApp {
@@ -39,6 +43,8 @@ impl OAuthApp {
             redirect_host: "127.0.0.1",
             client_id,
             client_secret,
+            resource: None,
+            refresh_with_scope: false,
         }
     }
 
@@ -52,7 +58,107 @@ impl OAuthApp {
             redirect_host: "localhost",
             client_id,
             client_secret: None,
+            resource: None,
+            refresh_with_scope: true,
         }
+    }
+
+    /// WilsoonID, for tokens that JavaDashboard's API accepts on the person's behalf.
+    pub fn wilsoon(client_id: String) -> Self {
+        OAuthApp {
+            authorize_url: "https://id.wilsoon.dev/v2/authorize",
+            token_url: "https://id.wilsoon.dev/api/token",
+            scopes: "openid profile email offline_access",
+            extra: &[],
+            redirect_host: "",
+            client_id,
+            client_secret: None,
+            resource: Some("https://dash.wilsoon.dev"),
+            refresh_with_scope: false,
+        }
+    }
+}
+
+/// A sign-in that's been started: the page to open, and what's needed to finish it when the code comes back.
+#[derive(Debug, Clone)]
+pub struct Pending {
+    pub url: String,
+    state: String,
+    verifier: String,
+    redirect_uri: String,
+}
+
+impl Pending {
+    pub fn state(&self) -> &str {
+        &self.state
+    }
+}
+
+/// Starts a sign-in that will come back to `redirect_uri`.
+pub fn begin(app: &OAuthApp, redirect_uri: &str) -> Pending {
+    let verifier = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+    let state = uuid::Uuid::new_v4().simple().to_string();
+    let challenge = pkce_challenge(&verifier);
+    let mut params = vec![
+        ("client_id", app.client_id.as_str()),
+        ("redirect_uri", redirect_uri),
+        ("response_type", "code"),
+        ("scope", app.scopes),
+        ("state", state.as_str()),
+        ("code_challenge_method", "S256"),
+        ("code_challenge", challenge.as_str()),
+    ];
+    params.extend(app.extra.iter().copied());
+    if let Some(resource) = app.resource {
+        params.push(("resource", resource));
+    }
+    let url = format!("{}?{}", app.authorize_url, form_encode(&params));
+    Pending { url, state, verifier, redirect_uri: redirect_uri.to_owned() }
+}
+
+/// Trades the code a sign-in came back with for tokens.
+pub fn finish(app: &OAuthApp, pending: &Pending, code: &str) -> Result<SignedIn, RemoteError> {
+    let mut form = vec![
+        ("client_id", app.client_id.as_str()),
+        ("grant_type", "authorization_code"),
+        ("code", code),
+        ("redirect_uri", pending.redirect_uri.as_str()),
+        ("code_verifier", pending.verifier.as_str()),
+    ];
+    if let Some(secret) = app.client_secret.as_deref() {
+        form.push(("client_secret", secret));
+    }
+    let token = post_token(app, &form)?;
+    let refresh_token = token
+        .refresh_token
+        .ok_or_else(|| RemoteError::Io("The service didn't allow staying signed in; try signing in again.".into()))?;
+    Ok(SignedIn {
+        account: token.id_token.as_deref().and_then(account_from_id_token),
+        access_token: token.access_token,
+        expires_in: token.expires_in.unwrap_or(3600),
+        refresh_token,
+    })
+}
+
+/// Reads the code from a redirect URL, checking it belongs to `state`.
+pub fn code_from_redirect(url: &str, state: &str) -> Result<String, RemoteError> {
+    let query = url.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let query = query.split('#').next().unwrap_or("");
+    let params: Vec<(String, String)> =
+        query.split('&').filter_map(|pair| pair.split_once('=')).map(|(k, v)| (form_decode(k), form_decode(v))).collect();
+    let get = |key: &str| params.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+
+    if let Some(error) = get("error") {
+        return Err(RemoteError::Io(if error == "access_denied" {
+            "Sign-in was cancelled.".into()
+        } else {
+            format!("Sign-in failed: {}", get("error_description").unwrap_or(error))
+        }));
+    }
+    match (get("code"), get("state")) {
+        (Some(code), Some(s)) if s == state => Ok(code),
+        (Some(_), _) => Err(RemoteError::Io("Sign-in came back from an unexpected page; try again.".into())),
+        _ => Err(RemoteError::Io("Sign-in came back without a code; try again.".into())),
     }
 }
 
@@ -81,45 +187,10 @@ struct TokenResponse {
 pub fn sign_in(app: &OAuthApp, open_browser: impl FnOnce(&str) -> Result<(), String>, cancel: &AtomicBool) -> Result<SignedIn, RemoteError> {
     let listener = TcpListener::bind((if app.redirect_host == "localhost" { "127.0.0.1" } else { app.redirect_host }, 0))?;
     let redirect_uri = format!("http://{}:{}/", app.redirect_host, listener.local_addr()?.port());
-    let verifier = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
-    let state = uuid::Uuid::new_v4().simple().to_string();
-
-    let mut params = vec![
-        ("client_id", app.client_id.as_str()),
-        ("redirect_uri", redirect_uri.as_str()),
-        ("response_type", "code"),
-        ("scope", app.scopes),
-        ("state", state.as_str()),
-        ("code_challenge_method", "S256"),
-    ];
-    let challenge = pkce_challenge(&verifier);
-    params.push(("code_challenge", challenge.as_str()));
-    params.extend(app.extra.iter().copied());
-    let url = format!("{}?{}", app.authorize_url, form_encode(&params));
-
-    open_browser(&url).map_err(RemoteError::Io)?;
-    let code = wait_for_code(&listener, &state, cancel)?;
-
-    let mut form = vec![
-        ("client_id", app.client_id.as_str()),
-        ("grant_type", "authorization_code"),
-        ("code", code.as_str()),
-        ("redirect_uri", redirect_uri.as_str()),
-        ("code_verifier", verifier.as_str()),
-    ];
-    if let Some(secret) = app.client_secret.as_deref() {
-        form.push(("client_secret", secret));
-    }
-    let token = post_token(app, &form)?;
-    let refresh_token = token
-        .refresh_token
-        .ok_or_else(|| RemoteError::Io("The service didn't allow staying signed in; try signing in again.".into()))?;
-    Ok(SignedIn {
-        account: token.id_token.as_deref().and_then(account_from_id_token),
-        access_token: token.access_token,
-        expires_in: token.expires_in.unwrap_or(3600),
-        refresh_token,
-    })
+    let pending = begin(app, &redirect_uri);
+    open_browser(&pending.url).map_err(RemoteError::Io)?;
+    let code = wait_for_code(&listener, &pending.state, cancel)?;
+    finish(app, &pending, &code)
 }
 
 fn post_token(app: &OAuthApp, form: &[(&str, &str)]) -> Result<TokenResponse, RemoteError> {
@@ -248,8 +319,11 @@ impl TokenSource {
         if let Some(secret) = self.app.client_secret.as_deref() {
             form.push(("client_secret", secret));
         }
-        if self.app.client_secret.is_none() {
+        if self.app.refresh_with_scope {
             form.push(("scope", self.app.scopes));
+        }
+        if let Some(resource) = self.app.resource {
+            form.push(("resource", resource));
         }
         let response = post_token(&self.app, &form)?;
         if let Some(rotated) = response.refresh_token.filter(|r| r != &refresh) {
@@ -393,6 +467,23 @@ mod tests {
                 other => panic!("expected a sign-in error, got {:?}", other.map(|t| t.access_token)),
             }
         }
+    }
+
+    #[test]
+    fn app_redirects_carry_the_code_and_resource() {
+        let app = OAuthApp::wilsoon("cl_test".into());
+        let pending = begin(&app, "dev.wilsoon.multitasker:/oauth2redirect");
+        assert!(pending.url.starts_with("https://id.wilsoon.dev/v2/authorize?client_id=cl_test&"));
+        assert!(pending.url.contains("resource=https%3A%2F%2Fdash.wilsoon.dev"));
+        assert!(pending.url.contains("redirect_uri=dev.wilsoon.multitasker%3A%2Foauth2redirect"));
+
+        let back = format!("dev.wilsoon.multitasker:/oauth2redirect?code=abc%2F1&state={}", pending.state());
+        assert_eq!(code_from_redirect(&back, pending.state()).unwrap(), "abc/1");
+        assert!(code_from_redirect("dev.wilsoon.multitasker:/oauth2redirect?code=x&state=forged", pending.state()).is_err());
+        assert_eq!(
+            code_from_redirect("x:/r?error=access_denied", "s").unwrap_err().to_string(),
+            "Sign-in was cancelled."
+        );
     }
 
     #[test]

@@ -1,0 +1,19 @@
+[package]
+name = "multitasker-provider-javadashboard"
+description = "Tasks from a JavaDashboard calendar, through its API"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+multitasker-core.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+ureq = "3"
+iana-time-zone = "0.1"
+
+[dev-dependencies]
+tokio.workspace = true

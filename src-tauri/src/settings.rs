@@ -14,11 +14,23 @@ pub struct Settings {
     pub sync: SyncTarget,
     /// Notifications for tasks with a due time.
     pub reminders: Reminders,
+    /// Where tasks come from.
+    pub tasks: TaskSource,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TaskSource {
+    /// The SQLite file on this computer (and whatever sync carries it to).
+    #[default]
+    Local,
+    /// A JavaDashboard calendar, signed in with WilsoonID.
+    JavaDashboard { account: String },
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { detection: true, sync: SyncTarget::Off, reminders: Reminders::default() }
+        Self { detection: true, sync: SyncTarget::Off, reminders: Reminders::default(), tasks: TaskSource::Local }
     }
 }
 

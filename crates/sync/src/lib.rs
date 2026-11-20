@@ -12,7 +12,7 @@ use thiserror::Error;
 
 pub use remote::{FolderRemote, Remote, RemoteError};
 pub use cloud::{GoogleDriveRemote, OneDriveRemote};
-pub use oauth::{sign_in, OAuthApp, SignedIn, TokenSource};
+pub use oauth::{begin, code_from_redirect, finish, sign_in, OAuthApp, Pending, SignedIn, TokenSource};
 pub use s3::{S3Config, S3Remote};
 
 /// Everything MultiTasker writes lives under this key, so a shared folder can hold other files too.

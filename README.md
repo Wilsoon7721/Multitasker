@@ -10,7 +10,8 @@ of sight.
 
 Early development. What works today:
 
-- A task list (add, edit, complete, delete) stored locally in SQLite.
+- A task list (add, edit, complete, delete) stored locally in SQLite, or your **JavaDashboard** task board, signed
+  in with WilsoonID (see [docs/cloud-sign-in.md](docs/cloud-sign-in.md#wilsoonid-and-javadashboard)).
 - **Due dates with an optional time.** Timed tasks count down ("in 2h 15m") once they're within a day, and
   MultiTasker reminds you with a Windows notification beforehand (15 minutes by default) and when they're due.
 - Mark tasks **in progress**; they appear in an always-on-top widget pinned to the top-right of your screen, with how
@@ -36,7 +37,7 @@ Early development. What works today:
 
 Planned:
 
-- More task providers (your own dashboard, Notion, Todoist...).
+- More task providers (Notion, Todoist...).
 - A Chrome extension to link browser tabs (AI chats, docs) to tasks, and reopen them on any of your devices.
 - Deliverables: back up finished files to your storage backend, with revisions.
 - Project shortcuts: detect a project's type and offer start/stop dev server, build and run.
@@ -57,6 +58,7 @@ MultiTasker has two plug-in points, both defined in [`crates/core`](crates/core)
 ```
 crates/core              domain model, TaskProvider and StateStore traits
 crates/provider-sqlite   local SQLite provider + state store
+crates/provider-javadashboard   tasks from JavaDashboard's API
 crates/activity          activity detection: window in front, file saves, matching them to tasks
 crates/sync              sync engine, sign-in, and storage backends (Google Drive, OneDrive, folder, S3)
 src-tauri                desktop app: commands, windows, tray

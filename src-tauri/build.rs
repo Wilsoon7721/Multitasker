@@ -1,8 +1,12 @@
 use std::path::Path;
 
 /// The app registrations official builds sign in with; see docs/cloud-sign-in.md.
-const CLIENT_VARS: [&str; 3] =
-    ["MULTITASKER_GOOGLE_CLIENT_ID", "MULTITASKER_GOOGLE_CLIENT_SECRET", "MULTITASKER_MICROSOFT_CLIENT_ID"];
+const CLIENT_VARS: [&str; 4] = [
+    "MULTITASKER_GOOGLE_CLIENT_ID",
+    "MULTITASKER_GOOGLE_CLIENT_SECRET",
+    "MULTITASKER_MICROSOFT_CLIENT_ID",
+    "WILSOON_CLIENT_ID",
+];
 
 fn main() {
     let env_file = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".env");

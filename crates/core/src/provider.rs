@@ -11,6 +11,11 @@ pub trait TaskProvider: Send + Sync {
     /// A human-readable name for settings and the UI.
     fn display_name(&self) -> &str;
 
+    /// Whether tasks can have a due time as well as a date.
+    fn supports_due_time(&self) -> bool {
+        true
+    }
+
     async fn list(&self) -> Result<Vec<Task>>;
 
     async fn create(&self, task: NewTask) -> Result<Task>;

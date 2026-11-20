@@ -86,6 +86,26 @@ those links to be live and on a domain you've proved you own, which you do by ve
    the domain, set **Branding & properties → Publisher domain** to `wilsoon.dev`; Microsoft checks it by fetching a
    small JSON file it gives you from `https://wilsoon.dev/.well-known/microsoft-identity-association.json`.
 
+## WilsoonID and JavaDashboard
+
+MultiTasker can take its tasks from JavaDashboard instead of keeping them itself (**Settings → Task list**). It signs
+in to WilsoonID and asks for tokens for JavaDashboard's API as a resource (RFC 8707), so it gets only what JavaDashboard
+delegates to it.
+
+WilsoonID matches redirect URIs exactly and keeps localhost callbacks out of production clients, so MultiTasker uses an
+app link instead (RFC 8252 §7.1): the browser hands the sign-in to `dev.wilsoon.multitasker:/oauth2redirect`, which
+Windows passes to MultiTasker. Installers register that link; development builds register it for the current user
+when they start.
+
+1. In WilsoonID's admin, create an application **MultiTasker**: a **public** client (no secret), redirect URI
+   `dev.wilsoon.multitasker:/oauth2redirect`, scopes `openid profile email offline_access`. Marking it first-party
+   skips the consent screen.
+2. On **JavaDashboard**'s application page (its resource address is `https://dash.wilsoon.dev`), delegate to
+   MultiTasker the keys `calendar.read`, `events.write`, `events.modify` and `events.delete`.
+3. Put its `cl_…` client ID in `.env` as `WILSOON_CLIENT_ID`.
+
+JavaDashboard tasks have a due date but no due time, so MultiTasker hides the time field while it's the source.
+
 ## Using the IDs
 
 **While developing**, copy [`.env.example`](../.env.example) to `.env` at the repository root and fill it in:
@@ -94,6 +114,7 @@ those links to be live and on a domain you've proved you own, which you do by ve
 MULTITASKER_GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
 MULTITASKER_GOOGLE_CLIENT_SECRET=GOCSPX-...
 MULTITASKER_MICROSOFT_CLIENT_ID=00000000-0000-0000-0000-000000000000
+WILSOON_CLIENT_ID=cl_...
 ```
 
 `.env` is git-ignored. The values are read when the app is compiled, so builds made this way sign in with no setup;

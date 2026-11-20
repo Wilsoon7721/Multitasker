@@ -12,7 +12,7 @@ use multitasker_sync::TokenSource;
 use crate::cloud::{self, BuiltInClients, Cloud};
 use crate::settings::SyncTarget;
 use crate::syncing::{self, FolderSuggestion, SyncStatus};
-use crate::{device::Device, settings, windows, AppState};
+use crate::{device::Device, settings, wilsoon, windows, AppState};
 
 /// Tells every window the task list changed, so the widget and main window stay in step.
 pub const TASKS_CHANGED: &str = "tasks-changed";
@@ -34,8 +34,9 @@ pub async fn list_tasks(state: State<'_, AppState>) -> CmdResult<Vec<TaskView>> 
 
 /// Every task with MultiTasker's own state joined in.
 pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
-    let tasks = state.provider.list().await.map_err(err)?;
-    let key = state.provider.key();
+    let provider = state.provider();
+    let tasks = provider.list().await.map_err(err)?;
+    let key = provider.key();
 
     // Earliest start per task across every device: "in progress since" means since anyone picked it up.
     let mut started = HashMap::new();
@@ -64,7 +65,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
 
 #[tauri::command]
 pub async fn create_task(app: AppHandle, state: State<'_, AppState>, task: NewTask) -> CmdResult<Task> {
-    let task = state.provider.create(task).await.map_err(err)?;
+    let task = state.provider().create(task).await.map_err(err)?;
     changed(&app);
     Ok(task)
 }
@@ -76,10 +77,11 @@ pub async fn update_task(
     id: TaskId,
     changes: TaskChanges,
 ) -> CmdResult<Task> {
-    let task = state.provider.update(&id, changes).await.map_err(err)?;
+    let provider = state.provider();
+    let task = provider.update(&id, changes).await.map_err(err)?;
     // A finished task is no longer in progress anywhere.
     if task.status == TaskStatus::Done {
-        state.state.stop(state.provider.key(), &id).await.map_err(err)?;
+        state.state.stop(provider.key(), &id).await.map_err(err)?;
     }
     changed(&app);
     Ok(task)
@@ -87,8 +89,9 @@ pub async fn update_task(
 
 #[tauri::command]
 pub async fn delete_task(app: AppHandle, state: State<'_, AppState>, id: TaskId) -> CmdResult<()> {
-    state.provider.delete(&id).await.map_err(err)?;
-    state.state.forget(state.provider.key(), &id).await.map_err(err)?;
+    let provider = state.provider();
+    provider.delete(&id).await.map_err(err)?;
+    state.state.forget(provider.key(), &id).await.map_err(err)?;
     changed(&app);
     Ok(())
 }
@@ -100,15 +103,16 @@ pub async fn set_in_progress(
     id: TaskId,
     in_progress: bool,
 ) -> CmdResult<()> {
-    let key = state.provider.key();
+    let provider = state.provider();
+    let key = provider.key();
     if in_progress {
         // Starting a finished task reopens it.
-        let task = state.provider.list().await.map_err(err)?.into_iter().find(|t| t.id == id);
+        let task = provider.list().await.map_err(err)?.into_iter().find(|t| t.id == id);
         match task {
             None => return Err(format!("task {id} was not found")),
             Some(t) if t.status == TaskStatus::Done => {
                 let reopen = TaskChanges { status: Some(TaskStatus::Todo), ..Default::default() };
-                state.provider.update(&id, reopen).await.map_err(err)?;
+                provider.update(&id, reopen).await.map_err(err)?;
             }
             Some(_) => {}
         }
@@ -128,8 +132,9 @@ pub async fn add_attachments(
     id: TaskId,
     items: Vec<NewAttachment>,
 ) -> CmdResult<Vec<Attachment>> {
-    let key = state.provider.key();
-    if !state.provider.list().await.map_err(err)?.iter().any(|t| t.id == id) {
+    let provider = state.provider();
+    let key = provider.key();
+    if !provider.list().await.map_err(err)?.iter().any(|t| t.id == id) {
         return Err(format!("task {id} was not found"));
     }
 
@@ -409,5 +414,73 @@ pub fn reminder_settings(state: State<'_, AppState>) -> settings::Reminders {
 #[tauri::command]
 pub fn set_reminder_settings(state: State<'_, AppState>, reminders: settings::Reminders) -> CmdResult<()> {
     settings::update(&state.data_dir, |s| s.reminders = reminders).map_err(err)?;
+    Ok(())
+}
+
+/// Where tasks come from, for Settings.
+#[derive(serde::Serialize)]
+pub struct TaskSourceView {
+    #[serde(flatten)]
+    source: settings::TaskSource,
+    /// The provider in use (it can fall back to local tasks if a sign-in is gone).
+    active: String,
+    supports_due_time: bool,
+    /// Whether this build can sign in to WilsoonID.
+    wilsoon_available: bool,
+}
+
+#[tauri::command]
+pub fn task_source(state: State<'_, AppState>) -> TaskSourceView {
+    let provider = state.provider();
+    TaskSourceView {
+        source: settings::load(&state.data_dir).tasks,
+        active: provider.key().to_owned(),
+        supports_due_time: provider.supports_due_time(),
+        wilsoon_available: wilsoon::is_available(),
+    }
+}
+
+/// Signs in to WilsoonID in the browser and takes tasks from JavaDashboard from now on.
+#[tauri::command]
+pub async fn sign_in_wilsoon(app: AppHandle, state: State<'_, AppState>) -> CmdResult<String> {
+    let oauth = wilsoon::app()?;
+    let pending = multitasker_sync::begin(&oauth, wilsoon::REDIRECT_URI);
+    let receiver = state.wilsoon_sign_in.wait_for(&pending);
+    let cancel = state.sign_in_cancel.clone();
+    cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+    app.opener().open_url(&pending.url, None::<&str>).map_err(err)?;
+
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        let url = wilsoon::receive(&receiver, || cancel.load(std::sync::atomic::Ordering::Relaxed))?;
+        let code = multitasker_sync::code_from_redirect(&url, pending.state()).map_err(err)?;
+        let signed_in = multitasker_sync::finish(&oauth, &pending, &code).map_err(err)?;
+        wilsoon::save_refresh_token(&signed_in.refresh_token)?;
+        let tokens = wilsoon::tokens()?;
+        let provider = wilsoon::provider(tokens);
+        // One request now, so a missing delegation shows up here rather than as an empty task list.
+        tauri::async_runtime::block_on(multitasker_core::TaskProvider::list(&provider)).map_err(err)?;
+        Ok::<_, String>((signed_in.account, provider))
+    })
+    .await
+    .map_err(err)?;
+    state.wilsoon_sign_in.clear();
+    let (account, provider) = outcome?;
+
+    let account = account.unwrap_or_else(|| "your WilsoonID account".into());
+    settings::update(&state.data_dir, |s| s.tasks = settings::TaskSource::JavaDashboard { account: account.clone() })
+        .map_err(err)?;
+    state.set_provider(Arc::new(provider));
+    let _ = windows::show_main(&app);
+    changed(&app);
+    Ok(account)
+}
+
+/// Goes back to the tasks kept on this computer and forgets the WilsoonID sign-in.
+#[tauri::command]
+pub fn use_local_tasks(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    settings::update(&state.data_dir, |s| s.tasks = settings::TaskSource::Local).map_err(err)?;
+    wilsoon::sign_out();
+    state.set_provider(state.db.clone());
+    changed(&app);
     Ok(())
 }

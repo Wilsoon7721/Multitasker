@@ -154,6 +154,7 @@ function syncTo(target: SyncTarget) {
 }
 
 let signInCancelled = false;
+let taskSource: { kind: 'local' } | { kind: 'java_dashboard'; account: string } = { kind: 'local' };
 let reminders = { minutes_before: 15 as number | null, at_due_time: true };
 
 function activityChanged() {
@@ -272,6 +273,30 @@ mockIPC(
 
       case 'set_sync_target':
         syncTo(a.target as SyncTarget);
+        return null;
+
+      case 'task_source':
+        return {
+          ...taskSource,
+          active: taskSource.kind === 'local' ? 'sqlite' : 'javadashboard',
+          supports_due_time: taskSource.kind === 'local',
+          wilsoon_available: true,
+        };
+
+      case 'sign_in_wilsoon':
+        signInCancelled = false;
+        return new Promise((resolve, reject) =>
+          setTimeout(() => {
+            if (signInCancelled) return reject('Sign-in was cancelled.');
+            taskSource = { kind: 'java_dashboard', account: 'you@wilsoon.dev' };
+            changed();
+            resolve('you@wilsoon.dev');
+          }, 1500),
+        );
+
+      case 'use_local_tasks':
+        taskSource = { kind: 'local' };
+        changed();
         return null;
 
       case 'reminder_settings':

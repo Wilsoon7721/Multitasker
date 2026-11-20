@@ -5,6 +5,7 @@ import type { Run } from '../useTasks';
 import { AttachButtons, KindIcon, pendingLabel } from './Attachments';
 import { AutoTextarea } from './AutoTextarea';
 import { toDueAt } from '../time';
+import { useTaskSource } from '../useTaskSource';
 
 /** The add-task card; files dropped on it wait in `pending` until the task is created. */
 export function Composer(props: {
@@ -19,6 +20,7 @@ export function Composer(props: {
   const [category, setCategory] = useState('');
   const [due, setDue] = useState('');
   const [dueTime, setDueTime] = useState('');
+  const timesAllowed = useTaskSource()?.supports_due_time ?? true;
   const [focused, setFocused] = useState(false);
   const form = useRef<HTMLFormElement>(null);
 
@@ -42,7 +44,7 @@ export function Composer(props: {
         description: description || null,
         category: category || null,
         due_date: due || null,
-        due_at: due && dueTime ? toDueAt(due, dueTime) : null,
+        due_at: due && dueTime && timesAllowed ? toDueAt(due, dueTime) : null,
       });
       reset();
       if (pending.length) await api.addAttachments(task.id, pending);
@@ -142,7 +144,7 @@ export function Composer(props: {
               <CalendarDays size={14} />
               <input type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Due date" />
             </label>
-            {due && (
+            {due && timesAllowed && (
               <label className={`field-pill${dueTime ? '' : ' empty'}`} title="Due time (optional)">
                 <Clock size={14} />
                 <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} aria-label="Due time" />

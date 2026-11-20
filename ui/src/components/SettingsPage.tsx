@@ -1,5 +1,8 @@
 import {
   BellRing,
+  HardDrive,
+  LayoutDashboard,
+  ListChecks,
   CircleAlert,
   Cloud,
   CloudOff,
@@ -18,10 +21,12 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import {
   api,
   onActivity,
+  onTasksChanged,
   onSyncStatus,
   type CloudService,
   type FolderSuggestion,
   type ReminderSettings,
+  type TaskSourceView,
   type S3Settings,
   type SyncStatus,
   type SyncTarget,
@@ -38,6 +43,7 @@ const ago = (iso: string, now: number) => {
 export function SettingsPage({ run }: { run: Run }) {
   return (
     <>
+      <TaskListSection run={run} />
       <SyncSection run={run} />
       <RemindersSection run={run} />
       <DetectionSection run={run} />
@@ -326,6 +332,94 @@ function Choice(props: { selected: boolean; onSelect: () => void; icon: ReactNod
       </span>
       <span className="choice-dot" aria-hidden />
     </button>
+  );
+}
+
+function TaskListSection({ run }: { run: Run }) {
+  const [source, setSource] = useState<TaskSourceView | null>(null);
+  const [choosing, setChoosing] = useState<'local' | 'java_dashboard' | null>(null);
+  const [waiting, setWaiting] = useState(false);
+
+  useEffect(() => {
+    const load = () => void api.taskSource().then(setSource, () => {});
+    load();
+    return onTasksChanged(load);
+  }, []);
+
+  const mode = choosing ?? source?.kind ?? 'local';
+  const signedInAs = source?.kind === 'java_dashboard' && source.active !== 'sqlite' ? source.account : null;
+  const signedOut = source?.kind === 'java_dashboard' && source.active === 'sqlite';
+
+  const signIn = async () => {
+    setWaiting(true);
+    const ok = await run(api.signInWilsoon);
+    setWaiting(false);
+    if (ok) setChoosing(null);
+  };
+
+  return (
+    <Section icon={<ListChecks size={18} />} title="Task list">
+      <div className="choice-list" role="radiogroup" aria-label="Where tasks come from">
+        <Choice
+          selected={mode === 'local'}
+          onSelect={() => {
+            setChoosing(null);
+            if (source?.kind !== 'local') void run(api.useLocalTasks);
+          }}
+          icon={<HardDrive size={18} />}
+          title="On this computer"
+          detail="Kept by MultiTasker; sync carries them to your other computers."
+        />
+        <Choice
+          selected={mode === 'java_dashboard'}
+          onSelect={() => setChoosing('java_dashboard')}
+          icon={<LayoutDashboard size={18} />}
+          title="JavaDashboard"
+          detail="Your dashboard's task board, signed in with WilsoonID."
+        />
+      </div>
+
+      {mode === 'java_dashboard' && (
+        <div className="cloud-setup">
+          {signedOut && !waiting && (
+            <p className="settings-warning">
+              <CircleAlert size={15} /> The WilsoonID sign-in has gone, so tasks on this computer are showing for now.
+              Sign in again to get JavaDashboard's back.
+            </p>
+          )}
+          {signedInAs && !waiting ? (
+            <div className="folder-current">
+              <LayoutDashboard size={16} className="kind kind-link" />
+              <span className="folder-path account">Signed in as {signedInAs}</span>
+              <button className="secondary" onClick={() => void run(api.useLocalTasks)}>
+                <LogOut size={14} /> Use tasks on this computer
+              </button>
+            </div>
+          ) : waiting ? (
+            <div className="sign-in-wait">
+              <LoaderCircle size={16} className="spin" />
+              <span>Finish signing in to WilsoonID in your browser…</span>
+              <button className="secondary" onClick={() => void api.cancelSignIn()}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              className="primary sign-in"
+              onClick={() => void signIn()}
+              disabled={!source?.wilsoon_available}
+              title={source?.wilsoon_available ? undefined : 'This build has no WilsoonID registration.'}
+            >
+              <LogIn size={15} /> Sign in with WilsoonID
+            </button>
+          )}
+          <p className="settings-hint">
+            Tasks on this computer stay saved while you use JavaDashboard. JavaDashboard tasks have due dates but no
+            times, so they don't get timed reminders.
+          </p>
+        </div>
+      )}
+    </Section>
   );
 }
 

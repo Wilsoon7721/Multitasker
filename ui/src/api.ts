@@ -108,6 +108,16 @@ export interface SyncStatus {
   client: { name: string; running: boolean | null } | null;
 }
 
+export type TaskSource = { kind: 'local' } | { kind: 'java_dashboard'; account: string };
+
+export type TaskSourceView = TaskSource & {
+  /** The provider actually in use; local if a JavaDashboard sign-in has gone. */
+  active: string;
+  supports_due_time: boolean;
+  /** Whether this build can sign in to WilsoonID. */
+  wilsoon_available: boolean;
+};
+
 export interface ReminderSettings {
   /** How long before a due time to remind; null for no early reminder. */
   minutes_before: number | null;
@@ -162,6 +172,10 @@ export const api = {
     invoke<string>('sign_in_cloud', { service, clientId: clientId || null, clientSecret: clientSecret || null }),
   cancelSignIn: () => invoke('cancel_sign_in'),
   /** Which services this build can sign in to without a client ID being entered. */
+  taskSource: () => invoke<TaskSourceView>('task_source'),
+  /** Opens the browser to sign in to WilsoonID; resolves with the account once JavaDashboard answers. */
+  signInWilsoon: () => invoke<string>('sign_in_wilsoon'),
+  useLocalTasks: () => invoke('use_local_tasks'),
   reminderSettings: () => invoke<ReminderSettings>('reminder_settings'),
   setReminderSettings: (reminders: ReminderSettings) => invoke('set_reminder_settings', { reminders }),
   builtInClients: () => invoke<Record<CloudService, boolean>>('built_in_clients'),
