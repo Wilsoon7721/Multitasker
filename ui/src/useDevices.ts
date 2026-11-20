@@ -28,5 +28,5 @@ export function useDevices() {
     return names.length ? names.join(', ') : null;
   };
 
-  return { thisId, startedOn };
+  return { thisId, startedOn, nameOf };
 }

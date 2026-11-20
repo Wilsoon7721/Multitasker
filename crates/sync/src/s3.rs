@@ -1,4 +1,3 @@
-use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
@@ -35,12 +34,7 @@ impl S3Remote {
         if config.bucket.trim().is_empty() || config.access_key_id.trim().is_empty() || secret.is_empty() {
             return Err(RemoteError::Io("The bucket, access key and secret are all needed.".into()));
         }
-        let agent = ureq::Agent::config_builder()
-            .http_status_as_error(false)
-            .timeout_global(Some(Duration::from_secs(30)))
-            .build()
-            .into();
-        Ok(Self { config, secret, agent })
+        Ok(Self { config, secret, agent: crate::http_agent() })
     }
 
     /// The bucket folder MultiTasker's keys live under, with a trailing slash, or empty for the bucket root.

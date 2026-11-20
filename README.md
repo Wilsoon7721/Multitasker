@@ -22,7 +22,8 @@ Early development. What works today:
   window or the widget). Files stay where they are; MultiTasker keeps a reference and opens them in their default app.
 - **Hand in** finished work: MultiTasker keeps a read-only copy of each file as it was, so you can open or save that
   version later even after the original changes. Handing the same file in again keeps every version. Finishing a task
-  that has files attached offers to hand them in. Copies are kept on this computer, in MultiTasker's data folder.
+  that has files attached offers to hand them in. Copies are kept in MultiTasker's data folder, and Sync carries them
+  (up to 100 MB each) to your other computers.
 - Expand the widget to see your to-do list and drag a task up into In Progress to start it.
 - **Activity detection** (Windows): link apps, files and folders to a task, and MultiTasker notices when you're on
   them — from the window in front and from file saves. Tasks in progress show as *active now*; if you're clearly
@@ -43,7 +44,7 @@ Early development. What works today:
 Planned:
 
 - A Chrome extension to link browser tabs (AI chats, docs) to tasks, and reopen them on any of your devices.
-- Deliverables on your other computers too, through sync or the online task list.
+- Handed-in work kept in the online task list (Todoist, Notion) while one is in use.
 - Project shortcuts: detect a project's type and offer start/stop dev server, build and run.
 
 ## Architecture

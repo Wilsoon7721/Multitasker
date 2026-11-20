@@ -71,10 +71,40 @@ function task(title: string, extra: Partial<TaskView> = {}): TaskView {
 let widgetVisible = true;
 const DEVICE = { id: 'preview-device', name: 'PREVIEW-PC' };
 
-let deliverables: Deliverable[] = [];
+// Work handed in on the laptop, still on its way here, to show how that looks.
+let deliverables: Deliverable[] = [
+  {
+    id: 'gs-notes',
+    task_id: tasks[0].id,
+    name: 'GS module notes.pdf',
+    revisions: [
+      {
+        id: 'gs-notes-2',
+        number: 2,
+        size: 2_400_000,
+        sha256: 'b'.repeat(64),
+        source: 'C:\\Users\\you\\GS module notes.pdf',
+        device: 'laptop',
+        added_at: iso(10 * 60_000),
+        available: false,
+      },
+      {
+        id: 'gs-notes-1',
+        number: 1,
+        size: 2_100_000,
+        sha256: 'a'.repeat(64),
+        source: 'C:\\Users\\you\\GS module notes.pdf',
+        device: 'preview-device',
+        added_at: iso(26 * 60 * 60_000),
+        available: true,
+      },
+    ],
+  },
+];
 const countDeliverables = () => {
   for (const t of tasks) t.deliverables = deliverables.filter((d) => d.task_id === t.id).length;
 };
+countDeliverables();
 
 const KINDS: [RegExp, AttachmentKind][] = [
   [/\.pdf$/i, 'pdf'],
@@ -301,6 +331,7 @@ mockIPC(
             source: path,
             device: DEVICE.id,
             added_at: new Date().toISOString(),
+            available: true,
           });
           return { name, number, unchanged: false };
         });

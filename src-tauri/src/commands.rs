@@ -127,7 +127,7 @@ pub async fn delete_task(app: AppHandle, state: State<'_, AppState>, id: TaskId)
     if provider.extras().is_none() {
         state.state.forget(provider.key(), &id).await.map_err(err)?;
     }
-    state.deliverables.forget_task(provider.key(), &id).map_err(err)?;
+    state.deliverables.forget_task(provider.key(), &id, Some(&state.device.id)).map_err(err)?;
     changed(&app);
     Ok(())
 }
@@ -299,6 +299,8 @@ pub async fn hand_in(
     .await
     .map_err(err)?;
     if !handed_in.is_empty() {
+        // Hand-ins aren't task changes, so sync is woken for them directly.
+        state.syncer.wake_soon();
         changed(&app);
     }
     if problems.is_empty() {
@@ -327,7 +329,8 @@ pub async fn export_deliverable(state: State<'_, AppState>, revision_id: String,
 
 #[tauri::command]
 pub fn remove_deliverable(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    state.deliverables.remove(&id).map_err(err)?;
+    state.deliverables.remove(&id, Some(&state.device.id)).map_err(err)?;
+    state.syncer.wake_soon();
     changed(&app);
     Ok(())
 }

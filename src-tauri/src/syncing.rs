@@ -114,7 +114,7 @@ impl Syncer {
     }
 
     /// Asks for a sync round shortly, after local edits have had a moment to settle.
-    fn wake_soon(&self) {
+    pub fn wake_soon(&self) {
         self.raise(Wake::Soon);
     }
 
@@ -226,9 +226,15 @@ fn run_once(app: &AppHandle, syncer: &Syncer) {
         s.client = client.clone();
     });
     let me = DeviceInfo { id: state.device.id.clone(), name: state.device.name.clone(), last_seen: Utc::now() };
-    match sync_once(&state.db, remote.as_ref(), &me) {
-        Ok(report) => {
-            if report.applied > 0 {
+    // Tasks first, then handed-in work, whose copies can take longer to move.
+    let outcome = sync_once(&state.db, remote.as_ref(), &me).map_err(|e| e.to_string()).and_then(|report| {
+        multitasker_deliverables::sync(&state.deliverables, remote.as_ref(), &me.id)
+            .map(|work| (report, work))
+            .map_err(|e| e.to_string())
+    });
+    match outcome {
+        Ok((report, work)) => {
+            if report.applied > 0 || work.learned > 0 || work.downloaded > 0 {
                 let _ = app.emit(TASKS_CHANGED, ());
             }
             let devices = report
@@ -240,7 +246,7 @@ fn run_once(app: &AppHandle, syncer: &Syncer) {
                 *s = SyncStatus { target, state: "ok", last_synced: Some(Utc::now()), error: None, devices, client }
             });
         }
-        Err(e) => fail(app, syncer, target, e.to_string()),
+        Err(e) => fail(app, syncer, target, e),
     }
 }
 

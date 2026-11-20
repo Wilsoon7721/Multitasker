@@ -38,6 +38,8 @@ export interface Revision {
   source: string;
   device: string | null;
   added_at: string;
+  /** The copy is on this computer; one handed in elsewhere arrives with sync. */
+  available: boolean;
 }
 
 export interface Deliverable {

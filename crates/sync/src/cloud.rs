@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use crate::oauth::{encode, TokenSource};
 use crate::remote::{Remote, RemoteError};
@@ -13,12 +12,7 @@ struct Authed {
 
 impl Authed {
     fn new(tokens: Arc<TokenSource>) -> Self {
-        let agent = ureq::Agent::config_builder()
-            .http_status_as_error(false)
-            .timeout_global(Some(Duration::from_secs(60)))
-            .build()
-            .into();
-        Self { tokens, agent }
+        Self { tokens, agent: crate::http_agent() }
     }
 
     fn send(&self, method: &str, url: &str, body: Option<(&str, &[u8])>) -> Result<(u16, Vec<u8>), RemoteError> {

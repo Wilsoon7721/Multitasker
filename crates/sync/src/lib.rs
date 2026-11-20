@@ -74,6 +74,18 @@ pub fn sync_once(db: &SqliteDb, remote: &dyn Remote, me: &DeviceInfo) -> Result<
     Ok(report)
 }
 
+/// An HTTP client for sync storage: quick to give up on a dead connection, patient with big files on a slow one.
+pub(crate) fn http_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_connect(Some(std::time::Duration::from_secs(20)))
+        .timeout_recv_response(Some(std::time::Duration::from_secs(60)))
+        .timeout_send_body(Some(std::time::Duration::from_secs(15 * 60)))
+        .timeout_recv_body(Some(std::time::Duration::from_secs(15 * 60)))
+        .build()
+        .into()
+}
+
 fn segment_key(device: &str, segment: u64) -> String {
     format!("{ROOT}/ops/{device}/{segment:010}.json")
 }

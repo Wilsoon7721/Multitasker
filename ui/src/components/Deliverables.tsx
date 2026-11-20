@@ -3,6 +3,7 @@ import { ChevronDown, Download, ExternalLink, PackageCheck, PackagePlus, Trash2 
 import { useEffect, useState } from 'react';
 import { api, onTasksChanged, type Attachment, type Deliverable, type Revision, type TaskView } from '../api';
 import { elapsed } from '../time';
+import { useDevices } from '../useDevices';
 import type { Run } from '../useTasks';
 import { KindIcon, pendingLabel } from './Attachments';
 
@@ -16,6 +17,16 @@ export function sizeText(bytes: number): string {
     unit += 1;
   }
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+/** Copies bigger than this stay on the computer they were handed in on. */
+const MAX_SYNC_SIZE = 100 * 1024 * 1024;
+
+/** Why a version can't be opened here yet, if it can't. */
+function notHere(r: Revision, nameOf: (id: string) => string): string | null {
+  if (r.available) return null;
+  const where = r.device ? nameOf(r.device) : 'another computer';
+  return r.size > MAX_SYNC_SIZE ? `Over 100 MB, so it stays on ${where}` : `Arriving from ${where} with the next sync`;
 }
 
 /** The task's files on this computer that could be handed in. */
@@ -42,6 +53,7 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
   const [items, setItems] = useState<Deliverable[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
+  const { nameOf } = useDevices();
 
   useEffect(() => {
     const load = () => void api.listDeliverables(task.id).then(setItems, () => setItems([]));
@@ -75,13 +87,15 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
           {items.map((d) => {
             const [latest, ...older] = d.revisions;
             const expanded = open === d.id;
+            const away = notHere(latest, nameOf);
             return (
               <li key={d.id} className="deliverable">
                 <div className="attachment">
                   <button
                     className="attachment-open"
                     onClick={() => void run(() => api.openDeliverable(latest.id))}
-                    title={`Open a read-only copy of ${d.name}`}
+                    title={away ?? `Open a read-only copy of ${d.name}`}
+                    disabled={!!away}
                   >
                     <KindIcon kind={pendingLabel({ type: 'path', path: d.name }).kind} size={18} />
                     <span className="attachment-text">
@@ -94,6 +108,7 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
                         {' · '}
                         {sizeText(latest.size)}
                       </span>
+                      {away && <span className="attachment-where">{away}</span>}
                     </span>
                   </button>
                   {confirm === d.id ? (
@@ -114,7 +129,8 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
                         className="icon-btn"
                         onClick={() => void saveCopy(run, d.name, latest)}
                         aria-label={`Save a copy of ${d.name}`}
-                        title="Save a copy"
+                        title={away ?? 'Save a copy'}
+                        disabled={!!away}
                       >
                         <Download size={15} />
                       </button>
@@ -146,12 +162,14 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
                       <li key={r.id} className="revision">
                         <span className="revision-text">
                           Version {r.number} · {new Date(r.added_at).toLocaleString()} · {sizeText(r.size)}
+                          {notHere(r, nameOf) && ` · ${notHere(r, nameOf)}`}
                         </span>
                         <button
                           className="icon-btn"
                           onClick={() => void run(() => api.openDeliverable(r.id))}
                           aria-label={`Open version ${r.number}`}
-                          title="Open a read-only copy"
+                          title={notHere(r, nameOf) ?? 'Open a read-only copy'}
+                          disabled={!r.available}
                         >
                           <ExternalLink size={14} />
                         </button>
@@ -159,7 +177,8 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
                           className="icon-btn"
                           onClick={() => void saveCopy(run, d.name, r)}
                           aria-label={`Save a copy of version ${r.number}`}
-                          title="Save a copy"
+                          title={notHere(r, nameOf) ?? 'Save a copy'}
+                          disabled={!r.available}
                         >
                           <Download size={14} />
                         </button>

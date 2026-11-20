@@ -7,8 +7,11 @@ repository.workspace = true
 
 [dependencies]
 multitasker-core.workspace = true
+multitasker-sync.workspace = true
 chrono.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
 rusqlite.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 sha2 = "0.11"
