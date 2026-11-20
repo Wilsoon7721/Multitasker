@@ -1,4 +1,4 @@
-import { CalendarDays, Pause, Play, Timer } from 'lucide-react';
+import { CalendarDays, Paperclip, Pause, Play, Timer } from 'lucide-react';
 import { api, type TaskView } from '../api';
 import { dueLabel, elapsed } from '../time';
 import type { Run } from '../useTasks';
@@ -12,6 +12,7 @@ export function TaskCard(props: { task: TaskView; run: Run; now: number; selecte
   return (
     <li
       className={`card${done ? ' done' : ''}${task.in_progress ? ' active' : ''}${selected ? ' selected' : ''}`}
+      data-drop={`task:${task.id}`}
       onClick={onOpen}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && onOpen()}
       tabIndex={0}
@@ -36,6 +37,11 @@ export function TaskCard(props: { task: TaskView; run: Run; now: number; selecte
           {due && (
             <span className={`meta${due.late ? ' late' : ''}`}>
               <CalendarDays size={12} /> {due.text}
+            </span>
+          )}
+          {task.attachments.length > 0 && (
+            <span className="meta" title={task.attachments.map((a) => a.name).join('\n')}>
+              <Paperclip size={12} /> {task.attachments.length}
             </span>
           )}
         </span>

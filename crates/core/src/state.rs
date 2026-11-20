@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{Result, TaskId};
+use crate::{Attachment, Result, TaskId};
 
 /// Identifies one computer running MultiTasker, so state can say where something is happening.
 pub type DeviceId = String;
@@ -27,4 +27,16 @@ pub trait StateStore: Send + Sync {
 
     /// Clears a task's in-progress mark on every device.
     async fn stop(&self, provider: &str, task_id: &TaskId) -> Result<()>;
+
+    /// Every attachment, oldest first.
+    async fn attachments(&self) -> Result<Vec<Attachment>>;
+
+    /// Stores an attachment, or returns the task's existing one with the same target.
+    async fn add_attachment(&self, attachment: Attachment) -> Result<Attachment>;
+
+    /// Removes one attachment. The file or link it points at is left alone.
+    async fn remove_attachment(&self, id: &str) -> Result<()>;
+
+    /// Drops everything kept about a task, for when the task itself is deleted.
+    async fn forget(&self, provider: &str, task_id: &TaskId) -> Result<()>;
 }

@@ -1,12 +1,13 @@
 import { CircleCheckBig, Hash, Inbox, ListTodo, Timer, X } from 'lucide-react';
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import type { TaskView } from './api';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { api, type NewAttachment, type TaskView } from './api';
 import { Composer } from './components/Composer';
 import { TaskCard } from './components/TaskCard';
 import { TaskDetail } from './components/TaskDetail';
 import { TitleBar } from './components/TitleBar';
 import { useNow } from './time';
 import { useTasks } from './useTasks';
+import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 
 type View = 'open' | 'active' | 'todo' | 'done';
 
@@ -31,7 +32,19 @@ export function App() {
   const [view, setView] = useState<View>('open');
   const [category, setCategory] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pending, setPending] = useState<NewAttachment[]>([]);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
   const now = useNow();
+
+  useEffect(() => void api.thisDevice().then((d) => setDeviceId(d.id), () => {}), []);
+
+  // Files dropped on a task attach to it; on the composer they wait for the new task.
+  useFileDrop((paths, zone) => {
+    const target = taskZone(zone) ?? (zone ? null : selectedId);
+    if (zone === 'composer') setPending((cur) => [...cur, ...pathItems(paths)]);
+    else if (target) void run(() => api.addAttachments(target, pathItems(paths)));
+    else setError('Drop files onto a task, or onto "Add a task" to start a new one with them.');
+  });
 
   const all = tasks ?? [];
   const categories = useMemo(
@@ -104,7 +117,7 @@ export function App() {
               </div>
             )}
 
-            {view !== 'done' && <Composer run={run} categories={categories} />}
+            {view !== 'done' && <Composer run={run} categories={categories} pending={pending} setPending={setPending} />}
 
             {tasks === null ? null : shown.length === 0 ? (
               <p className="empty">{category ? `Nothing in ${category} here.` : current.empty}</p>
@@ -122,7 +135,7 @@ export function App() {
         {selected && (
           <>
             <div className="scrim" onClick={close} />
-            <TaskDetail task={selected} run={run} now={now} onClose={close} />
+            <TaskDetail task={selected} run={run} now={now} deviceId={deviceId} onClose={close} />
           </>
         )}
       </div>

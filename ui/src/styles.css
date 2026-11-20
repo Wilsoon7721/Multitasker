@@ -701,6 +701,11 @@ button.danger {
   overflow-y: auto;
 }
 
+/* The panel scrolls; its sections never squash to fit. */
+.detail-body > * {
+  flex-shrink: 0;
+}
+
 .detail-title {
   width: 100%;
   font-size: 18px;
@@ -816,26 +821,44 @@ html.widget body {
 }
 
 .widget-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 4px 6px 6px;
+  padding: 6px 8px 6px 6px;
   border-radius: var(--radius-sm);
+  --row-bg: var(--surface-hover);
 }
 
 .widget-item:hover {
-  background: var(--surface-hover);
+  background: var(--row-bg);
 }
 
-.widget-item .icon-btn {
+/* Actions float over the end of the row on hover, so titles get the full width the rest of the time. */
+.widget-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px 0 24px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: linear-gradient(90deg, transparent, var(--row-bg) 22px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.widget-item:hover .widget-actions,
+.widget-item:focus-within .widget-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.widget-actions .icon-btn {
   width: 28px;
   height: 28px;
-  opacity: 0;
-}
-
-.widget-item:hover .icon-btn,
-.widget-item:focus-within .icon-btn {
-  opacity: 1;
 }
 
 .widget-task {
@@ -870,4 +893,220 @@ html.widget body {
   padding: 8px 14px;
   color: var(--danger);
   font-size: 12px;
+}
+
+/* ───────────── Attachments ───────────── */
+
+.attach-buttons {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.ghost-pill {
+  height: 30px;
+  padding: 0 10px;
+  gap: 5px;
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.ghost-pill:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+
+.link-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 2px 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--text-3);
+}
+
+.link-field input {
+  width: 200px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.link-field .icon-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+}
+
+.pending {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0 14px 10px 42px;
+  list-style: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  height: 26px;
+  padding: 0 4px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  font-size: 12.5px;
+}
+
+.chip span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chip button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  flex: none;
+  color: var(--text-3);
+}
+
+.chip button:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+
+.kind {
+  flex: none;
+  color: var(--text-3);
+}
+
+.kind-pdf {
+  color: #e5484d;
+}
+
+.kind-document {
+  color: #3e7bfa;
+}
+
+.kind-image {
+  color: #30a46c;
+}
+
+.kind-video {
+  color: #8e4ec6;
+}
+
+.kind-folder {
+  color: #e0a32a;
+}
+
+.kind-link {
+  color: var(--accent);
+}
+
+.attachments {
+  margin-top: 6px;
+  border-radius: var(--radius);
+}
+
+.attachments-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.attachments-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.attachments-empty {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+.attachment-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.attachment:hover {
+  background: var(--surface-hover);
+}
+
+.attachment-open {
+  flex: 1;
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+  font-weight: 400;
+  text-align: left;
+}
+
+.attachment-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.attachment-name,
+.attachment-where {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.attachment-name {
+  font-weight: 500;
+}
+
+.attachment-where {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.attachment .icon-btn {
+  opacity: 0;
+}
+
+.attachment:hover .icon-btn,
+.attachment:focus-within .icon-btn {
+  opacity: 1;
+}
+
+/* Files dragged over a drop target. */
+.drop-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-soft) !important;
 }

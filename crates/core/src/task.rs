@@ -81,6 +81,7 @@ pub struct TaskView {
     pub task: Task,
     pub in_progress: bool,
     pub started_at: Option<DateTime<Utc>>,
+    pub attachments: Vec<crate::Attachment>,
 }
 
 /// Trims text and turns blank into `None`.

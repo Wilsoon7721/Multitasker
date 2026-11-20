@@ -1,8 +1,10 @@
+mod attachment;
 mod error;
 mod provider;
 mod state;
 mod task;
 
+pub use attachment::{normalize_url, Attachment, AttachmentKind, NewAttachment};
 pub use error::{Error, Result};
 pub use provider::TaskProvider;
 pub use state::{DeviceId, FocusEntry, StateStore};

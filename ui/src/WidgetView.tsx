@@ -1,9 +1,10 @@
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
-import { CalendarDays, Maximize2, Pause, X } from 'lucide-react';
+import { CalendarDays, Maximize2, Paperclip, Pause, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { api } from './api';
 import { CheckButton } from './components/CheckButton';
 import { dueLabel, elapsed, useNow } from './time';
+import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 import { useTasks } from './useTasks';
 
 const WIDTH = 320;
@@ -13,7 +14,7 @@ const MARGIN = 8;
 
 /** The always-on-top card: the tasks in progress, so none of them get forgotten. */
 export function WidgetView() {
-  const { tasks, error, run } = useTasks();
+  const { tasks, error, setError, run } = useTasks();
   const now = useNow();
   const card = useRef<HTMLDivElement>(null);
   const active = (tasks ?? []).filter((t) => t.in_progress);
@@ -28,6 +29,19 @@ export function WidgetView() {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // Drop a file you're working on onto its task; with only one task going, anywhere on the card will do.
+  useFileDrop((paths, zone) => {
+    const target = taskZone(zone) ?? (active.length === 1 ? active[0].id : null);
+    if (target) void run(() => api.addAttachments(target, pathItems(paths)));
+    else setError('Drop onto the task the files belong to.');
+  });
+
+  const attach = (id: string) =>
+    void run(async () => {
+      const paths = await api.pickFiles();
+      if (paths.length) await api.addAttachments(id, pathItems(paths));
+    });
 
   return (
     <div className="widget-card" ref={card}>
@@ -61,7 +75,7 @@ export function WidgetView() {
           {active.map((t) => {
             const due = t.due_date ? dueLabel(t.due_date) : null;
             return (
-              <li key={t.id} className="widget-item">
+              <li key={t.id} className="widget-item" data-drop={`task:${t.id}`}>
                 <CheckButton done={false} title={t.title} onToggle={() => void run(() => api.update(t.id, { status: 'done' }))} />
                 <div className="widget-task">
                   <span className="widget-title" title={t.title}>
@@ -75,16 +89,26 @@ export function WidgetView() {
                         <CalendarDays size={11} /> {due.text}
                       </span>
                     )}
+                    {t.attachments.length > 0 && (
+                      <span className="meta" title={t.attachments.map((a) => a.name).join('\n')}>
+                        <Paperclip size={11} /> {t.attachments.length}
+                      </span>
+                    )}
                   </span>
                 </div>
-                <button
-                  className="icon-btn"
-                  onClick={() => void run(() => api.setInProgress(t.id, false))}
-                  aria-label={`Pause "${t.title}"`}
-                  title="Pause"
-                >
-                  <Pause size={14} />
-                </button>
+                <div className="widget-actions">
+                  <button className="icon-btn" onClick={() => attach(t.id)} aria-label={`Attach files to "${t.title}"`} title="Attach files">
+                    <Paperclip size={14} />
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => void run(() => api.setInProgress(t.id, false))}
+                    aria-label={`Pause "${t.title}"`}
+                    title="Pause"
+                  >
+                    <Pause size={14} />
+                  </button>
+                </div>
               </li>
             );
           })}

@@ -13,6 +13,8 @@ Early development. What works today:
 - A task list (add, edit, complete, delete) stored locally in SQLite.
 - Mark tasks **in progress**; they appear in an always-on-top widget pinned to the top-right of your screen, with how
   long they've been going.
+- Attach files, folders and links to tasks (by picker, or by dragging files from the desktop onto a task in the main
+  window or the widget). Files stay where they are; MultiTasker keeps a reference and opens them in their default app.
 - Tray icon: closing the main window keeps MultiTasker running with the widget.
 
 Planned:
@@ -21,7 +23,7 @@ Planned:
 - More task providers (your own dashboard, Notion, Todoist...).
 - Detecting which task you're working on from file saves and the active window.
 - A Chrome extension to link browser tabs (AI chats, docs) to tasks, and reopen them on any of your devices.
-- Deliverables: attach finished files to a task, with revisions.
+- Deliverables: back up finished files to your storage backend, with revisions.
 - Project shortcuts: detect a project's type and offer start/stop dev server, build and run.
 
 ## Architecture

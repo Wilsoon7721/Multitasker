@@ -1,6 +1,6 @@
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks';
 import { emit } from '@tauri-apps/api/event';
-import type { NewTask, TaskChanges, TaskView } from '../api';
+import type { Attachment, AttachmentKind, NewAttachment, NewTask, TaskChanges, TaskView } from '../api';
 
 // Stands in for the Rust backend with in-memory sample tasks when the UI runs in a plain browser (see README).
 
@@ -39,13 +39,41 @@ function task(title: string, extra: Partial<TaskView> = {}): TaskView {
     completed_at: null,
     in_progress: false,
     started_at: null,
+    attachments: [],
     ...extra,
   };
 }
 
 let widgetVisible = true;
+const DEVICE = { id: 'preview-device', name: 'PREVIEW-PC' };
 
-const blank =(v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
+const KINDS: [RegExp, AttachmentKind][] = [
+  [/\.pdf$/i, 'pdf'],
+  [/\.(docx?|odt|rtf|txt|md|xlsx?|csv|pptx?)$/i, 'document'],
+  [/\.(png|jpe?g|gif|webp|bmp|svg|heic)$/i, 'image'],
+  [/\.(mp4|mov|mkv|avi|webm|wmv)$/i, 'video'],
+];
+
+function attachment(taskId: string, item: NewAttachment): Attachment {
+  const base = { id: crypto.randomUUID(), task_id: taskId, added_at: new Date().toISOString() };
+  if (item.type === 'link') {
+    const url = /^https?:\/\//i.test(item.url) ? item.url : `https://${item.url}`;
+    if (!/^https?:\/\/[^\s/]+\.[^\s/]+/i.test(url)) throw `'${item.url}' doesn't look like a web link.`;
+    const host = url.replace(/^https?:\/\/(www\.)?/i, '').split(/[/?#]/)[0];
+    return { ...base, kind: 'link', name: item.name?.trim() || host, target: url, device: null };
+  }
+  const name = item.path.split(/[\\/]/).filter(Boolean).pop() ?? item.path;
+  const kind = KINDS.find(([re]) => re.test(name))?.[1] ?? (name.includes('.') ? 'file' : 'folder');
+  return { ...base, kind, name, target: item.path, device: DEVICE.id };
+}
+
+tasks[0].attachments = [
+  attachment(tasks[0].id, { type: 'path', path: 'C:\\Users\\you\\Documents\\School\\GS module notes.pdf' }),
+  attachment(tasks[0].id, { type: 'path', path: 'C:\\Users\\you\\Documents\\School\\Lecture slides' }),
+  attachment(tasks[0].id, { type: 'link', url: 'https://claude.ai/chat/0f3c', name: 'Claude: GS module summary' }),
+];
+
+const blank = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
 
 function find(id: string): TaskView {
   const t = tasks.find((t) => t.id === id);
@@ -116,6 +144,30 @@ mockIPC(
         changed();
         return null;
       }
+
+      case 'add_attachments': {
+        const t = find(a.id as string);
+        const added = (a.items as NewAttachment[]).map((item) => attachment(t.id, item));
+        for (const att of added) if (!t.attachments.some((x) => x.target === att.target)) t.attachments.push(att);
+        changed();
+        return added;
+      }
+
+      case 'remove_attachment':
+        for (const t of tasks) t.attachments = t.attachments.filter((x) => x.id !== a.id);
+        changed();
+        return null;
+
+      case 'open_attachment':
+      case 'reveal_attachment':
+        console.info(`[preview] ${cmd}`, a.id);
+        return null;
+
+      case 'this_device':
+        return DEVICE;
+
+      case 'plugin:dialog|open':
+        return ['C:\\Users\\you\\Documents\\School\\Revision plan.docx', 'C:\\Users\\you\\Pictures\\diagram.png'];
 
       case 'open_main':
         console.info('[preview] open_main');

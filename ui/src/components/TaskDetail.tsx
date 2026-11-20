@@ -3,12 +3,13 @@ import { useEffect, useState } from 'react';
 import { api, type TaskChanges, type TaskView } from '../api';
 import { elapsed } from '../time';
 import type { Run } from '../useTasks';
+import { AttachmentList } from './Attachments';
 import { AutoTextarea } from './AutoTextarea';
 import { CheckButton } from './CheckButton';
 
 /** The side panel for one task. Fields save as you leave them. */
-export function TaskDetail(props: { task: TaskView; run: Run; now: number; onClose: () => void }) {
-  const { task, run, now, onClose } = props;
+export function TaskDetail(props: { task: TaskView; run: Run; now: number; deviceId: string | null; onClose: () => void }) {
+  const { task, run, now, deviceId, onClose } = props;
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
   const [category, setCategory] = useState(task.category ?? '');
@@ -33,7 +34,7 @@ export function TaskDetail(props: { task: TaskView; run: Run; now: number; onClo
   const save = (changes: TaskChanges) => void run(() => api.update(task.id, changes));
 
   return (
-    <aside className="detail" aria-label="Task details">
+    <aside className="detail" aria-label="Task details" data-drop={`task:${task.id}`}>
       <header className="detail-header">
         <CheckButton done={done} title={task.title} onToggle={() => save({ status: done ? 'todo' : 'done' })} />
         <span className="detail-status">
@@ -89,6 +90,8 @@ export function TaskDetail(props: { task: TaskView; run: Run; now: number; onClo
             />
           </label>
         </div>
+
+        <AttachmentList taskId={task.id} attachments={task.attachments} run={run} deviceId={deviceId} />
       </div>
 
       <footer className="detail-footer">

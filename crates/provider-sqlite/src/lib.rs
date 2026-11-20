@@ -4,8 +4,8 @@ use std::sync::{Mutex, MutexGuard};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use multitasker_core::{
-    check_category, check_title, clean, Error, FocusEntry, NewTask, Result, StateStore, Task, TaskChanges, TaskId,
-    TaskProvider, TaskStatus,
+    check_category, check_title, clean, Attachment, AttachmentKind, Error, FocusEntry, NewTask, Result, StateStore, Task,
+    TaskChanges, TaskId, TaskProvider, TaskStatus,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
@@ -31,6 +31,18 @@ const MIGRATIONS: &[&str] = &[r#"
         device      TEXT NOT NULL,
         started_at  TEXT NOT NULL,
         PRIMARY KEY (provider, task_id, device)
+    );
+"#, r#"
+    CREATE TABLE attachments (
+        id        TEXT PRIMARY KEY,
+        provider  TEXT NOT NULL,
+        task_id   TEXT NOT NULL,
+        kind      TEXT NOT NULL,
+        name      TEXT NOT NULL,
+        target    TEXT NOT NULL,
+        device    TEXT,
+        added_at  TEXT NOT NULL,
+        UNIQUE (provider, task_id, target)
     );
 "#];
 
@@ -220,6 +232,66 @@ impl StateStore for SqliteDb {
             .map_err(storage)?;
         Ok(())
     }
+
+    async fn attachments(&self) -> Result<Vec<Attachment>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT * FROM attachments ORDER BY added_at").map_err(storage)?;
+        let rows = stmt.query_map([], attachment_from_row).map_err(storage)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(storage)
+    }
+
+    async fn add_attachment(&self, a: Attachment) -> Result<Attachment> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT OR IGNORE INTO attachments (id, provider, task_id, kind, name, target, device, added_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![a.id, a.provider, a.task_id, a.kind.as_str(), a.name, a.target, a.device, a.added_at],
+        )
+        .map_err(storage)?;
+
+        // Either the row just added, or the one already there for the same target.
+        conn.query_row(
+            "SELECT * FROM attachments WHERE provider = ?1 AND task_id = ?2 AND target = ?3",
+            params![a.provider, a.task_id, a.target],
+            attachment_from_row,
+        )
+        .map_err(storage)
+    }
+
+    async fn remove_attachment(&self, id: &str) -> Result<()> {
+        let removed = self.conn().execute("DELETE FROM attachments WHERE id = ?1", [id]).map_err(storage)?;
+        if removed == 0 {
+            return Err(Error::NotFound(id.to_owned()));
+        }
+        Ok(())
+    }
+
+    async fn forget(&self, provider: &str, task_id: &TaskId) -> Result<()> {
+        let conn = self.conn();
+        for table in ["focus", "attachments"] {
+            conn.execute(&format!("DELETE FROM {table} WHERE provider = ?1 AND task_id = ?2"), params![provider, task_id])
+                .map_err(storage)?;
+        }
+        Ok(())
+    }
+}
+
+fn attachment_from_row(row: &Row) -> rusqlite::Result<Attachment> {
+    let kind: String = row.get("kind")?;
+    Ok(Attachment {
+        id: row.get("id")?,
+        provider: row.get("provider")?,
+        task_id: row.get("task_id")?,
+        kind: AttachmentKind::parse(&kind).map_err(conversion)?,
+        name: row.get("name")?,
+        target: row.get("target")?,
+        device: row.get("device")?,
+        added_at: row.get("added_at")?,
+    })
+}
+
+fn conversion(e: Error) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
 }
 
 fn task_from_row(row: &Row) -> rusqlite::Result<Task> {
@@ -230,9 +302,7 @@ fn task_from_row(row: &Row) -> rusqlite::Result<Task> {
         description: row.get("description")?,
         category: row.get("category")?,
         due_date: row.get::<_, Option<NaiveDate>>("due_date")?,
-        status: TaskStatus::parse(&status).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-        })?,
+        status: TaskStatus::parse(&status).map_err(conversion)?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
         completed_at: row.get("completed_at")?,
@@ -293,6 +363,33 @@ mod tests {
         assert_eq!(db.focus().await.unwrap().len(), 2);
 
         db.stop(PROVIDER_KEY, &id).await.unwrap();
+        assert!(db.focus().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn attachments_dedupe_by_target_and_are_forgotten_with_the_task() {
+        use multitasker_core::NewAttachment;
+
+        let db = SqliteDb::open_in_memory().unwrap();
+        let (task, device) = ("t1".to_string(), "pc-1".to_string());
+        let link = |url: &str| {
+            Attachment::new(PROVIDER_KEY, &task, &device, NewAttachment::Link { url: url.into(), name: None }).unwrap()
+        };
+
+        let first = db.add_attachment(link("https://claude.ai/chat/1")).await.unwrap();
+        let again = db.add_attachment(link("https://claude.ai/chat/1")).await.unwrap();
+        assert_eq!(first.id, again.id);
+
+        let other = db.add_attachment(link("example.com")).await.unwrap();
+        assert_eq!(other.kind, AttachmentKind::Link);
+        assert_eq!(db.attachments().await.unwrap().len(), 2);
+
+        db.remove_attachment(&other.id).await.unwrap();
+        assert!(matches!(db.remove_attachment(&other.id).await, Err(Error::NotFound(_))));
+
+        db.start(PROVIDER_KEY, &task, &device).await.unwrap();
+        db.forget(PROVIDER_KEY, &task).await.unwrap();
+        assert!(db.attachments().await.unwrap().is_empty());
         assert!(db.focus().await.unwrap().is_empty());
     }
 

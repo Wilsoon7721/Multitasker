@@ -18,6 +18,8 @@ pub struct AppState {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -44,6 +46,11 @@ pub fn run() {
             commands::update_task,
             commands::delete_task,
             commands::set_in_progress,
+            commands::add_attachments,
+            commands::remove_attachment,
+            commands::open_attachment,
+            commands::reveal_attachment,
+            commands::this_device,
             commands::open_main,
             commands::widget_visible,
             commands::set_widget_visible,
