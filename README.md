@@ -10,8 +10,8 @@ of sight.
 
 Early development. What works today:
 
-- A task list (add, edit, complete, delete) stored locally in SQLite, or your **JavaDashboard** task board, signed
-  in with WilsoonID (see [docs/cloud-sign-in.md](docs/cloud-sign-in.md#wilsoonid-and-javadashboard)).
+- A task list (add, edit, complete, delete) stored locally in SQLite. Builds made with a WilsoonID registration can
+  use a **JavaDashboard** task board instead (see [docs/cloud-sign-in.md](docs/cloud-sign-in.md#wilsoonid-and-javadashboard)).
 - **Due dates with an optional time.** Timed tasks count down ("in 2h 15m") once they're within a day, and
   MultiTasker reminds you with a Windows notification beforehand (15 minutes by default) and when they're due.
 - Mark tasks **in progress**; they appear in an always-on-top widget pinned to the top-right of your screen, with how

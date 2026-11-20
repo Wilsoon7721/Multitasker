@@ -346,7 +346,10 @@ function TaskListSection({ run }: { run: Run }) {
     return onTasksChanged(load);
   }, []);
 
-  const mode = choosing ?? source?.kind ?? 'local';
+  // Only builds made with a WilsoonID registration can use JavaDashboard; with nothing else to pick, say nothing.
+  if (!source || (!source.wilsoon_available && source.kind === 'local')) return null;
+
+  const mode = choosing ?? source.kind;
   const signedInAs = source?.kind === 'java_dashboard' && source.active !== 'sqlite' ? source.account : null;
   const signedOut = source?.kind === 'java_dashboard' && source.active === 'sqlite';
 

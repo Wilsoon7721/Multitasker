@@ -106,6 +106,9 @@ when they start.
 
 JavaDashboard tasks have a due date but no due time, so MultiTasker hides the time field while it's the source.
 
+The **Task list** section only appears in builds made with `WILSOON_CLIENT_ID`. Public release builds leave it unset,
+so people who can't use JavaDashboard never see the option.
+
 ## Using the IDs
 
 **While developing**, copy [`.env.example`](../.env.example) to `.env` at the repository root and fill it in:
