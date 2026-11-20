@@ -69,6 +69,8 @@ export interface Device {
 }
 
 export interface S3Settings {
+  /** Which service the form was filled in for, e.g. "aws", "r2", "supabase", "custom". */
+  provider?: string | null;
   /** Empty for AWS; the service URL for Cloudflare R2, MinIO and others. */
   endpoint: string | null;
   region: string;

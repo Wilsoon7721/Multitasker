@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn reads_sync_targets_in_the_shape_the_ui_sends() {
         let s3: SyncTarget = serde_json::from_str(
-            r#"{"kind":"s3","endpoint":null,"region":"auto","bucket":"b","prefix":null,"access_key_id":"k"}"#,
+            r#"{"kind":"s3","provider":"r2","endpoint":null,"region":"auto","bucket":"b","prefix":null,"access_key_id":"k"}"#,
         )
         .unwrap();
         assert!(matches!(s3, SyncTarget::S3(ref c) if c.bucket == "b" && c.region == "auto"));

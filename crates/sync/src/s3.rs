@@ -10,6 +10,9 @@ use crate::remote::{Remote, RemoteError};
 /// Where an S3-compatible bucket is; the secret key is kept separately in the system's credential store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct S3Config {
+    /// Which service the settings page set this up for ("aws", "r2", "supabase"...), so it can show the right fields.
+    #[serde(default)]
+    pub provider: Option<String>,
     /// Leave empty for AWS; set for Cloudflare R2, MinIO and other S3-compatible services.
     #[serde(default)]
     pub endpoint: Option<String>,
@@ -52,8 +55,10 @@ impl S3Remote {
     fn locate(&self, object_key: &str) -> (String, String, String) {
         match self.config.endpoint.as_deref().map(|e| e.trim_end_matches('/')).filter(|e| !e.is_empty()) {
             Some(endpoint) => {
-                let (scheme, host) = endpoint.split_once("://").unwrap_or(("https", endpoint));
-                (format!("{scheme}://{host}"), host.to_owned(), format!("/{}/{object_key}", self.config.bucket))
+                // Some services serve S3 under a path (Supabase: /storage/v1/s3), which goes before the bucket.
+                let (scheme, rest) = endpoint.split_once("://").unwrap_or(("https", endpoint));
+                let (host, base) = rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((rest, String::new()));
+                (format!("{scheme}://{host}"), host.to_owned(), format!("{base}/{}/{object_key}", self.config.bucket))
             }
             None => {
                 let host = format!("{}.s3.{}.amazonaws.com", self.config.bucket, self.config.region);
@@ -247,6 +252,7 @@ mod tests {
 
     fn example_config() -> S3Config {
         S3Config {
+            provider: None,
             endpoint: None,
             region: "us-east-1".into(),
             bucket: "examplebucket".into(),
@@ -303,6 +309,20 @@ mod tests {
         .unwrap();
         assert_eq!(r2.folder(), "");
         assert_eq!(r2.locate("k.json").2, "/examplebucket/k.json");
+
+        let supabase = S3Remote::new(
+            S3Config {
+                endpoint: Some("https://abcd.storage.supabase.co/storage/v1/s3".into()),
+                region: "ap-southeast-1".into(),
+                ..example_config()
+            },
+            "s".into(),
+        )
+        .unwrap();
+        assert_eq!(
+            supabase.locate("k.json"),
+            ("https://abcd.storage.supabase.co".into(), "abcd.storage.supabase.co".into(), "/storage/v1/s3/examplebucket/k.json".into())
+        );
         assert_eq!(r2.locate("k.json").1, "acct.r2.cloudflarestorage.com");
     }
 

@@ -1759,3 +1759,24 @@ button.primary.small {
   flex: none;
   margin-top: 2px;
 }
+
+.field select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+}
+
+.field select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.endpoint-preview {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}

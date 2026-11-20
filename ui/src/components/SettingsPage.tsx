@@ -20,6 +20,7 @@ import {
   type SyncStatus,
   type SyncTarget,
 } from '../api';
+import { guessProvider, providerById, S3_PROVIDERS } from '../s3Providers';
 import { elapsed, useNow } from '../time';
 import type { Run } from '../useTasks';
 
@@ -169,7 +170,7 @@ function SyncSection({ run }: { run: Run }) {
         </div>
       )}
 
-      {status && status.state !== 'off' && (
+      {status && status.state !== 'off' && mode === target.kind && (
         <>
           {status.client?.running === false && (
             <p className="settings-warning">
@@ -282,29 +283,52 @@ function DetectionSection({ run }: { run: Run }) {
   );
 }
 
-const EMPTY_S3: S3Settings = { endpoint: '', region: 'us-east-1', bucket: '', prefix: '', access_key_id: '' };
-
 function S3Form(props: { current: S3Settings | null; onSave: (s: S3Settings, secret: string) => Promise<boolean> }) {
   const { current, onSave } = props;
-  const [form, setForm] = useState<S3Settings>(() => ({ ...EMPTY_S3, ...current }));
+  const initial = guessProvider(current?.provider, current?.endpoint);
+  const [providerId, setProviderId] = useState(initial.id);
+  const provider = providerById(providerId);
+  const [param, setParam] = useState(
+    () => (current?.endpoint && initial.param?.pattern.exec(current.endpoint)?.[1]) || '',
+  );
+  const [endpoint, setEndpoint] = useState(current?.endpoint ?? '');
+  const [region, setRegion] = useState(current?.region ?? initial.region.initial);
+  const [bucket, setBucket] = useState(current?.bucket ?? '');
+  const [prefix, setPrefix] = useState(current?.prefix ?? '');
+  const [keyId, setKeyId] = useState(current?.access_key_id ?? '');
   const [secret, setSecret] = useState('');
   const [saving, setSaving] = useState(false);
-  const set = (key: keyof S3Settings) => (e: { target: { value: string } }) =>
-    setForm((f) => ({ ...f, [key]: e.target.value }));
-  const sameKey = current?.access_key_id === form.access_key_id && (current?.endpoint ?? '') === (form.endpoint ?? '');
-  const ready = form.bucket.trim() && form.region.trim() && form.access_key_id.trim() && (secret || sameKey);
+
+  const chooseProvider = (id: string) => {
+    const next = providerById(id);
+    setProviderId(id);
+    setParam('');
+    if (id !== 'custom') setEndpoint('');
+    setRegion(current?.provider === id ? current.region : next.region.initial);
+  };
+
+  const builtEndpoint =
+    provider.id === 'custom' ? endpoint.trim() || null : provider.endpoint(param.trim(), region.trim());
+  const sameKey = current?.access_key_id === keyId.trim() && (current?.endpoint ?? null) === builtEndpoint;
+  const ready =
+    bucket.trim() &&
+    region.trim() &&
+    keyId.trim() &&
+    (!provider.param || param.trim()) &&
+    (provider.id !== 'custom' || endpoint.trim()) &&
+    (secret || sameKey);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const clean = (v: string | null) => (v?.trim() ? v.trim() : null);
     await onSave(
       {
-        endpoint: clean(form.endpoint),
-        region: form.region.trim(),
-        bucket: form.bucket.trim(),
-        prefix: clean(form.prefix),
-        access_key_id: form.access_key_id.trim(),
+        provider: provider.id,
+        endpoint: builtEndpoint,
+        region: region.trim(),
+        bucket: bucket.trim(),
+        prefix: prefix.trim() || null,
+        access_key_id: keyId.trim(),
       },
       secret,
     );
@@ -315,30 +339,50 @@ function S3Form(props: { current: S3Settings | null; onSave: (s: S3Settings, sec
   return (
     <form className="s3-form" onSubmit={submit}>
       <label className="field wide">
-        <span>Endpoint</span>
-        <input
-          value={form.endpoint ?? ''}
-          onChange={set('endpoint')}
-          placeholder="Leave empty for AWS, e.g. https://ACCOUNT.r2.cloudflarestorage.com"
-        />
+        <span>Service</span>
+        <select value={providerId} onChange={(e) => chooseProvider(e.target.value)}>
+          {S3_PROVIDERS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
       </label>
-      <label className="field">
+      {provider.param && (
+        <label className="field wide">
+          <span>{provider.param.label}</span>
+          <input value={param} onChange={(e) => setParam(e.target.value)} placeholder={provider.param.placeholder} />
+        </label>
+      )}
+      {provider.id === 'custom' && (
+        <label className="field wide">
+          <span>Endpoint</span>
+          <input
+            value={endpoint}
+            onChange={(e) => setEndpoint(e.target.value)}
+            placeholder="e.g. http://nas.local:9000"
+          />
+        </label>
+      )}
+      <label className={`field${provider.region.fixed ? ' wide' : ''}`}>
         <span>Bucket</span>
-        <input value={form.bucket} onChange={set('bucket')} required />
+        <input value={bucket} onChange={(e) => setBucket(e.target.value)} required />
       </label>
-      <label className="field">
-        <span>Region</span>
-        <input value={form.region} onChange={set('region')} placeholder="us-east-1, or auto for R2" required />
-      </label>
+      {!provider.region.fixed && (
+        <label className="field">
+          <span>Region</span>
+          <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder={provider.region.placeholder} />
+        </label>
+      )}
       <label className="field wide">
         <span>Folder in bucket (optional)</span>
-        <input value={form.prefix ?? ''} onChange={set('prefix')} placeholder="e.g. multitasker-sync" />
+        <input value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="e.g. multitasker-sync" />
       </label>
       <label className="field">
         <span>Access key ID</span>
         <input
-          value={form.access_key_id}
-          onChange={set('access_key_id')}
+          value={keyId}
+          onChange={(e) => setKeyId(e.target.value)}
           autoComplete="off"
           spellCheck={false}
           required
@@ -355,9 +399,12 @@ function S3Form(props: { current: S3Settings | null; onSave: (s: S3Settings, sec
         />
       </label>
       <p className="settings-hint wide">
-        <KeyRound size={13} /> The secret is kept in Windows Credential Manager, never in MultiTasker's files. Use a key
-        that can only reach this bucket.
+        <KeyRound size={13} /> {provider.keys} The secret is kept in Windows Credential Manager, never in MultiTasker's
+        files.
       </p>
+      {builtEndpoint && provider.id !== 'custom' && (!provider.param || param.trim()) && region.trim() && (
+        <p className="settings-hint wide endpoint-preview">Endpoint: {builtEndpoint}</p>
+      )}
       <div className="wide">
         <button type="submit" className="primary" disabled={!ready || saving}>
           {saving && <LoaderCircle size={14} className="spin" />}

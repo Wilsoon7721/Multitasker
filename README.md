@@ -22,7 +22,8 @@ Early development. What works today:
   titles are only read in memory. Turn it off from the tray ("Detect what I'm working on").
 - **Sync between computers**, through a shared folder (point MultiTasker at a folder in OneDrive, Google Drive or
   Dropbox on each computer and their desktop apps carry it) or any S3-compatible bucket (AWS S3, Cloudflare R2,
-  MinIO; the secret key stays in Windows Credential Manager). Tasks, what's in progress and attachments merge across
+  Supabase Storage, Backblaze B2, Wasabi, DigitalOcean Spaces or MinIO; the secret key stays in Windows Credential
+  Manager). Tasks, what's in progress and attachments merge across
   computers; each computer only writes its own files, so nothing gets overwritten. Tasks show which computer
   they're in progress on, with "Continue here" to pick one up.
 - Tray icon: closing the main window keeps MultiTasker running with the widget.
