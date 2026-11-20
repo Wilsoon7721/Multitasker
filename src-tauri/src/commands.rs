@@ -289,8 +289,17 @@ pub async fn set_sync_target(state: State<'_, AppState>, target: SyncTarget, sec
 
     let previous = settings::load(&state.data_dir).sync;
     settings::update(&state.data_dir, |s| s.sync = target.clone()).map_err(err)?;
+    moved(&state, &previous, &target)?;
     forget_replaced(&previous, &target);
     state.syncer.wake();
+    Ok(())
+}
+
+/// A new place to sync (another service, account, folder or bucket) starts empty, so everything is uploaded again.
+fn moved(state: &AppState, previous: &SyncTarget, next: &SyncTarget) -> CmdResult<()> {
+    if previous != next {
+        state.db.reset_sync().map_err(err)?;
+    }
     Ok(())
 }
 
@@ -351,6 +360,7 @@ pub async fn sign_in_cloud(
     };
     let previous = settings::load(&state.data_dir).sync;
     settings::update(&state.data_dir, |s| s.sync = target.clone()).map_err(err)?;
+    moved(&state, &previous, &target)?;
     if Cloud::of(&previous).map(|(c, _)| c) != Some(cloud) {
         forget_replaced(&previous, &target);
     }

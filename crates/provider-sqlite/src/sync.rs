@@ -292,6 +292,16 @@ impl SqliteDb {
         Ok(())
     }
 
+    /// Forgets how far sync got, so a new location gets everything uploaded and every batch already there read.
+    pub fn reset_sync(&self) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        tx.execute("DELETE FROM sync_meta WHERE key IN (?1, ?2)", [DEVICE, SEGMENT]).map_err(storage)?;
+        tx.execute("DELETE FROM sync_outbox", []).map_err(storage)?;
+        tx.execute("DELETE FROM sync_cursors", []).map_err(storage)?;
+        tx.commit().map_err(storage)
+    }
+
     /// Changes waiting to be uploaded, oldest first, with their queue positions.
     pub fn pending_ops(&self, limit: usize) -> Result<Vec<(i64, Op)>> {
         let conn = self.conn();
@@ -498,6 +508,21 @@ mod tests {
         db.disable_sync().unwrap();
         assert!(db.pending_ops(10).unwrap().is_empty());
         assert_eq!(db.sync_device().unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn resetting_requeues_everything_for_a_new_location() {
+        let (a, b) = pair().await;
+        a.create(new("Already uploaded")).await.unwrap();
+        ship(&a, "pc-a", &b);
+        drain(&a);
+        assert_eq!((a.last_segment().unwrap(), b.cursor("pc-a").unwrap()), (1, 1));
+
+        a.reset_sync().unwrap();
+        b.reset_sync().unwrap();
+        assert_eq!((a.last_segment().unwrap(), b.cursor("pc-a").unwrap()), (0, 0));
+        a.enable_sync("pc-a").unwrap();
+        assert_eq!(a.pending_ops(10).unwrap().len(), 1, "the task goes up again to the new location");
     }
 
     #[tokio::test]
