@@ -12,6 +12,9 @@ works in Chrome, Edge and Brave.
 - **Activity detection**: while the browser is in front, the tab you're on counts like a linked file or app does. A
   linked page marks its task active, and a page under a linked address (say, another page of the same docs) suggests
   the task.
+- **Linking as you go**: stay on a page that isn't linked to any task for two minutes while a task is in progress on
+  this computer, and the widget offers to link it to that task. Saying no stops it offering that page again until
+  MultiTasker restarts.
 
 ## Setting it up
 
