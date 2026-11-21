@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use multitasker_core::{
     check_category, check_title, clean, Attachment, AttachmentKind, DeviceId, Error, ExtrasStore, NewTask, Result, Task,
-    TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus,
+    LeftOff, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -186,6 +186,19 @@ struct RemoteTask {
     started_on: Option<RemoteDevice>,
     #[serde(default)]
     links: Vec<RemoteLink>,
+    /// Missing from dashboards that don't keep time yet.
+    #[serde(default)]
+    worked_seconds: Option<i64>,
+    #[serde(default)]
+    left_off: Option<RemoteLeftOff>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RemoteLeftOff {
+    text: String,
+    at: DateTime<Utc>,
+    #[serde(default)]
+    device: Option<String>,
 }
 
 impl RemoteTask {
@@ -195,6 +208,12 @@ impl RemoteTask {
             started_on: self.started_on.as_ref().map(|d| d.id.clone()),
             started_on_name: self.started_on.as_ref().and_then(|d| d.name.clone()),
             attachments: self.links.iter().cloned().filter_map(|l| l.into_attachment(&self.id)).collect(),
+            worked_secs: self.worked_seconds.unwrap_or(0),
+            left_off: self.left_off.as_ref().map(|n| LeftOff {
+                text: n.text.clone(),
+                at: n.at,
+                device: n.device.clone().unwrap_or_default(),
+            }),
         }
     }
 }
@@ -293,7 +312,9 @@ impl ExtrasStore for JavaDashboard {
             Ok(inner
                 .remote()?
                 .iter()
-                .filter(|t| t.started_at.is_some() || !t.links.is_empty())
+                .filter(|t| {
+                    t.started_at.is_some() || !t.links.is_empty() || t.worked_seconds.unwrap_or(0) > 0 || t.left_off.is_some()
+                })
                 .map(|t| (t.id.clone(), t.extras()))
                 .collect())
         })
@@ -338,6 +359,36 @@ impl ExtrasStore for JavaDashboard {
             inner.send("DELETE", &format!("{}?id={id}", inner.links_url()), None).map(|_| ())
         })
         .await
+    }
+
+    async fn add_worked(&self, id: &TaskId, secs: i64) -> Result<()> {
+        let body = json!({ "id": id, "add_worked": secs });
+        self.call(move |inner| {
+            let response = inner.send("PATCH", &inner.url(), Some(&body))?;
+            inner.forget_cache();
+            kept_by_dashboard(&response, "worked_seconds")
+        })
+        .await
+    }
+
+    async fn set_left_off(&self, id: &TaskId, note: Option<LeftOff>) -> Result<()> {
+        let left_off = note.map(|n| json!({ "text": n.text, "device": n.device }));
+        let body = json!({ "id": id, "left_off": left_off });
+        self.call(move |inner| {
+            let response = inner.send("PATCH", &inner.url(), Some(&body))?;
+            inner.forget_cache();
+            kept_by_dashboard(&response, "left_off")
+        })
+        .await
+    }
+}
+
+/// A dashboard from before time and notes were kept takes the change without a word, so its reply is checked for the field.
+fn kept_by_dashboard(response: &serde_json::Value, field: &str) -> Result<()> {
+    if response.get("task").and_then(|t| t.get(field)).is_some() {
+        Ok(())
+    } else {
+        Err(Error::Invalid(format!("This JavaDashboard doesn't keep {field} yet.")))
     }
 }
 

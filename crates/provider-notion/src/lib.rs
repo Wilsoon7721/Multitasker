@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use chrono::{DateTime, Local, NaiveDate, SecondsFormat, Utc};
 use multitasker_core::{
-    check_category, check_title, clean, content_type, multipart_file, Attachment, AttachmentKind, DeviceId, Error,
+    check_category, check_title, clean, content_type, multipart_file, Attachment, AttachmentKind, DeviceId, Error, LeftOff,
     ExtrasStore, HandedInFile, NewTask, Result, Task, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus, WorkStore,
 };
 use serde_json::{json, Map, Value};
@@ -70,6 +70,9 @@ struct Columns {
     started: String,
     started_on: String,
     files: String,
+    /// Time spent, in minutes; a number column people can sum and sort in Notion too.
+    minutes: String,
+    left_off: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -352,6 +355,8 @@ fn plan_columns(properties: &Map<String, Value>) -> Result<(Columns, Map<String,
     let started = pick("date", &["Started"], "Started", false);
     let started_on = pick("rich_text", &["Started on"], "Started on", false);
     let files = pick("files", &["Attachments", "Files", "Files & media"], "Attachments", true);
+    let minutes = pick("number", &["Minutes spent"], "Minutes spent", false);
+    let left_off = pick("rich_text", &["Left off"], "Left off", false);
     let category = match find(properties, "select", &["Category", "Project", "Type", "Area"]) {
         Some(name) => Category { property: name.to_owned(), multi: false },
         None => match find(properties, "multi_select", &["Category", "Tags", "Project", "Area"]) {
@@ -362,7 +367,8 @@ fn plan_columns(properties: &Map<String, Value>) -> Result<(Columns, Map<String,
             }
         },
     };
-    Ok((Columns { title, done, due, category: Some(category), description, started, started_on, files }, missing))
+    let columns = Columns { title, done, due, category: Some(category), description, started, started_on, files, minutes, left_off };
+    Ok((columns, missing))
 }
 
 /// A Status property, with the option to set for each of its three groups.
@@ -477,8 +483,11 @@ impl Columns {
             .flatten()
             .filter_map(|f| file_attachment(&page.id, f, page.edited))
             .collect();
+        let worked_secs = self.worked_secs(page);
+        let left_off = clean(Some(plain(page.properties.get(&self.left_off).and_then(|p| p.get("rich_text")))))
+            .map(|text| LeftOff { text, at: page.edited, device: String::new() });
         if self.group(page) != Group::Doing {
-            return TaskExtras { attachments, ..Default::default() };
+            return TaskExtras { attachments, worked_secs, left_off, ..Default::default() };
         }
         let name = plain(page.properties.get(&self.started_on).and_then(|p| p.get("rich_text")));
         TaskExtras {
@@ -487,7 +496,14 @@ impl Columns {
             started_on: None,
             started_on_name: clean(Some(name)),
             attachments,
+            worked_secs,
+            left_off,
         }
+    }
+
+    fn worked_secs(&self, page: &Page) -> i64 {
+        let minutes = page.properties.get(&self.minutes).and_then(|p| p.get("number")).and_then(|n| n.as_f64()).unwrap_or(0.0);
+        (minutes * 60.0).round().max(0.0) as i64
     }
 
     /// Property values for a new task or an edit.
@@ -722,7 +738,7 @@ impl ExtrasStore for Notion {
                 .pages()?
                 .iter()
                 .map(|p| (p.id.clone(), columns.extras(p)))
-                .filter(|(_, e)| e.started_at.is_some() || !e.attachments.is_empty())
+                .filter(|(_, e)| e.started_at.is_some() || !e.attachments.is_empty() || e.worked_secs > 0 || e.left_off.is_some())
                 .collect())
         })
         .await
@@ -762,6 +778,32 @@ impl ExtrasStore for Notion {
                 properties.insert(key, value);
             }
             columns.clear_start(&mut properties);
+            inner.set(&id, properties).map(|_| ())
+        })
+        .await
+    }
+
+    async fn add_worked(&self, id: &TaskId, secs: i64) -> Result<()> {
+        let id = id.clone();
+        self.call(move |inner| {
+            let columns = inner.columns()?;
+            // Read fresh, so time another computer just added isn't overwritten.
+            let total = columns.worked_secs(&inner.page(&id)?) + secs;
+            let minutes = (total as f64 / 60.0 * 100.0).round() / 100.0;
+            let mut properties = Map::new();
+            properties.insert(columns.minutes.clone(), json!({ "number": minutes }));
+            inner.set(&id, properties).map(|_| ())
+        })
+        .await
+    }
+
+    async fn set_left_off(&self, id: &TaskId, note: Option<LeftOff>) -> Result<()> {
+        let id = id.clone();
+        self.call(move |inner| {
+            let columns = inner.columns()?;
+            let mut properties = Map::new();
+            let text = note.map(|n| n.text).unwrap_or_default();
+            properties.insert(columns.left_off.clone(), json!({ "rich_text": rich(&text) }));
             inner.set(&id, properties).map(|_| ())
         })
         .await
@@ -1044,7 +1086,7 @@ mod tests {
         assert!(matches!(&columns.done, Done::Status { doing, done, .. } if doing == "In progress" && done == "Done"));
         let mut added: Vec<&str> = missing.keys().map(String::as_str).collect();
         added.sort();
-        assert_eq!(added, ["Category", "Description", "Started", "Started on"]);
+        assert_eq!(added, ["Category", "Description", "Left off", "Minutes spent", "Started", "Started on"]);
     }
 
     #[test]
@@ -1177,6 +1219,20 @@ mod tests {
         assert!(extras.started_at.is_none(), "finishing it stopped it");
 
         notion.remove_attachment(&stored.id).await.unwrap();
+
+        // Time adds up across pauses, and the newest left-off note replaces the last.
+        notion.add_worked(&task.id, 90).await.unwrap();
+        notion.add_worked(&task.id, 30).await.unwrap();
+        let note = |text: &str| LeftOff { text: text.into(), at: Utc::now(), device: "pc-test".into() };
+        notion.set_left_off(&task.id, Some(note("Intro done"))).await.unwrap();
+        notion.set_left_off(&task.id, Some(note("Halfway through part 2"))).await.unwrap();
+        let extras = ExtrasStore::extras(&notion).await.unwrap().remove(&task.id).unwrap();
+        assert_eq!(extras.worked_secs, 120);
+        assert_eq!(extras.left_off.map(|n| n.text), Some("Halfway through part 2".into()));
+        notion.set_left_off(&task.id, None).await.unwrap();
+        let cleared = ExtrasStore::extras(&notion).await.unwrap().remove(&task.id).and_then(|e| e.left_off);
+        assert_eq!(cleared, None);
+
         notion.delete(&task.id).await.unwrap();
     }
 

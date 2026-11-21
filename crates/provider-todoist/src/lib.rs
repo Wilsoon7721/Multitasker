@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, SecondsFormat, TimeZone, Utc};
 use multitasker_core::{
-    check_category, check_title, clean, content_type, multipart_file, Attachment, AttachmentKind, DeviceId, Error,
+    check_category, check_title, LeftOff, clean, content_type, multipart_file, Attachment, AttachmentKind, DeviceId, Error,
     ExtrasStore, HandedInFile, NewTask, Result, Task, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus, WorkStore,
 };
 use serde::Deserialize;
@@ -383,6 +383,19 @@ enum Mark {
     Started { device: Option<String>, device_name: Option<String> },
     Attachment(Attachment),
     HandedIn(HandedInFile),
+    /// The task's time spent, in seconds, kept in one comment that's updated.
+    Time(i64),
+    LeftOff(LeftOff),
+}
+
+fn time_note(secs: i64) -> String {
+    let minutes = secs / 60;
+    let shown = if minutes < 60 { format!("{minutes}m") } else { format!("{}h {}m", minutes / 60, minutes % 60) };
+    format!("⏱ Time spent: {shown}\n\n{MARK} · time · {secs}")
+}
+
+fn left_off_note(note: &LeftOff) -> String {
+    format!("📝 Left off: {}\n\n{MARK} · left-off · {}", one_line(&note.text), note.device)
 }
 
 fn handed_in_note(file: &HandedInFile, device_name: &str) -> String {
@@ -435,6 +448,18 @@ fn parse_note(note: &Note) -> Option<Mark> {
         }));
     }
 
+    if parts[0] == "time" {
+        return Some(Mark::Time(parts.get(1)?.parse().ok()?));
+    }
+
+    if parts[0] == "left-off" {
+        return Some(Mark::LeftOff(LeftOff {
+            text: first.strip_prefix("📝 Left off: ")?.to_owned(),
+            at: note.posted_at,
+            device: parts.get(1).map(|d| d.to_string()).unwrap_or_default(),
+        }));
+    }
+
     if parts[0] == "started" {
         return Some(Mark::Started {
             device: parts.get(1).map(|d| d.to_string()),
@@ -469,6 +494,8 @@ fn parse_note(note: &Note) -> Option<Mark> {
 fn extras_of(item: &Item, notes: &[Note]) -> TaskExtras {
     let mut started: Option<(&Note, Option<String>, Option<String>)> = None;
     let mut attachments = Vec::new();
+    let mut worked_secs = 0;
+    let mut left_off: Option<LeftOff> = None;
     for note in notes.iter().filter(|n| n.item_id == item.id) {
         match parse_note(note) {
             Some(Mark::Started { device, device_name }) => {
@@ -477,6 +504,12 @@ fn extras_of(item: &Item, notes: &[Note]) -> TaskExtras {
                 }
             }
             Some(Mark::Attachment(a)) => attachments.push(a),
+            Some(Mark::Time(secs)) => worked_secs = worked_secs.max(secs),
+            Some(Mark::LeftOff(n)) => {
+                if left_off.as_ref().is_none_or(|l| n.at > l.at) {
+                    left_off = Some(n);
+                }
+            }
             Some(Mark::HandedIn(_)) | None => {}
         }
     }
@@ -484,13 +517,13 @@ fn extras_of(item: &Item, notes: &[Note]) -> TaskExtras {
 
     // The label decides, so adding or removing it in Todoist itself starts or stops the task.
     if !item.labels.iter().any(|l| l == IN_PROGRESS_LABEL) {
-        return TaskExtras { attachments, ..Default::default() };
+        return TaskExtras { attachments, worked_secs, left_off, ..Default::default() };
     }
     let (started_at, started_on, started_on_name) = match started {
         Some((note, device, name)) => (note.posted_at, device, name),
         None => (item.updated_at.unwrap_or(item.added_at), None, None),
     };
-    TaskExtras { started_at: Some(started_at), started_on, started_on_name, attachments }
+    TaskExtras { started_at: Some(started_at), started_on, started_on_name, attachments, worked_secs, left_off }
 }
 
 #[async_trait]
@@ -605,7 +638,7 @@ impl ExtrasStore for Todoist {
                 .active
                 .iter()
                 .map(|i| (i.id.clone(), extras_of(i, &s.notes)))
-                .filter(|(_, e)| e.started_at.is_some() || !e.attachments.is_empty())
+                .filter(|(_, e)| e.started_at.is_some() || !e.attachments.is_empty() || e.worked_secs > 0 || e.left_off.is_some())
                 .collect())
         })
         .await
@@ -664,6 +697,51 @@ impl ExtrasStore for Todoist {
         self.call(move |inner| {
             inner.forget_cache();
             inner.send("DELETE", &format!("/comments/{id}"), None).map(|_| ())
+        })
+        .await
+    }
+
+    async fn add_worked(&self, id: &TaskId, secs: i64) -> Result<()> {
+        let id = id.clone();
+        self.call(move |inner| {
+            // Read fresh, so time another computer just added isn't overwritten.
+            inner.forget_cache();
+            let snapshot = inner.snapshot()?;
+            let kept = snapshot.notes.iter().filter(|n| n.item_id == id).find_map(|n| match parse_note(n) {
+                Some(Mark::Time(total)) => Some((n.id.clone(), total)),
+                _ => None,
+            });
+            match kept {
+                Some((comment, total)) => {
+                    inner.send("POST", &format!("/comments/{comment}"), Some(&json!({ "content": time_note(total + secs) })))?
+                }
+                None => inner.send("POST", "/comments", Some(&json!({ "task_id": id, "content": time_note(secs) })))?,
+            };
+            inner.forget_cache();
+            Ok(())
+        })
+        .await
+    }
+
+    async fn set_left_off(&self, id: &TaskId, note: Option<LeftOff>) -> Result<()> {
+        let id = id.clone();
+        self.call(move |inner| {
+            let snapshot = inner.snapshot()?;
+            let old: Vec<String> = snapshot
+                .notes
+                .iter()
+                .filter(|n| n.item_id == id && matches!(parse_note(n), Some(Mark::LeftOff(_))))
+                .map(|n| n.id.clone())
+                .collect();
+            // A new comment rather than an edit, so its time says when the note was written.
+            if let Some(note) = &note {
+                inner.send("POST", "/comments", Some(&json!({ "task_id": id, "content": left_off_note(note) })))?;
+            }
+            for comment in old {
+                inner.send("DELETE", &format!("/comments/{comment}"), None)?;
+            }
+            inner.forget_cache();
+            Ok(())
         })
         .await
     }
@@ -812,6 +890,27 @@ mod tests {
     }
 
     #[test]
+    fn time_and_left_off_notes_round_trip_through_comments() {
+        let time = time_note(3 * 3600 + 20 * 60 + 5);
+        assert!(time.starts_with("⏱ Time spent: 3h 20m"));
+        assert_eq!(parse_note(&note(&time)), Some(Mark::Time(12005)));
+
+        let n = note(&left_off_note(&LeftOff { text: "Page 134,\nthe diagram".into(), at: Utc::now(), device: "pc-1".into() }));
+        match parse_note(&n) {
+            Some(Mark::LeftOff(back)) => assert_eq!((back.text.as_str(), back.device.as_str()), ("Page 134, the diagram", "pc-1")),
+            other => panic!("came back as {other:?}"),
+        }
+
+        let item: Item = serde_json::from_value(serde_json::json!({
+            "id": "t1", "project_id": "p1", "content": "Essay", "labels": [], "added_at": "2026-11-20T00:00:00Z", "checked": false
+        }))
+        .unwrap();
+        let extras = extras_of(&item, &[note(&time), n]);
+        assert_eq!(extras.worked_secs, 12005);
+        assert_eq!(extras.left_off.map(|l| l.text), Some("Page 134, the diagram".into()));
+    }
+
+    #[test]
     fn reads_started_marks_and_ignores_the_persons_own_comments() {
         assert_eq!(
             parse_note(&note(&started_note(&"pc-1".to_owned(), "LAPTOP"))),
@@ -930,6 +1029,20 @@ mod tests {
         assert!(extras.started_at.is_none(), "finishing it stopped it");
 
         todoist.remove_attachment(&stored.id).await.unwrap();
+
+        // Time adds up across pauses, and the newest left-off note replaces the last.
+        todoist.add_worked(&task.id, 90).await.unwrap();
+        todoist.add_worked(&task.id, 30).await.unwrap();
+        let note = |text: &str| LeftOff { text: text.into(), at: Utc::now(), device: "pc-test".into() };
+        todoist.set_left_off(&task.id, Some(note("Intro done"))).await.unwrap();
+        todoist.set_left_off(&task.id, Some(note("Halfway through part 2"))).await.unwrap();
+        let extras = ExtrasStore::extras(&todoist).await.unwrap().remove(&task.id).unwrap();
+        assert_eq!(extras.worked_secs, 120);
+        assert_eq!(extras.left_off.map(|n| n.text), Some("Halfway through part 2".into()));
+        todoist.set_left_off(&task.id, None).await.unwrap();
+        let cleared = ExtrasStore::extras(&todoist).await.unwrap().remove(&task.id).and_then(|e| e.left_off);
+        assert_eq!(cleared, None);
+
         todoist.delete(&task.id).await.unwrap();
         let inner = todoist.inner.clone();
         let project = inner.snapshot().unwrap().projects.into_iter().find(|p| p.name == "MultiTasker Test");

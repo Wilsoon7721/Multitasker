@@ -46,6 +46,9 @@ pub struct TaskExtras {
     pub started_on: Option<DeviceId>,
     pub started_on_name: Option<String>,
     pub attachments: Vec<Attachment>,
+    /// Seconds worked on it before the stretch in progress now, across computers.
+    pub worked_secs: i64,
+    pub left_off: Option<crate::LeftOff>,
 }
 
 /// A task list that holds in-progress marks and attachments itself, so they need no separate sync.
@@ -63,6 +66,12 @@ pub trait ExtrasStore: Send + Sync {
     async fn add_attachment(&self, attachment: Attachment) -> Result<Attachment>;
 
     async fn remove_attachment(&self, id: &str) -> Result<()>;
+
+    /// Adds a finished stretch of work to the task's time spent.
+    async fn add_worked(&self, id: &TaskId, secs: i64) -> Result<()>;
+
+    /// Sets or clears the task's where-I-left-off note.
+    async fn set_left_off(&self, id: &TaskId, note: Option<crate::LeftOff>) -> Result<()>;
 }
 
 /// A copy of handed-in work, as a task list that keeps it reports it.

@@ -61,8 +61,9 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
                     started_on_name: e.started_on_name,
                     attachments: e.attachments,
                     deliverables: handed_in.remove(&task.id).unwrap_or(0),
-                    worked_secs: worked.remove(&task.id).unwrap_or(0),
-                    left_off: left_off.remove(&task.id),
+                    // Time the list couldn't take, such as before a dashboard kept time, was kept here instead.
+                    worked_secs: e.worked_secs + worked.remove(&task.id).unwrap_or(0),
+                    left_off: e.left_off.or_else(|| left_off.remove(&task.id)),
                     task,
                 }
             })
@@ -210,7 +211,15 @@ async fn end_work(state: &AppState, id: &TaskId, ended_at: DateTime<Utc>) -> Cmd
             .map(|f| f.started_at),
         None => None,
     };
-    if let Some(started_at) = began.filter(|at| *at < ended_at) {
+    let Some(started_at) = began.filter(|at| *at < ended_at) else { return Ok(()) };
+    // A task list that keeps extras keeps the time too, so it follows the task to other computers.
+    if let Some(store) = provider.extras() {
+        match store.add_worked(id, (ended_at - started_at).num_seconds()).await {
+            Ok(()) => return Ok(()),
+            Err(e) => eprintln!("{} couldn't keep the time on {id}, so it's kept here: {e}", provider.display_name()),
+        }
+    }
+    {
         let session = WorkSession {
             id: uuid::Uuid::new_v4().to_string(),
             provider: key.to_owned(),
@@ -313,7 +322,19 @@ pub async fn set_left_off(app: AppHandle, state: State<'_, AppState>, task_id: T
         at: Utc::now(),
         device: state.device.id.clone(),
     });
-    state.state.set_left_off(state.provider().key(), &task_id, note).await.map_err(err)?;
+    let provider = state.provider();
+    let kept_by_list = match provider.extras() {
+        Some(store) => match store.set_left_off(&task_id, note.clone()).await {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("{} couldn't keep the note on {task_id}, so it's kept here: {e}", provider.display_name());
+                false
+            }
+        },
+        None => false,
+    };
+    // The local copy goes once the list has it, so it never shadows a newer one written elsewhere.
+    state.state.set_left_off(provider.key(), &task_id, if kept_by_list { None } else { note }).await.map_err(err)?;
     changed(&app);
     Ok(())
 }
