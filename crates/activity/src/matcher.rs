@@ -9,6 +9,8 @@ pub enum Observation {
     Window { exe: String, title: String },
     /// A file that was just created or saved.
     FileSaved { path: String },
+    /// The browser tab in front, as the browser extension reports it.
+    Tab { url: String },
 }
 
 /// How sure a match is; stronger matches win.
@@ -65,6 +67,19 @@ fn match_one(a: &Attachment, observation: &Observation) -> Option<(Strength, Str
                     .then(|| (Strength::Strong, format!("“{}” is open", a.name)))
             }
         },
+        Observation::Tab { url } => {
+            if a.kind != AttachmentKind::Link {
+                return None;
+            }
+            let (tab, link) = (normalize_url(url), normalize_url(&a.target));
+            if tab == link {
+                Some((Strength::Strong, format!("“{}” is open in the browser", a.name)))
+            } else if tab.starts_with(&link) && tab[link.len()..].starts_with(['/', '?']) {
+                Some((Strength::Medium, format!("a page under “{}” is open in the browser", a.name)))
+            } else {
+                None
+            }
+        }
         Observation::FileSaved { path } => {
             if is_noise(path) {
                 return None;
@@ -78,6 +93,18 @@ fn match_one(a: &Attachment, observation: &Observation) -> Option<(Strength, Str
             }
         }
     }
+}
+
+/// A web address as compared: no fragment, no "www.", no trailing slash, and a case-insensitive host.
+pub fn normalize_url(url: &str) -> String {
+    let url = url.trim();
+    let url = url.split_once('#').map_or(url, |(u, _)| u);
+    let (scheme, rest) = url.split_once("://").unwrap_or(("https", url));
+    let (host, path) = rest.split_once(['/', '?']).map_or((rest, ""), |(h, _)| (h, &rest[h.len()..]));
+    let host = host.to_lowercase();
+    let host = host.strip_prefix("www.").unwrap_or(&host);
+    let scheme = if scheme.eq_ignore_ascii_case("http") { "https".to_owned() } else { scheme.to_lowercase() };
+    format!("{scheme}://{host}{}", path.trim_end_matches('/'))
 }
 
 fn file_name(path: &str) -> &str {
@@ -120,6 +147,27 @@ fn is_noise(path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_tabs_match_linked_pages() {
+        let link = |target: &str| Attachment {
+            id: "l".into(),
+            provider: "sqlite".into(),
+            task_id: "t1".into(),
+            kind: AttachmentKind::Link,
+            name: "GS chat".into(),
+            target: target.into(),
+            device: None,
+            added_at: chrono::Utc::now(),
+        };
+        let tab = |url: &str| Observation::Tab { url: url.into() };
+        let strength = |target: &str, url: &str| matches(&[link(target)], &tab(url)).first().map(|m| m.strength);
+        assert_eq!(strength("https://claude.ai/chat/0f3c", "https://claude.ai/chat/0f3c#reply"), Some(Strength::Strong));
+        assert_eq!(strength("https://www.Example.com/docs/", "http://example.com/docs"), Some(Strength::Strong));
+        assert_eq!(strength("https://example.com/docs", "https://example.com/docs/page-2"), Some(Strength::Medium));
+        assert_eq!(strength("https://example.com/doc", "https://example.com/docs"), None, "a longer word isn't a page under it");
+        assert_eq!(strength("https://claude.ai/chat/0f3c", "https://claude.ai/chat/9a1b"), None);
+    }
     use multitasker_core::Attachment;
 
     fn attachment(task: &str, kind: AttachmentKind, name: &str, target: &str) -> Attachment {

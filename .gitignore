@@ -26,3 +26,6 @@ Thumbs.db
 # @wilsoon/env
 !.env.*.example
 .wilsoon-store/
+
+# The browser extension's private key (publishing only; its public half is in extension/manifest.json)
+/.secrets/

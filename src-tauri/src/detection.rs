@@ -32,6 +32,8 @@ const SUGGESTION_TTL: Duration = Duration::from_secs(5 * 60);
 const FORGET_AFTER: Duration = Duration::from_secs(60 * 60);
 /// Re-announce ongoing activity this often, so "active now" stays fresh in the UI.
 const TOUCH_EVERY: Duration = Duration::from_secs(30);
+/// Browsers whose tab in front the extension can report.
+const BROWSERS: &[&str] = &["chrome.exe", "msedge.exe", "brave.exe", "vivaldi.exe", "opera.exe", "arc.exe"];
 
 /// An in-progress task that was just worked on.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -71,15 +73,39 @@ pub struct Detector {
     enabled: AtomicBool,
     dirty: AtomicBool,
     inner: Mutex<Inner>,
+    /// The browser tab in front, as the extension last reported it; `None` once the browser lost focus.
+    tab: Mutex<Option<String>>,
 }
 
 impl Detector {
     pub fn new(enabled: bool) -> Arc<Self> {
-        Arc::new(Self { enabled: AtomicBool::new(enabled), dirty: AtomicBool::new(true), inner: Mutex::default() })
+        Arc::new(Self {
+            enabled: AtomicBool::new(enabled),
+            dirty: AtomicBool::new(true),
+            inner: Mutex::default(),
+            tab: Mutex::new(None),
+        })
     }
 
     fn inner(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Notes the browser tab in front, and returns the open tasks it's linked to, best match first.
+    pub fn set_tab(&self, url: Option<String>) -> Vec<(TaskId, String)> {
+        *self.tab.lock().unwrap_or_else(|e| e.into_inner()) = url.clone();
+        let Some(url) = url else { return Vec::new() };
+        let inner = self.inner();
+        let open: Vec<&TaskView> = inner.tasks.iter().filter(|t| t.task.status == TaskStatus::Todo).collect();
+        let attachments: Vec<Attachment> = open.iter().flat_map(|t| t.attachments.iter().cloned()).collect();
+        matches(&attachments, &Observation::Tab { url })
+            .into_iter()
+            .filter_map(|m| open.iter().find(|t| t.task.id == m.task_id).map(|t| (m.task_id, t.task.title.clone())))
+            .collect()
+    }
+
+    fn tab(&self) -> Option<String> {
+        self.tab.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn enabled(&self) -> bool {
@@ -250,7 +276,12 @@ fn watch(app: AppHandle, d: Arc<Detector>) {
         let mut changed = d.expire();
         if d.enabled() && idle_time() < IDLE {
             if let Some(w) = foreground_window().filter(|w| w.pid != me) {
+                // With a browser in front, the tab the extension reported says more than the window title.
+                let tab = BROWSERS.iter().any(|b| w.exe.eq_ignore_ascii_case(b)).then(|| d.tab()).flatten();
                 changed |= d.observe(&Observation::Window { exe: w.exe, title: w.title });
+                if let Some(url) = tab {
+                    changed |= d.observe(&Observation::Tab { url });
+                }
             }
         }
         if changed {

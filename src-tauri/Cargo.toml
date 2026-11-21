@@ -32,3 +32,7 @@ keyring = "4"
 tauri-plugin-notification = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tokio = { workspace = true, features = ["net", "io-util", "time"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }

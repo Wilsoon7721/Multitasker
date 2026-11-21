@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MultiTasker</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="page">
+      <img src="icons/32.png" alt="" width="20" height="20" />
+      <div class="page-text">
+        <div class="page-title" id="page-title">This page</div>
+        <div class="page-url" id="page-url"></div>
+      </div>
+    </header>
+
+    <p class="notice" id="notice" hidden></p>
+
+    <main id="main" hidden>
+      <input id="filter" type="search" placeholder="Find a task" aria-label="Find a task" />
+      <ul class="tasks" id="tasks" aria-label="Open tasks"></ul>
+      <p class="empty" id="empty" hidden>No open tasks match.</p>
+
+      <form class="create" id="create">
+        <input id="new-title" placeholder="New task from this page" aria-label="New task title" maxlength="200" />
+        <button type="submit" class="primary">Add</button>
+      </form>
+    </main>
+
+    <footer>
+      <button type="button" class="link" id="show-app">Open MultiTasker</button>
+    </footer>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>

@@ -25,6 +25,9 @@ Early development. What works today:
   that has files attached offers to hand them in. Copies are kept in MultiTasker's data folder, and Sync carries them
   (up to 100 MB each) to your other computers. With Todoist or Notion, handed-in work is uploaded to the task itself.
 - Expand the widget to see your to-do list and drag a task up into In Progress to start it.
+- A **browser extension** for Chrome, Edge and Brave links tabs, such as AI chats and docs, to tasks. While the
+  browser is in front, the linked tab counts as working on its task (see
+  [docs/browser-extension.md](docs/browser-extension.md)).
 - **Activity detection** (Windows): link apps, files and folders to a task, and MultiTasker notices when you're on
   them — from the window in front and from file saves. Tasks in progress show as *active now*; if you're clearly
   working on a task you haven't started, the widget offers to start it. Everything stays on your computer; window
@@ -43,7 +46,6 @@ Early development. What works today:
 
 Planned:
 
-- A Chrome extension to link browser tabs (AI chats, docs) to tasks, and reopen them on any of your devices.
 - Project shortcuts: detect a project's type and offer start/stop dev server, build and run.
 
 ## Architecture
@@ -68,7 +70,8 @@ crates/provider-notion    tasks from a Notion database, with an integration toke
 crates/deliverables      copies of handed-in work, with every revision
 crates/activity          activity detection: window in front, file saves, matching them to tasks
 crates/sync              sync engine, sign-in, and storage backends (Google Drive, OneDrive, folder, S3)
-src-tauri                desktop app: commands, windows, tray
+src-tauri                desktop app: commands, windows, tray, browser bridge
+extension                browser extension (Chrome, Edge, Brave)
 ui                       React frontend (main window + widget)
 ```
 

@@ -1,3 +1,4 @@
+mod bridge;
 mod cloud;
 mod commands;
 mod detection;
@@ -68,6 +69,11 @@ fn initial_provider(source: &settings::TaskSource, db: Arc<SqliteDb>) -> Arc<dyn
 }
 
 pub fn run() {
+    // Chrome or Edge started this copy to carry messages for the extension; it never opens a window.
+    if bridge::is_relay() {
+        bridge::relay();
+        return;
+    }
     tauri::Builder::default()
         // Another copy started by an app link (a sign-in coming back) hands its URL over here and exits.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -111,6 +117,10 @@ pub fn run() {
                 }
             });
             start_remote_refresh(app.handle());
+            bridge::serve(app.handle());
+            if let Err(e) = bridge::register(&app.state::<AppState>().data_dir) {
+                eprintln!("{e}");
+            }
 
             tray::build(app.handle(), prefs.detection)?;
             windows::set_widget_visible(app.handle(), true)?;
