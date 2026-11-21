@@ -32,6 +32,12 @@ const SUGGESTION_TTL: Duration = Duration::from_secs(5 * 60);
 const FORGET_AFTER: Duration = Duration::from_secs(60 * 60);
 /// Re-announce ongoing activity this often, so "active now" stays fresh in the UI.
 const TOUCH_EVERY: Duration = Duration::from_secs(30);
+/// Staying on another task's things this long switches to it.
+const SWITCH_AFTER: Duration = Duration::from_secs(30);
+/// Looking away for longer than this starts the count again.
+const SWITCH_GAP: Duration = Duration::from_secs(6);
+/// The "switched" note goes away after this long.
+const SWITCH_NOTE_FOR: Duration = Duration::from_secs(5 * 60);
 /// Browsers whose tab in front the extension can report.
 const BROWSERS: &[&str] = &["chrome.exe", "msedge.exe", "brave.exe", "vivaldi.exe", "opera.exe", "arc.exe"];
 
@@ -60,12 +66,36 @@ pub struct Paused {
     pub since: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TaskRef {
+    pub task_id: TaskId,
+    pub title: String,
+}
+
+/// What detection switched to on its own, so it can be undone.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Switched {
+    pub to: TaskRef,
+    pub from: Vec<TaskRef>,
+    pub reason: String,
+}
+
+/// A task whose things have been in front, and since when.
+#[derive(Debug, Clone)]
+struct Candidate {
+    task_id: TaskId,
+    reason: String,
+    first: Instant,
+    last: Instant,
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Snapshot {
     pub enabled: bool,
     pub active: Vec<Activity>,
     pub suggestion: Option<Suggestion>,
     pub paused: Vec<Paused>,
+    pub switched: Option<Switched>,
 }
 
 /// The tray's "Detect what I'm working on" item, kept so the UI can tick or untick it.
@@ -78,10 +108,14 @@ struct Inner {
     suggestion: Option<(Suggestion, Instant)>,
     dismissed: HashMap<TaskId, Instant>,
     paused: Vec<Paused>,
+    candidate: Option<Candidate>,
+    switched: Option<(Switched, Instant)>,
 }
 
 pub struct Detector {
     enabled: AtomicBool,
+    /// Switch to another task on its own, rather than only suggesting it.
+    auto_switch: AtomicBool,
     dirty: AtomicBool,
     inner: Mutex<Inner>,
     /// The browser tab in front, as the extension last reported it; `None` once the browser lost focus.
@@ -89,9 +123,10 @@ pub struct Detector {
 }
 
 impl Detector {
-    pub fn new(enabled: bool) -> Arc<Self> {
+    pub fn new(enabled: bool, auto_switch: bool) -> Arc<Self> {
         Arc::new(Self {
             enabled: AtomicBool::new(enabled),
+            auto_switch: AtomicBool::new(auto_switch),
             dirty: AtomicBool::new(true),
             inner: Mutex::default(),
             tab: Mutex::new(None),
@@ -130,6 +165,7 @@ impl Detector {
             active: inner.active.values().cloned().collect(),
             suggestion: inner.suggestion.as_ref().map(|(s, _)| s.clone()),
             paused: inner.paused.clone(),
+            switched: inner.switched.as_ref().map(|(s, _)| s.clone()),
         }
     }
 
@@ -168,6 +204,47 @@ impl Detector {
         self.emit(app);
     }
 
+    pub fn auto_switch(&self) -> bool {
+        self.auto_switch.load(Ordering::Relaxed)
+    }
+
+    pub fn set_auto_switch(&self, on: bool) {
+        self.auto_switch.store(on, Ordering::Relaxed);
+        self.inner().candidate = None;
+    }
+
+    /// Whether a task's things were in front within the last moment, so switching away from it would be wrong.
+    fn recently_active(&self, task_id: &TaskId) -> bool {
+        self.inner().active.get(task_id).is_some_and(|a| (Utc::now() - a.at).to_std().unwrap_or_default() < SWITCH_AFTER)
+    }
+
+    /// The task to switch to, once its things have stayed in front long enough.
+    fn due_switch(&self) -> Option<(TaskId, String)> {
+        if !self.auto_switch() {
+            return None;
+        }
+        let mut inner = self.inner();
+        let due = inner.candidate.as_ref().is_some_and(|c| c.first.elapsed() >= SWITCH_AFTER && c.last.elapsed() < SWITCH_GAP);
+        if !due {
+            return None;
+        }
+        let c = inner.candidate.take()?;
+        inner.suggestion = None;
+        Some((c.task_id, c.reason))
+    }
+
+    pub fn note_switch(&self, app: &AppHandle, switched: Switched) {
+        self.inner().switched = Some((switched, Instant::now()));
+        self.emit(app);
+    }
+
+    /// Clears the "switched" note and hands it back, for undoing.
+    pub fn take_switch(&self, app: &AppHandle) -> Option<Switched> {
+        let taken = self.inner().switched.take().map(|(s, _)| s);
+        self.emit(app);
+        taken
+    }
+
     pub fn dismiss_paused(&self, app: &AppHandle) {
         self.inner().paused.clear();
         self.emit(app);
@@ -192,6 +269,11 @@ impl Detector {
         let before = inner.paused.len();
         inner.paused.retain(|p| tasks.iter().any(|t| t.task.id == p.task_id && t.task.status == TaskStatus::Todo && !t.in_progress));
         changed |= inner.paused.len() != before;
+        // Pausing what was switched to by hand leaves nothing to undo.
+        if inner.switched.as_ref().is_some_and(|(s, _)| !in_progress.contains(&s.to.task_id)) {
+            inner.switched = None;
+            changed = true;
+        }
         inner.tasks = tasks;
         changed
     }
@@ -229,6 +311,12 @@ impl Detector {
             let m = &best[0];
             let dismissed = inner.dismissed.get(&m.task_id).is_some_and(|at| at.elapsed() < DISMISS_FOR);
             if !dismissed {
+                let now = Instant::now();
+                let first = match &inner.candidate {
+                    Some(c) if c.task_id == m.task_id && c.last.elapsed() < SWITCH_GAP => c.first,
+                    _ => now,
+                };
+                inner.candidate = Some(Candidate { task_id: m.task_id.clone(), reason: m.reason.clone(), first, last: now });
                 let title = titles.get(&m.task_id).cloned().unwrap_or_default();
                 let suggestion = Suggestion { task_id: m.task_id.clone(), title, reason: m.reason.clone() };
                 changed |= inner.suggestion.as_ref().map(|(s, _)| s) != Some(&suggestion);
@@ -250,6 +338,10 @@ impl Detector {
         let before = inner.active.len();
         inner.active.retain(|_, a| (now - a.at).to_std().unwrap_or_default() < FORGET_AFTER);
         inner.dismissed.retain(|_, at| at.elapsed() < DISMISS_FOR);
+        if inner.switched.as_ref().is_some_and(|(_, at)| at.elapsed() >= SWITCH_NOTE_FOR) {
+            inner.switched = None;
+            changed = true;
+        }
         changed || inner.active.len() != before
     }
 }
@@ -315,10 +407,36 @@ fn watch(app: AppHandle, d: Arc<Detector>) {
                 }
             }
         }
+        if let Some((task_id, reason)) = d.due_switch() {
+            let state = app.state::<AppState>();
+            match tauri::async_runtime::block_on(switch_to(&app, &state, &task_id)) {
+                Ok((to, from)) => d.note_switch(&app, Switched { to, from, reason }),
+                Err(e) => eprintln!("couldn't switch to {task_id}: {e}"),
+            }
+            changed = true;
+        }
         if changed {
             d.emit(&app);
         }
     }
+}
+
+/// Starts a task and pauses what this computer was on before, keeping anything whose things are still in use.
+pub async fn switch_to(app: &AppHandle, state: &AppState, task_id: &TaskId) -> Result<(TaskRef, Vec<TaskRef>), String> {
+    let tasks = task_views(state).await?;
+    let to = tasks.iter().find(|t| &t.task.id == task_id).ok_or_else(|| format!("task {task_id} was not found"))?;
+    let to = TaskRef { task_id: to.task.id.clone(), title: to.task.title.clone() };
+    let leaving: Vec<TaskRef> = tasks
+        .iter()
+        .filter(|t| t.in_progress && &t.task.id != task_id && t.in_progress_on.contains(&state.device.id))
+        .filter(|t| !state.detector.recently_active(&t.task.id))
+        .map(|t| TaskRef { task_id: t.task.id.clone(), title: t.task.title.clone() })
+        .collect();
+    crate::commands::set_in_progress(app.clone(), app.state::<AppState>(), task_id.clone(), true).await?;
+    for t in &leaving {
+        crate::commands::set_in_progress(app.clone(), app.state::<AppState>(), t.task_id.clone(), false).await?;
+    }
+    Ok((to, leaving))
 }
 
 /// Linked files and folders of open tasks that live on this computer.
@@ -386,7 +504,7 @@ mod tests {
     }
 
     fn setup() -> Arc<Detector> {
-        let d = Detector::new(true);
+        let d = Detector::new(true, true);
         d.refresh(vec![
             view("essay", true, vec![(AttachmentKind::App, "Word", r"C:\Office\WINWORD.EXE")]),
             view("report", false, vec![(AttachmentKind::Document, "report.docx", r"C:\Docs\report.docx")]),
@@ -413,6 +531,40 @@ mod tests {
         let snap = d.snapshot();
         assert!(snap.active.is_empty(), "the stronger match on the other task wins");
         assert_eq!(snap.suggestion.map(|s| s.task_id), Some("report".into()));
+    }
+
+    #[test]
+    fn switches_only_after_staying_on_another_task() {
+        let d = setup();
+        d.observe(&word("report - Word"));
+        assert_eq!(d.due_switch(), None, "a glance isn't enough");
+
+        let rewind = |d: &Detector, by: Duration| {
+            if let Some(c) = d.inner().candidate.as_mut() {
+                c.first -= by;
+            }
+        };
+        rewind(&d, SWITCH_AFTER);
+        d.set_auto_switch(false);
+        d.observe(&word("report - Word"));
+        rewind(&d, SWITCH_AFTER);
+        assert_eq!(d.due_switch(), None, "asking instead only suggests");
+
+        d.set_auto_switch(true);
+        d.observe(&word("report - Word"));
+        rewind(&d, SWITCH_AFTER);
+        assert_eq!(d.due_switch().map(|(id, _)| id), Some("report".into()));
+        assert!(d.snapshot().suggestion.is_none(), "the switch replaces the suggestion");
+        assert_eq!(d.due_switch(), None, "and happens once");
+
+        // Looking elsewhere for a while starts the count again.
+        d.observe(&word("report - Word"));
+        rewind(&d, SWITCH_AFTER);
+        if let Some(c) = d.inner().candidate.as_mut() {
+            c.last -= SWITCH_GAP;
+        }
+        d.observe(&word("report - Word"));
+        assert_eq!(d.due_switch(), None);
     }
 
     #[test]

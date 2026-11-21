@@ -643,6 +643,42 @@ pub fn detection_enabled(state: State<'_, AppState>) -> bool {
     state.detector.enabled()
 }
 
+/// Starts a task and pauses what this computer was working on before.
+#[tauri::command]
+pub async fn switch_task(app: AppHandle, state: State<'_, AppState>, task_id: TaskId) -> CmdResult<()> {
+    detection::switch_to(&app, &state, &task_id).await?;
+    Ok(())
+}
+
+/// Goes back to what was in progress before detection switched on its own, and stays off that task for a while.
+#[tauri::command]
+pub async fn undo_switch(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    let Some(switched) = state.detector.take_switch(&app) else { return Ok(()) };
+    for t in &switched.from {
+        set_in_progress(app.clone(), state.clone(), t.task_id.clone(), true).await?;
+    }
+    set_in_progress(app.clone(), state.clone(), switched.to.task_id.clone(), false).await?;
+    state.detector.dismiss(&app, &switched.to.task_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn dismiss_switch(app: AppHandle, state: State<'_, AppState>) {
+    state.detector.take_switch(&app);
+}
+
+#[tauri::command]
+pub fn auto_switch(state: State<'_, AppState>) -> bool {
+    state.detector.auto_switch()
+}
+
+#[tauri::command]
+pub fn set_auto_switch(state: State<'_, AppState>, enabled: bool) -> CmdResult<()> {
+    settings::update(&state.data_dir, |s| s.auto_switch = enabled).map_err(err)?;
+    state.detector.set_auto_switch(enabled);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn dismiss_paused(app: AppHandle, state: State<'_, AppState>) {
     state.detector.dismiss_paused(&app);

@@ -1301,6 +1301,7 @@ html.widget body {
   background: color-mix(in srgb, var(--success) 9%, var(--surface));
 }
 
+.suggestion.switched,
 .suggestion.away {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));
@@ -1339,7 +1340,8 @@ html.widget body {
   font-size: 12px;
 }
 
-button.primary.small {
+button.primary.small,
+button.secondary.small {
   height: 26px;
   padding: 0 10px;
   gap: 4px;
