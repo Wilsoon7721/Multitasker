@@ -12,8 +12,8 @@ use crate::AppState;
 
 /// The browser extension's host name, as Chrome and Edge know it.
 pub const HOST: &str = "dev.wilsoon.multitasker";
-/// The extension's id, fixed by the public key in `extension/manifest.json`.
-pub const EXTENSION_ID: &str = "fldigbhidkmfhlgplcmgjmbhbgkdmebj";
+/// The extension's ids: the one the key in `extension/manifest.json` fixes for unpacked copies, then each store's own.
+pub const EXTENSION_IDS: &[&str] = &["fldigbhidkmfhlgplcmgjmbhbgkdmebj"];
 /// Where the running app listens for the relay; only this computer can connect.
 const PIPE: &str = r"\\.\pipe\dev.wilsoon.multitasker";
 /// Chrome caps a message to the extension at 1 MB.
@@ -297,7 +297,7 @@ pub fn register(data_dir: &Path) -> Result<(), String> {
         "description": "MultiTasker",
         "path": path,
         "type": "stdio",
-        "allowed_origins": [format!("chrome-extension://{EXTENSION_ID}/")],
+        "allowed_origins": EXTENSION_IDS.iter().map(|id| format!("chrome-extension://{id}/")).collect::<Vec<_>>(),
     });
     let path = data_dir.join("browser-host.json");
     std::fs::write(&path, serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;

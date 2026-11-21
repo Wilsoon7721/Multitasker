@@ -883,6 +883,37 @@ pub async fn hand_in_link(
 }
 
 #[tauri::command]
+pub fn update_info(app: AppHandle) -> crate::updates::UpdateInfo {
+    crate::updates::info(&app)
+}
+
+/// Looks for a newer version now; returns whether one is downloaded and ready.
+#[tauri::command]
+pub async fn check_for_updates(app: AppHandle) -> CmdResult<bool> {
+    if !crate::updates::enabled() {
+        return Err("Development builds don't update themselves.".into());
+    }
+    crate::updates::check(&app).await
+}
+
+#[tauri::command]
+pub fn install_update(app: AppHandle) -> CmdResult<()> {
+    crate::updates::install(&app)
+}
+
+#[tauri::command]
+pub fn start_with_windows(state: State<'_, AppState>) -> bool {
+    settings::load(&state.data_dir).start_with_windows
+}
+
+#[tauri::command]
+pub fn set_start_with_windows(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> CmdResult<()> {
+    crate::updates::apply_autostart(&app, enabled)?;
+    settings::update(&state.data_dir, |s| s.start_with_windows = enabled).map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn dismiss_paused(app: AppHandle, state: State<'_, AppState>) {
     state.detector.dismiss_paused(&app);
 }

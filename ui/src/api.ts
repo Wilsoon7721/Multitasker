@@ -103,6 +103,14 @@ export interface LinkCheck {
   message: string;
 }
 
+/** This build's version, and an update waiting for a restart, if there is one. */
+export interface UpdateInfo {
+  current: string;
+  ready: string | null;
+  /** Development builds don't update themselves or start with Windows. */
+  enabled: boolean;
+}
+
 /** Whether the widget stays above other windows, and when it steps aside. */
 export interface OnTop {
   enabled: boolean;
@@ -353,6 +361,11 @@ export const api = {
   thisDevice: () => invoke<Device>('this_device'),
   runningApps: () => invoke<RunningApp[]>('running_apps'),
   widgetOnTop: () => invoke<OnTop>('widget_on_top'),
+  updateInfo: () => invoke<UpdateInfo>('update_info'),
+  checkForUpdates: () => invoke<boolean>('check_for_updates'),
+  installUpdate: () => invoke('install_update'),
+  startWithWindows: () => invoke<boolean>('start_with_windows'),
+  setStartWithWindows: (enabled: boolean) => invoke('set_start_with_windows', { enabled }),
   setWidgetOnTop: (onTop: OnTop) => invoke('set_widget_on_top', { onTop }),
   activity: () => invoke<ActivitySnapshot>('activity'),
   dismissSuggestion: (taskId: string) => invoke('dismiss_suggestion', { taskId }),
@@ -428,6 +441,7 @@ export const onSyncStatus = (handler: (status: SyncStatus) => void) => subscribe
 
 /** Fires when the widget's background opacity changes, with the new percentage. */
 export const onWidgetAppearance = (handler: (opacity: number) => void) => subscribe('widget-appearance', handler);
+export const onUpdateReady = (handler: (version: string) => void) => subscribe('update-ready', handler);
 
 /** Fires when the widget is shown or hidden, from anywhere (tray, widget, main window). */
 export const onWidgetVisibility = (handler: (visible: boolean) => void) => subscribe('widget-visibility', handler);

@@ -7,6 +7,10 @@ this computer, which stay saved in the meantime. Work handed in for its tasks is
 computer signed in to the list; MultiTasker keeps a local copy and fetches ones handed in elsewhere when needed.
 JavaDashboard has no file storage, so work handed in for its tasks stays on the computer it was handed in on.
 
+Time spent on a task and its where-I-left-off note are kept in the list as well. JavaDashboard keeps them in its own
+fields once `deploy/task-time-and-left-off.sql` has been run on its database. Until then, and whenever a list can't
+take them, MultiTasker keeps them on the computer instead and adds that time to what the list holds.
+
 ## Todoist
 
 Todoist connects with a personal API token, so there's no app to register.
@@ -26,6 +30,8 @@ How tasks map:
 | In progress | An `in-progress` label, plus a "Started on (computer)" comment recording when and where |
 | Attachments | Comments starting with 📎, each ending with a `MultiTasker · …` line that it reads them back by |
 | Handed-in work | A "📦 Handed in" comment with the file attached (Todoist's file size limit applies) |
+| Time spent | One "⏱ Time spent" comment, updated each time the task is paused or finished |
+| Where you left off | A "📝 Left off" comment, replaced when you write a new note |
 
 Adding or removing the `in-progress` label in Todoist itself starts or stops the task in MultiTasker too. Tasks
 finished in the last two weeks show as done.
@@ -57,6 +63,8 @@ How tasks map, using the database's own columns where it has them:
 | When and where it started | Started (date) and Started on (computer name), added on connecting |
 | Attachments | A Files & media column such as Attachments; files and folders are kept as `file:///` links |
 | Handed-in work | A file in the task's page, captioned "Handed in from (computer)"; the workspace's upload limit applies (5 MB on the free plan) |
+| Time spent | A Minutes spent number column, added on connecting |
+| Where you left off | A Left off text column, added on connecting |
 
 Moving a task to In progress in Notion itself starts it in MultiTasker too. Files you upload to Notion show up as
 links. Deleting a task moves its page to Notion's trash.

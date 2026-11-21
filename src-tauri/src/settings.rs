@@ -24,6 +24,8 @@ pub struct Settings {
     pub auto_switch: bool,
     /// Whether the widget stays above other windows, and when it steps aside.
     pub widget_on_top: OnTop,
+    /// Start MultiTasker when signing in to Windows (installed builds only).
+    pub start_with_windows: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -77,6 +79,7 @@ impl Default for Settings {
             pause_after_away: Some(15),
             auto_switch: true,
             widget_on_top: OnTop::default(),
+            start_with_windows: true,
         }
     }
 }

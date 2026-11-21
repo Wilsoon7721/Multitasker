@@ -11,6 +11,7 @@ mod settings;
 mod syncing;
 mod tokens;
 mod tray;
+mod updates;
 mod wilsoon;
 mod windows;
 
@@ -86,6 +87,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![updates::AUTOSTART_ARG]),
+        ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             move_old_data_dir(&data_dir);
@@ -133,6 +139,14 @@ pub fn run() {
             reminders::start(app.handle());
             away::start(app.handle());
             on_top::start(app.handle());
+            if let Err(e) = updates::apply_autostart(app.handle(), prefs.start_with_windows) {
+                eprintln!("couldn't set starting with Windows: {e}");
+            }
+            updates::start(app.handle());
+            // Started by Windows at sign-in, it opens quietly to the tray and widget.
+            if !updates::started_at_sign_in() {
+                windows::show_main(app.handle())?;
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -169,6 +183,11 @@ pub fn run() {
             commands::set_detection,
             commands::detection_enabled,
             commands::dismiss_paused,
+            commands::update_info,
+            commands::check_for_updates,
+            commands::install_update,
+            commands::start_with_windows,
+            commands::set_start_with_windows,
             commands::check_hand_in,
             commands::check_link,
             commands::hand_in_link,

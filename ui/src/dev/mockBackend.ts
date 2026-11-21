@@ -186,6 +186,7 @@ let activity: ActivitySnapshot = {
 };
 let pauseAfterAway: number | null = 15;
 let autoSwitch = true;
+let startup = true;
 let onTop = { enabled: true, except_fullscreen: true, exceptions: [{ exe: 'POWERPNT.EXE', name: 'PowerPoint' }] };
 // The sample Word document stays open until this is set from the console.
 const wordClosed = false;
@@ -546,6 +547,22 @@ mockIPC(
 
       case 'open_task_things':
         return { opened: find(a.taskId as string).attachments.length, skipped: [] };
+
+      case 'update_info':
+        return { current: '0.1.0', ready: '0.2.0', enabled: true };
+
+      case 'check_for_updates':
+        return true;
+
+      case 'install_update':
+        return null;
+
+      case 'start_with_windows':
+        return startup;
+
+      case 'set_start_with_windows':
+        startup = !!a.enabled;
+        return null;
 
       case 'widget_on_top':
         return onTop;

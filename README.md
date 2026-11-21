@@ -45,6 +45,8 @@ Early development. What works today:
   and folders in one click ("Open all" in its details does the same).
 - **Linking as you go**: stay on a page that isn't linked to anything for two minutes while a task is in progress, and
   the widget offers to link it to that task (needs the browser extension).
+- **Installs like any app**: an installer that needs no admin rights, starts with Windows (quietly, to the tray and
+  widget) and updates itself from GitHub releases. See [docs/releasing.md](docs/releasing.md) for making a release.
 - **Sync between computers**, three ways:
   - sign in to **Google Drive** or **OneDrive**; MultiTasker only gets its own app folder (setting up the app
     registrations: [docs/cloud-sign-in.md](docs/cloud-sign-in.md));

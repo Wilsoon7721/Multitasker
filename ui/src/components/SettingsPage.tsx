@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Plus,
   X,
+  AppWindow,
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import {
@@ -33,6 +34,8 @@ import {
   type ReminderSettings,
   type NotionDatabases,
   type OnTop,
+  type UpdateInfo,
+  onUpdateReady,
   type TaskSourceView,
   type S3Settings,
   type SyncStatus,
@@ -55,6 +58,7 @@ export function SettingsPage({ run }: { run: Run }) {
   const syncs = source?.active === 'sqlite';
   return (
     <>
+      <AppSection run={run} />
       <TaskListSection run={run} />
       {syncs && <SyncSection run={run} />}
       <WidgetSection run={run} />
@@ -621,6 +625,82 @@ function TodoistForm({ run, onConnected }: { run: Run; onConnected: () => void }
         </button>
       </div>
     </form>
+  );
+}
+
+function AppSection({ run }: { run: Run }) {
+  const [info, setInfo] = useState<UpdateInfo | null>(null);
+  const [startup, setStartup] = useState<boolean | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [upToDate, setUpToDate] = useState(false);
+
+  useEffect(() => {
+    const load = () => void api.updateInfo().then(setInfo, () => {});
+    load();
+    void api.startWithWindows().then(setStartup, () => {});
+    return onUpdateReady(load);
+  }, []);
+
+  const check = async () => {
+    setChecking(true);
+    setUpToDate(false);
+    const ok = await run(async () => {
+      const ready = await api.checkForUpdates();
+      setUpToDate(!ready);
+      setInfo(await api.updateInfo());
+    });
+    if (!ok) setUpToDate(false);
+    setChecking(false);
+  };
+
+  return (
+    <Section icon={<AppWindow size={18} />} title="MultiTasker">
+      <label className="toggle-row">
+        <span>
+          <span className="choice-title">Start with Windows</span>
+          <span className="choice-detail">
+            {info && !info.enabled
+              ? 'Only for installed copies; this development build never starts on its own.'
+              : 'Opens quietly to the tray and the widget when you sign in.'}
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          className="switch"
+          checked={!!startup}
+          disabled={startup === null || !info?.enabled}
+          onChange={(e) => {
+            const on = e.target.checked;
+            setStartup(on);
+            void run(() => api.setStartWithWindows(on));
+          }}
+        />
+      </label>
+      <div className="toggle-row reminder-row">
+        <span>
+          <span className="choice-title">Version {info?.current ?? '…'}</span>
+          <span className="choice-detail">
+            {info?.ready
+              ? `Version ${info.ready} is downloaded. Restarting installs it.`
+              : upToDate
+                ? "You're up to date."
+                : info && !info.enabled
+                  ? "Development builds don't update themselves."
+                  : 'Updates download in the background, and install when you restart.'}
+          </span>
+        </span>
+        {info?.ready ? (
+          <button className="primary small" onClick={() => void run(api.installUpdate)}>
+            <RefreshCw size={13} /> Restart to update
+          </button>
+        ) : (
+          <button className="secondary small" disabled={checking || !info?.enabled} onClick={() => void check()}>
+            {checking ? <LoaderCircle size={13} className="spin" /> : <RefreshCw size={13} />} Check for updates
+          </button>
+        )}
+      </div>
+    </Section>
   );
 }
 

@@ -20,7 +20,8 @@
         "minWidth": 560,
         "minHeight": 420,
         "center": true,
-        "decorations": false
+        "decorations": false,
+        "visible": false
       },
       {
         "label": "widget",
@@ -47,19 +48,40 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["dev.wilsoon.multitasker"]
+        "schemes": [
+          "dev.wilsoon.multitasker"
+        ]
+      }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk1NjUyQzJDOTcyMEVFNzMKUldSejdpQ1hMQ3hsbFdqQS9UdzF3YWRGNmFkWUxXNExyOC9aNE9aWHBYeXVOYnFYTmZJMysxWHoK",
+      "endpoints": [
+        "https://github.com/Wilsoon7721/Multitasker/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true,
+    "publisher": "Wilsoon7721",
+    "shortDescription": "Keeps the tasks you have in progress in front of you.",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }

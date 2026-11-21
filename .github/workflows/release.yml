@@ -1,0 +1,56 @@
+name: Release
+
+# A tag like v0.2.0 drafts a release with the installer and extension; publishing it is what updates installed copies.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+
+      - run: npm ci
+
+      - run: cargo test --workspace
+
+      - id: tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update so installed copies trust it; the public half is in src-tauri/tauri.conf.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # The sign-in registrations official builds use (see docs/cloud-sign-in.md); a build without them still runs.
+          MULTITASKER_GOOGLE_CLIENT_ID: ${{ secrets.MULTITASKER_GOOGLE_CLIENT_ID }}
+          MULTITASKER_GOOGLE_CLIENT_SECRET: ${{ secrets.MULTITASKER_GOOGLE_CLIENT_SECRET }}
+          MULTITASKER_MICROSOFT_CLIENT_ID: ${{ secrets.MULTITASKER_MICROSOFT_CLIENT_ID }}
+          WILSOON_CLIENT_ID: ${{ secrets.WILSOON_CLIENT_ID }}
+        with:
+          tagName: v__VERSION__
+          releaseName: MultiTasker v__VERSION__
+          releaseBody: Install with the -setup.exe below. Copies already installed update themselves once this is published.
+          releaseDraft: true
+          includeUpdaterJson: true
+
+      - name: Pack the extension for the stores
+        run: npm run pack:extension
+
+      - name: Add the extension to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "v${{ steps.tauri.outputs.appVersion }}" "dist-extension/multitasker-extension-${{ steps.tauri.outputs.appVersion }}.zip" --clobber
