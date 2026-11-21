@@ -103,6 +103,29 @@ export interface LinkCheck {
   message: string;
 }
 
+/** Something a task's linked project folder can run. */
+export interface ProjectCommand {
+  id: string;
+  folder: string;
+  project: string;
+  label: string;
+  command: string;
+}
+
+/** A project command started from MultiTasker, running or finished. */
+export interface RunView {
+  command_id: string;
+  task_id: string;
+  label: string;
+  project: string;
+  command: string;
+  running: boolean;
+  url: string | null;
+  output: string[];
+  started_at: string;
+  exit: number | null;
+}
+
 /** A finished stretch of work on a task. */
 export interface WorkSession {
   id: string;
@@ -371,6 +394,14 @@ export const api = {
   runningApps: () => invoke<RunningApp[]>('running_apps'),
   widgetOnTop: () => invoke<OnTop>('widget_on_top'),
   updateInfo: () => invoke<UpdateInfo>('update_info'),
+  projectCommands: (taskId: string) => invoke<ProjectCommand[]>('project_commands', { taskId }),
+  projectRuns: () => invoke<RunView[]>('project_runs'),
+  runProjectCommand: (taskId: string, commandId: string) => invoke('run_project_command', { taskId, commandId }),
+  stopProjectCommand: (commandId: string) => invoke('stop_project_command', { commandId }),
+  openProjectUrl: (commandId: string) => invoke('open_project_url', { commandId }),
+  projectAutoruns: (taskId: string) => invoke<string[]>('project_autoruns', { taskId }),
+  setProjectAutorun: (taskId: string, commandId: string, on: boolean) =>
+    invoke('set_project_autorun', { taskId, commandId, on }),
   workSessions: (from: string, to: string) => invoke<WorkSession[]>('work_sessions', { from, to }),
   hideSwitcher: () => invoke('hide_switcher'),
   switcherShortcut: () => invoke<string | null>('switcher_shortcut'),
@@ -454,6 +485,7 @@ export const onSyncStatus = (handler: (status: SyncStatus) => void) => subscribe
 
 /** Fires when the widget's background opacity changes, with the new percentage. */
 export const onWidgetAppearance = (handler: (opacity: number) => void) => subscribe('widget-appearance', handler);
+export const onProjectRuns = (handler: () => void) => subscribe('project-runs', handler);
 export const onSwitcherOpened = (handler: () => void) => subscribe('switcher-opened', handler);
 export const onUpdateReady = (handler: (version: string) => void) => subscribe('update-ready', handler);
 

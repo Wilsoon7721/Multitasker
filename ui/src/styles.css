@@ -2621,3 +2621,109 @@ button.secondary.small {
   color: var(--text);
   font-size: 13.5px;
 }
+
+/* ───────────── Project commands ───────────── */
+
+.project-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-name {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.project-commands {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.project-command:hover .project-row {
+  background: var(--surface-hover);
+}
+
+.project-row .dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.project-row .dot.on {
+  background: var(--success);
+}
+
+.project-text {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.project-label {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.project-line {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.project-with-task {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.project-with-task input {
+  accent-color: var(--accent);
+}
+
+.project-exit {
+  flex: none;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+.project-exit.failed {
+  color: var(--danger);
+}
+
+.project-output {
+  max-height: 220px;
+  margin: 2px 8px 6px 23px;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

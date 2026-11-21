@@ -40,6 +40,9 @@ Early development. What works today:
 - **Pauses when you're away**: after 15 minutes with no keyboard or mouse, or while the computer sleeps or MultiTasker
   is closed, what's in progress on that computer pauses. The widget offers to resume when you're back. Change the wait
   or turn it off in Settings.
+- **Project shortcuts**: a task with a project folder linked shows what it can run (package.json scripts, cargo,
+  Django, Go, docker compose) with Run/Stop, its output and the local address it prints. Marked "With task", a command
+  starts when the task starts and stops when it pauses; everything stops when MultiTasker quits.
 - **Due-soon reminders**: a task due within six hours (or today, if it has no time) that hasn't been started shows in
   the widget with a button to start it; overdue ones show for two days.
 - **Where time went**: the Time view shows today, or any day or week, as a total, a bar per day and each task's and

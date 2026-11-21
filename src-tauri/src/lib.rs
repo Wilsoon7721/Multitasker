@@ -6,6 +6,7 @@ mod commands;
 mod detection;
 mod device;
 mod on_top;
+mod projects;
 mod reminders;
 mod settings;
 mod switcher;
@@ -42,6 +43,8 @@ pub struct AppState {
     pub wilsoon_sign_in: wilsoon::SignInSlot,
     /// Copies of work handed in for tasks, kept on this computer.
     pub deliverables: Arc<multitasker_deliverables::Store>,
+    /// Dev servers and other project commands started from tasks.
+    pub projects: Arc<projects::Projects>,
 }
 
 impl AppState {
@@ -116,6 +119,7 @@ pub fn run() {
                 sign_in_cancel: Arc::new(AtomicBool::new(false)),
                 wilsoon_sign_in: wilsoon::SignInSlot::default(),
                 deliverables,
+                projects: Arc::default(),
             });
 
             // Installers register the app link; development builds register it here so sign-in works there too.
@@ -194,6 +198,13 @@ pub fn run() {
             commands::set_detection,
             commands::detection_enabled,
             commands::dismiss_paused,
+            commands::project_commands,
+            commands::project_runs,
+            commands::run_project_command,
+            commands::stop_project_command,
+            commands::open_project_url,
+            commands::set_project_autorun,
+            commands::project_autoruns,
             commands::work_sessions,
             commands::hide_switcher,
             commands::switcher_shortcut,
@@ -237,8 +248,14 @@ pub fn run() {
             commands::notion_databases,
             commands::connect_notion,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running MultiTasker");
+        .build(tauri::generate_context!())
+        .expect("error while building MultiTasker")
+        .run(|app, event| {
+            // Dev servers started from tasks don't outlive MultiTasker.
+            if let tauri::RunEvent::Exit = event {
+                app.state::<AppState>().projects.stop_all();
+            }
+        });
 }
 
 /// Early builds used the identifier `io.github.wilsoon7721.multitasker`; carry their data over once.

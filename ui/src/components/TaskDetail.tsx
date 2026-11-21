@@ -9,6 +9,7 @@ import { useTaskSource } from '../useTaskSource';
 import { CheckButton } from './CheckButton';
 import { DeliverableList } from './Deliverables';
 import { reopenable } from './PickUp';
+import { ProjectSection } from './ProjectSection';
 
 /** The side panel for one task. Fields save as you leave them. */
 export function TaskDetail(props: {
@@ -181,6 +182,7 @@ export function TaskDetail(props: {
         )}
 
         <AttachmentList taskId={task.id} attachments={task.attachments} run={run} deviceId={deviceId} />
+        <ProjectSection task={task} run={run} />
         <DeliverableList task={task} run={run} now={now} onHandIn={() => onHandIn(task)} />
       </div>
 

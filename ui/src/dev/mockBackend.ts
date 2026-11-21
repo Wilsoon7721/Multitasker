@@ -7,6 +7,7 @@ import type {
   NewAttachment,
   NewTask,
   RunningApp,
+  RunView,
   SyncStatus,
   SyncTarget,
   TaskChanges,
@@ -192,6 +193,8 @@ let activity: ActivitySnapshot = {
 let pauseAfterAway: number | null = 15;
 let autoSwitch = true;
 let startup = true;
+const projectRuns = new Map<string, RunView>();
+const projectAutoruns = new Map<string, string[]>();
 let switcherShortcut: string | null = 'Ctrl+Alt+Space';
 let onTop = { enabled: true, except_fullscreen: true, exceptions: [{ exe: 'POWERPNT.EXE', name: 'PowerPoint' }] };
 // The sample Word document stays open until this is set from the console.
@@ -583,6 +586,68 @@ mockIPC(
           }
         }
         return out;
+      }
+
+      // A sample web project on the first task's linked folder.
+      case 'project_commands': {
+        const t = find(a.taskId as string);
+        if (!t.attachments.some((x) => x.kind === 'folder')) return [];
+        const folder = 'C:\\Users\\you\\Documents\\School\\Lecture slides';
+        return ['dev', 'build', 'preview', 'lint', 'test'].map((label) => ({
+          id: `${folder}|npm run ${label}`,
+          folder,
+          project: 'Lecture slides',
+          label,
+          command: `npm run ${label}`,
+        }));
+      }
+
+      case 'project_runs':
+        return [...projectRuns.values()];
+
+      case 'run_project_command': {
+        const id = a.commandId as string;
+        projectRuns.set(id, {
+          command_id: id,
+          task_id: a.taskId as string,
+          label: id.split(' ').pop() ?? id,
+          project: 'Lecture slides',
+          command: id.split('|')[1],
+          running: true,
+          url: id.endsWith('dev') ? 'http://localhost:5173' : null,
+          output: [
+            '> slides@1.0.0 dev',
+            '> vite',
+            '',
+            '  VITE v8.3.8  ready in 412 ms',
+            '',
+            '  ➜  Local:   http://localhost:5173/',
+          ],
+          started_at: new Date().toISOString(),
+          exit: null,
+        });
+        void emit('project-runs');
+        return null;
+      }
+
+      case 'stop_project_command': {
+        const r = projectRuns.get(a.commandId as string);
+        if (r) projectRuns.set(r.command_id, { ...r, running: false, exit: -1 });
+        void emit('project-runs');
+        return null;
+      }
+
+      case 'open_project_url':
+        return null;
+
+      case 'project_autoruns':
+        return projectAutoruns.get(a.taskId as string) ?? [];
+
+      case 'set_project_autorun': {
+        const list = (projectAutoruns.get(a.taskId as string) ?? []).filter((id) => id !== a.commandId);
+        if (a.on) list.push(a.commandId as string);
+        projectAutoruns.set(a.taskId as string, list);
+        return null;
       }
 
       case 'hide_switcher':

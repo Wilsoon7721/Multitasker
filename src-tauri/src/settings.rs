@@ -28,6 +28,8 @@ pub struct Settings {
     pub start_with_windows: bool,
     /// The hotkey that opens the quick switcher from anywhere, if any.
     pub switcher_shortcut: Option<String>,
+    /// Project commands that start when their task starts and stop when it pauses, by task id.
+    pub project_autoruns: std::collections::HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -83,6 +85,7 @@ impl Default for Settings {
             widget_on_top: OnTop::default(),
             start_with_windows: true,
             switcher_shortcut: Some("Ctrl+Alt+Space".into()),
+            project_autoruns: Default::default(),
         }
     }
 }

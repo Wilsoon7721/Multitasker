@@ -126,6 +126,7 @@ pub async fn update_task(
     let task = provider.update(&id, changes).await.map_err(err)?;
     // A finished task is no longer in progress anywhere; a task list that keeps extras clears that itself.
     if task.status == TaskStatus::Done {
+        state.projects.stop_with_task(&app, &id);
         end_work(&state, &id, Utc::now()).await?;
         if provider.extras().is_none() {
             state.state.stop(provider.key(), &id).await.map_err(err)?;
@@ -174,6 +175,7 @@ pub async fn set_in_progress(
             }
         }
         state.state.begin_work(key, &id, Utc::now()).await.map_err(err)?;
+        start_autoruns(&app, &state, &id).await;
         changed(&app);
         Ok(())
     } else {
@@ -183,6 +185,7 @@ pub async fn set_in_progress(
 
 /// Pauses a task, counting the work on it up to `ended_at`, such as when the person left rather than now.
 pub async fn stop_task(app: &AppHandle, state: &AppState, id: &TaskId, ended_at: DateTime<Utc>) -> CmdResult<()> {
+    state.projects.stop_with_task(app, id);
     let provider = state.provider();
     end_work(state, id, ended_at).await?;
     match provider.extras() {
@@ -947,6 +950,79 @@ pub async fn work_sessions(
     to: DateTime<Utc>,
 ) -> CmdResult<Vec<WorkSession>> {
     state.state.sessions(state.provider().key(), from, to).await.map_err(err)
+}
+
+/// What the task's linked folders on this computer can run, from their package.json, Cargo.toml and the like.
+#[tauri::command]
+pub async fn project_commands(state: State<'_, AppState>, task_id: TaskId) -> CmdResult<Vec<crate::projects::ProjectCommand>> {
+    let task = task_views(&state).await?.into_iter().find(|t| t.task.id == task_id);
+    let Some(task) = task else { return Ok(Vec::new()) };
+    let folders = crate::projects::task_folders(&task.attachments, &state.device.id);
+    Ok(folders.iter().flat_map(|f| crate::projects::detect(f)).collect())
+}
+
+#[tauri::command]
+pub fn project_runs(state: State<'_, AppState>) -> Vec<crate::projects::RunView> {
+    state.projects.views()
+}
+
+/// Runs one of a task's project commands, found again here so the window can only run what a folder offers.
+#[tauri::command]
+pub async fn run_project_command(app: AppHandle, state: State<'_, AppState>, task_id: TaskId, command_id: String) -> CmdResult<()> {
+    let found = project_commands(state.clone(), task_id.clone()).await?.into_iter().find(|c| c.id == command_id);
+    let command = found.ok_or("That command isn't in the task's folders any more.")?;
+    state.projects.start(&app, &task_id, command, false)
+}
+
+#[tauri::command]
+pub fn stop_project_command(app: AppHandle, state: State<'_, AppState>, command_id: String) {
+    state.projects.stop(&app, &command_id);
+}
+
+/// Opens the local address a running command printed.
+#[tauri::command]
+pub fn open_project_url(app: AppHandle, state: State<'_, AppState>, command_id: String) -> CmdResult<()> {
+    let url = state.projects.url(&command_id).ok_or("It hasn't said where it's running yet.")?;
+    app.opener().open_url(url, None::<&str>).map_err(err)
+}
+
+/// Marks a project command to start with its task and stop when it pauses, or not.
+#[tauri::command]
+pub fn set_project_autorun(state: State<'_, AppState>, task_id: TaskId, command_id: String, on: bool) -> CmdResult<()> {
+    settings::update(&state.data_dir, |s| {
+        let list = s.project_autoruns.entry(task_id.clone()).or_default();
+        list.retain(|c| c != &command_id);
+        if on {
+            list.push(command_id.clone());
+        }
+        if list.is_empty() {
+            s.project_autoruns.remove(&task_id);
+        }
+    })
+    .map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn project_autoruns(state: State<'_, AppState>, task_id: TaskId) -> Vec<String> {
+    settings::load(&state.data_dir).project_autoruns.remove(&task_id).unwrap_or_default()
+}
+
+/// Starts the project commands marked to run along with the task.
+async fn start_autoruns(app: &AppHandle, state: &AppState, task_id: &TaskId) {
+    let wanted = settings::load(&state.data_dir).project_autoruns.remove(task_id).unwrap_or_default();
+    if wanted.is_empty() {
+        return;
+    }
+    let Ok(tasks) = task_views(state).await else { return };
+    let Some(task) = tasks.into_iter().find(|t| &t.task.id == task_id) else { return };
+    for folder in crate::projects::task_folders(&task.attachments, &state.device.id) {
+        for command in crate::projects::detect(&folder).into_iter().filter(|c| wanted.contains(&c.id)) {
+            if let Err(e) = state.projects.start(app, task_id, command, true) {
+                eprintln!("{e}");
+            }
+        }
+    }
 }
 
 #[tauri::command]
