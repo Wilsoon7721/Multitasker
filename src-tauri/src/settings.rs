@@ -26,6 +26,8 @@ pub struct Settings {
     pub widget_on_top: OnTop,
     /// Start MultiTasker when signing in to Windows (installed builds only).
     pub start_with_windows: bool,
+    /// The hotkey that opens the quick switcher from anywhere, if any.
+    pub switcher_shortcut: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -80,6 +82,7 @@ impl Default for Settings {
             auto_switch: true,
             widget_on_top: OnTop::default(),
             start_with_windows: true,
+            switcher_shortcut: Some("Ctrl+Alt+Space".into()),
         }
     }
 }

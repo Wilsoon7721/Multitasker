@@ -36,6 +36,7 @@ tokio = { workspace = true, features = ["net", "io-util", "time"] }
 ureq = "3"
 tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-global-shortcut = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry", "Win32_System_RestartManager"] }

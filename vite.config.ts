@@ -15,7 +15,11 @@ export default defineConfig({
     emptyOutDir: true,
     target: 'es2022',
     rollupOptions: {
-      input: { main: resolve(ui, 'index.html'), widget: resolve(ui, 'widget.html') },
+      input: {
+        main: resolve(ui, 'index.html'),
+        widget: resolve(ui, 'widget.html'),
+        switcher: resolve(ui, 'switcher.html'),
+      },
     },
   },
 });

@@ -628,16 +628,20 @@ function TodoistForm({ run, onConnected }: { run: Run; onConnected: () => void }
   );
 }
 
+const SHORTCUTS = ['Ctrl+Alt+Space', 'Ctrl+Shift+Space', 'Ctrl+Alt+K', 'Ctrl+Shift+K', null];
+
 function AppSection({ run }: { run: Run }) {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [startup, setStartup] = useState<boolean | null>(null);
   const [checking, setChecking] = useState(false);
   const [upToDate, setUpToDate] = useState(false);
+  const [shortcut, setShortcut] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     const load = () => void api.updateInfo().then(setInfo, () => {});
     load();
     void api.startWithWindows().then(setStartup, () => {});
+    void api.switcherShortcut().then(setShortcut, () => {});
     return onUpdateReady(load);
   }, []);
 
@@ -676,6 +680,31 @@ function AppSection({ run }: { run: Run }) {
             void run(() => api.setStartWithWindows(on));
           }}
         />
+      </label>
+      <label className="toggle-row reminder-row">
+        <span>
+          <span className="choice-title">Quick switcher</span>
+          <span className="choice-detail">
+            A hotkey that works anywhere: find a task to switch to, start alongside or pause, or add a new one.
+          </span>
+        </span>
+        <select
+          className="inline-select"
+          value={shortcut ?? ''}
+          disabled={shortcut === undefined}
+          onChange={(e) => {
+            const next = e.target.value || null;
+            const before = shortcut;
+            setShortcut(next);
+            void run(() => api.setSwitcherShortcut(next)).then((ok) => !ok && setShortcut(before));
+          }}
+        >
+          {SHORTCUTS.map((s) => (
+            <option key={s ?? 'off'} value={s ?? ''}>
+              {s ?? 'Off'}
+            </option>
+          ))}
+        </select>
       </label>
       <div className="toggle-row reminder-row">
         <span>

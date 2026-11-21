@@ -187,6 +187,7 @@ let activity: ActivitySnapshot = {
 let pauseAfterAway: number | null = 15;
 let autoSwitch = true;
 let startup = true;
+let switcherShortcut: string | null = 'Ctrl+Alt+Space';
 let onTop = { enabled: true, except_fullscreen: true, exceptions: [{ exe: 'POWERPNT.EXE', name: 'PowerPoint' }] };
 // The sample Word document stays open until this is set from the console.
 const wordClosed = false;
@@ -245,7 +246,8 @@ function changed() {
 }
 
 const label =
-  new URLSearchParams(location.search).get('window') ?? (location.pathname.includes('widget') ? 'widget' : 'main');
+  new URLSearchParams(location.search).get('window') ??
+  (location.pathname.includes('widget') ? 'widget' : location.pathname.includes('switcher') ? 'switcher' : 'main');
 mockWindows(label);
 
 mockIPC(
@@ -547,6 +549,16 @@ mockIPC(
 
       case 'open_task_things':
         return { opened: find(a.taskId as string).attachments.length, skipped: [] };
+
+      case 'hide_switcher':
+        return null;
+
+      case 'switcher_shortcut':
+        return switcherShortcut;
+
+      case 'set_switcher_shortcut':
+        switcherShortcut = (a.shortcut as string | null) ?? null;
+        return null;
 
       case 'update_info':
         return { current: '0.1.0', ready: '0.2.0', enabled: true };

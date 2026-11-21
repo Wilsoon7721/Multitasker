@@ -362,6 +362,9 @@ export const api = {
   runningApps: () => invoke<RunningApp[]>('running_apps'),
   widgetOnTop: () => invoke<OnTop>('widget_on_top'),
   updateInfo: () => invoke<UpdateInfo>('update_info'),
+  hideSwitcher: () => invoke('hide_switcher'),
+  switcherShortcut: () => invoke<string | null>('switcher_shortcut'),
+  setSwitcherShortcut: (shortcut: string | null) => invoke('set_switcher_shortcut', { shortcut }),
   checkForUpdates: () => invoke<boolean>('check_for_updates'),
   installUpdate: () => invoke('install_update'),
   startWithWindows: () => invoke<boolean>('start_with_windows'),
@@ -441,6 +444,7 @@ export const onSyncStatus = (handler: (status: SyncStatus) => void) => subscribe
 
 /** Fires when the widget's background opacity changes, with the new percentage. */
 export const onWidgetAppearance = (handler: (opacity: number) => void) => subscribe('widget-appearance', handler);
+export const onSwitcherOpened = (handler: () => void) => subscribe('switcher-opened', handler);
 export const onUpdateReady = (handler: (version: string) => void) => subscribe('update-ready', handler);
 
 /** Fires when the widget is shown or hidden, from anywhere (tray, widget, main window). */

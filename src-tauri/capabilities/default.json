@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "What the main window and the widget may do",
-  "windows": ["main", "widget"],
+  "windows": ["main", "widget", "switcher"],
   "permissions": [
     "core:default",
     "core:window:allow-set-size",

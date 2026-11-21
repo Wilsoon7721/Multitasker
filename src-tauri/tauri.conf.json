@@ -39,6 +39,23 @@
         "minimizable": false,
         "focus": false,
         "visible": false
+      },
+      {
+        "label": "switcher",
+        "title": "MultiTasker switcher",
+        "url": "switcher.html",
+        "width": 560,
+        "height": 440,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "center": true,
+        "visible": false
       }
     ],
     "security": {

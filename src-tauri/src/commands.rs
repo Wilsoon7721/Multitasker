@@ -914,6 +914,29 @@ pub fn set_start_with_windows(app: AppHandle, state: State<'_, AppState>, enable
 }
 
 #[tauri::command]
+pub fn hide_switcher(app: AppHandle) {
+    crate::switcher::hide(&app);
+}
+
+#[tauri::command]
+pub fn switcher_shortcut(state: State<'_, AppState>) -> Option<String> {
+    settings::load(&state.data_dir).switcher_shortcut
+}
+
+/// Changes the switcher's hotkey, or turns it off with `None`; a hotkey another program has is refused.
+#[tauri::command]
+pub fn set_switcher_shortcut(app: AppHandle, state: State<'_, AppState>, shortcut: Option<String>) -> CmdResult<()> {
+    let shortcut = shortcut.filter(|s| !s.trim().is_empty());
+    if let Err(e) = crate::switcher::set_shortcut(&app, shortcut.as_deref()) {
+        let old = settings::load(&state.data_dir).switcher_shortcut;
+        let _ = crate::switcher::set_shortcut(&app, old.as_deref());
+        return Err(e);
+    }
+    settings::update(&state.data_dir, |s| s.switcher_shortcut = shortcut).map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn dismiss_paused(app: AppHandle, state: State<'_, AppState>) {
     state.detector.dismiss_paused(&app);
 }

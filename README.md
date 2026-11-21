@@ -40,6 +40,9 @@ Early development. What works today:
 - **Pauses when you're away**: after 15 minutes with no keyboard or mouse, or while the computer sleeps or MultiTasker
   is closed, what's in progress on that computer pauses. The widget offers to resume when you're back. Change the wait
   or turn it off in Settings.
+- **Quick switcher**: Ctrl+Alt+Space anywhere opens a search of your open tasks. Enter switches to one (pausing what
+  you were on), Shift+Enter starts it alongside, Ctrl+Enter pauses it, and typing something new adds it. The hotkey
+  can be changed or turned off in Settings.
 - **Getting back into a task**: when a task pauses or you switch away, the widget asks where you left off, and the
   note shows on the task until you replace it. Going back to a task shows that note and opens its linked pages, files
   and folders in one click ("Open all" in its details does the same).

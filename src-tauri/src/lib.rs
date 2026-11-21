@@ -8,6 +8,7 @@ mod device;
 mod on_top;
 mod reminders;
 mod settings;
+mod switcher;
 mod syncing;
 mod tokens;
 mod tray;
@@ -92,6 +93,7 @@ pub fn run() {
             Some(vec![updates::AUTOSTART_ARG]),
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(switcher::plugin())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             move_old_data_dir(&data_dir);
@@ -143,6 +145,9 @@ pub fn run() {
                 eprintln!("couldn't set starting with Windows: {e}");
             }
             updates::start(app.handle());
+            if let Err(e) = switcher::set_shortcut(app.handle(), prefs.switcher_shortcut.as_deref()) {
+                eprintln!("{e}");
+            }
             // Started by Windows at sign-in, it opens quietly to the tray and widget.
             if !updates::started_at_sign_in() {
                 windows::show_main(app.handle())?;
@@ -150,6 +155,12 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // The switcher is only for a moment; clicking anywhere else puts it away.
+            if let WindowEvent::Focused(false) = event {
+                if window.label() == switcher::SWITCHER {
+                    let _ = window.hide();
+                }
+            }
             // Closing the main window only hides it; the app lives on in the tray with the widget.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == windows::MAIN {
@@ -183,6 +194,9 @@ pub fn run() {
             commands::set_detection,
             commands::detection_enabled,
             commands::dismiss_paused,
+            commands::hide_switcher,
+            commands::switcher_shortcut,
+            commands::set_switcher_shortcut,
             commands::update_info,
             commands::check_for_updates,
             commands::install_update,
