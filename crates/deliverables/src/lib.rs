@@ -72,6 +72,31 @@ pub struct Revision {
     pub available: bool,
 }
 
+/// A file copied in, before it's recorded as a revision.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kept {
+    pub name: String,
+    pub sha256: String,
+    pub size: u64,
+    pub source: String,
+}
+
+impl Kept {
+    pub fn record(&self, id: String, provider: &str, task_id: &str, device: Option<&str>) -> Record {
+        Record {
+            id,
+            provider: provider.into(),
+            task_id: task_id.into(),
+            name: self.name.clone(),
+            sha256: self.sha256.clone(),
+            size: self.size,
+            source: self.source.clone(),
+            device: device.map(str::to_owned),
+            added_at: Utc::now(),
+        }
+    }
+}
+
 /// What handing in one file did.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HandedIn {
@@ -144,6 +169,16 @@ impl Store {
 
     /// Keeps a copy of a file as the next revision of the task's deliverable with that name.
     pub fn hand_in(&self, provider: &str, task_id: &str, path: &Path, device: Option<&str>) -> Result<HandedIn> {
+        let kept = self.keep(path)?;
+        if let Some(same) = self.unchanged(provider, task_id, &kept)? {
+            return Ok(same);
+        }
+        let record = kept.record(uuid::Uuid::new_v4().to_string(), provider, task_id, device);
+        self.add_record(&record)
+    }
+
+    /// Keeps a copy of a file without recording it yet, for lists that store the record themselves.
+    pub fn keep(&self, path: &Path) -> Result<Kept> {
         let meta = fs::metadata(path).map_err(|e| Error::Invalid(format!("Can't read {}: {e}", path.display())))?;
         if meta.is_dir() {
             return Err(Error::Invalid(format!(
@@ -156,7 +191,11 @@ impl Store {
             .map(|n| n.to_string_lossy().into_owned())
             .ok_or_else(|| Error::Invalid(format!("{} has no file name.", path.display())))?;
         let (sha256, size) = self.keep_copy(path)?;
+        Ok(Kept { name, sha256, size, source: path.display().to_string() })
+    }
 
+    /// What handing in a kept file amounts to when it matches the latest version already handed in.
+    pub fn unchanged(&self, provider: &str, task_id: &str, kept: &Kept) -> Result<Option<HandedIn>> {
         let conn = self.conn();
         let latest: Option<(String, i64)> = conn
             .query_row(
@@ -164,29 +203,117 @@ impl Store {
                  FROM deliverables d JOIN revisions r ON r.deliverable_id = d.id
                  WHERE d.provider = ?1 AND d.task_id = ?2 AND d.name = ?3 COLLATE NOCASE
                  ORDER BY r.added_at DESC, r.id DESC LIMIT 1",
-                params![provider, task_id, name],
+                params![provider, task_id, kept.name],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()
             .map_err(storage)?;
-        if let Some((hash, count)) = &latest {
-            if *hash == sha256 {
-                return Ok(HandedIn { name, number: *count as u32, unchanged: true });
+        Ok(latest
+            .filter(|(hash, _)| *hash == kept.sha256)
+            .map(|(_, count)| HandedIn { name: kept.name.clone(), number: count as u32, unchanged: true }))
+    }
+
+    /// Records a revision whose copy is already kept.
+    pub fn add_record(&self, record: &Record) -> Result<HandedIn> {
+        let conn = self.conn();
+        insert(&conn, record)?;
+        let number: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM revisions r JOIN deliverables d ON d.id = r.deliverable_id
+                 WHERE d.provider = ?1 AND d.task_id = ?2 AND d.name = ?3 COLLATE NOCASE",
+                params![record.provider, record.task_id, record.name],
+                |r| r.get(0),
+            )
+            .map_err(storage)?;
+        Ok(HandedIn { name: record.name.clone(), number: number as u32, unchanged: false })
+    }
+
+    /// Makes one task's revisions exactly those its task list holds; returns whether anything changed.
+    pub fn replace_task(&self, provider: &str, task_id: &str, records: &[Record]) -> Result<bool> {
+        let ids: HashSet<&str> = records.iter().map(|r| r.id.as_str()).collect();
+        let changed = {
+            let conn = self.conn();
+            let known: Vec<String> = {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT r.id FROM revisions r JOIN deliverables d ON d.id = r.deliverable_id
+                         WHERE d.provider = ?1 AND d.task_id = ?2",
+                    )
+                    .map_err(storage)?;
+                let rows = stmt.query_map(params![provider, task_id], |r| r.get(0)).map_err(storage)?;
+                rows.collect::<rusqlite::Result<_>>().map_err(storage)?
+            };
+            let mut changed = false;
+            for gone in known.iter().filter(|id| !ids.contains(id.as_str())) {
+                conn.execute("DELETE FROM revisions WHERE id = ?1", params![gone]).map_err(storage)?;
+                changed = true;
             }
-        }
-        let record = Record {
-            id: uuid::Uuid::new_v4().to_string(),
-            provider: provider.into(),
-            task_id: task_id.into(),
-            name: name.clone(),
-            sha256,
-            size,
-            source: path.display().to_string(),
-            device: device.map(str::to_owned),
-            added_at: Utc::now(),
+            let known: HashSet<&str> = known.iter().map(String::as_str).collect();
+            for record in records.iter().filter(|r| !known.contains(r.id.as_str())) {
+                insert(&conn, record)?;
+                changed = true;
+            }
+            conn.execute("DELETE FROM deliverables WHERE id NOT IN (SELECT deliverable_id FROM revisions)", [])
+                .map_err(storage)?;
+            changed
         };
-        insert(&conn, &record)?;
-        Ok(HandedIn { name, number: latest.map_or(1, |(_, n)| n as u32 + 1), unchanged: false })
+        if changed {
+            self.sweep()?;
+        }
+        Ok(changed)
+    }
+
+    /// A revision's record, for fetching its copy from wherever it's kept.
+    pub fn record(&self, revision_id: &str) -> Result<Record> {
+        self.conn()
+            .query_row(
+                "SELECT r.id, d.provider, d.task_id, d.name, r.sha256, r.size, r.source, r.device, r.added_at
+                 FROM revisions r JOIN deliverables d ON d.id = r.deliverable_id WHERE r.id = ?1",
+                params![revision_id],
+                |r| {
+                    Ok(Record {
+                        id: r.get(0)?,
+                        provider: r.get(1)?,
+                        task_id: r.get(2)?,
+                        name: r.get(3)?,
+                        sha256: r.get(4)?,
+                        size: r.get::<_, i64>(5)? as u64,
+                        source: r.get(6)?,
+                        device: r.get(7)?,
+                        added_at: time(&r.get::<_, String>(8)?),
+                    })
+                },
+            )
+            .optional()
+            .map_err(storage)?
+            .ok_or_else(|| Error::NotFound("That revision no longer exists.".into()))
+    }
+
+    /// Every revision of a deliverable, by id.
+    pub fn revision_ids(&self, deliverable_id: &str) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT id FROM revisions WHERE deliverable_id = ?1").map_err(storage)?;
+        let rows = stmt.query_map(params![deliverable_id], |r| r.get(0)).map_err(storage)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(storage)
+    }
+
+    /// Revisions of a provider's tasks whose copies aren't here yet but could come, smallest first.
+    pub fn missing(&self, provider: &str) -> Result<Vec<Record>> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT r.id FROM revisions r JOIN deliverables d ON d.id = r.deliverable_id
+                 WHERE d.provider = ?1 AND r.size <= ?2 ORDER BY r.size",
+            )
+            .map_err(storage)?;
+        let ids: Vec<String> = stmt
+            .query_map(params![provider, MAX_SYNC_SIZE as i64], |r| r.get(0))
+            .map_err(storage)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(storage)?;
+        drop(stmt);
+        drop(conn);
+        Ok(ids.iter().filter_map(|id| self.record(id).ok()).filter(|r| !self.has_copy(&r.sha256)).collect())
     }
 
     /// Copies a file in under its hash, so the same content is only ever kept once.
@@ -401,17 +528,17 @@ impl Store {
         self.sweep()
     }
 
-    /// What this computer tells the others: the work handed in here and what was deleted here.
-    pub fn own_records(&self, device: &str) -> Result<(Vec<Record>, Vec<Removal>)> {
+    /// What this computer tells the others about one provider's tasks: the work handed in and deleted here.
+    pub fn own_records(&self, device: &str, provider: &str) -> Result<(Vec<Record>, Vec<Removal>)> {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
                 "SELECT r.id, d.provider, d.task_id, d.name, r.sha256, r.size, r.source, r.device, r.added_at
-                 FROM revisions r JOIN deliverables d ON d.id = r.deliverable_id WHERE r.device = ?1",
+                 FROM revisions r JOIN deliverables d ON d.id = r.deliverable_id WHERE r.device = ?1 AND d.provider = ?2",
             )
             .map_err(storage)?;
         let records = stmt
-            .query_map(params![device], |r| {
+            .query_map(params![device, provider], |r| {
                 Ok(Record {
                     id: r.get(0)?,
                     provider: r.get(1)?,
@@ -428,10 +555,10 @@ impl Store {
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(storage)?;
         let mut stmt = conn
-            .prepare("SELECT provider, task_id, name, removed_at, device FROM removals WHERE device = ?1")
+            .prepare("SELECT provider, task_id, name, removed_at, device FROM removals WHERE device = ?1 AND provider = ?2")
             .map_err(storage)?;
         let removals = stmt
-            .query_map(params![device], |r| {
+            .query_map(params![device, provider], |r| {
                 let name: String = r.get(2)?;
                 Ok(Removal {
                     provider: r.get(0)?,
@@ -641,6 +768,23 @@ pub(crate) mod tests {
         let saved = scratch.0.join("saved.txt");
         store.export(&first, &saved).unwrap();
         assert!(!fs::metadata(&saved).unwrap().permissions().readonly(), "a saved copy can be edited");
+    }
+
+    #[test]
+    fn a_task_lists_own_record_replaces_whats_here() {
+        let scratch = Scratch::new();
+        let store = Store::open(scratch.0.join("store")).unwrap();
+        let kept = store.keep(&scratch.file("a.txt", "one")).unwrap();
+        let mine = kept.record("comment-1".into(), "todoist", "t1", Some("pc"));
+        store.add_record(&mine).unwrap();
+        let elsewhere = Record { id: "comment-2".into(), sha256: "f".repeat(64), ..mine.clone() };
+
+        assert!(store.replace_task("todoist", "t1", &[elsewhere.clone()]).unwrap());
+        let list = store.list("todoist", "t1").unwrap();
+        assert_eq!(list[0].revisions.iter().map(|r| (r.id.as_str(), r.available)).collect::<Vec<_>>(), [("comment-2", false)]);
+        assert_eq!(store.missing("todoist").unwrap().iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["comment-2"]);
+        assert!(!store.replace_task("todoist", "t1", &[elsewhere]).unwrap(), "nothing new");
+        assert!(store.own_records("pc", "sqlite").unwrap().0.is_empty(), "other lists' work stays out of sync");
     }
 
     #[test]

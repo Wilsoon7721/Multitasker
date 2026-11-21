@@ -264,10 +264,48 @@ pub async fn reveal_attachment(app: AppHandle, state: State<'_, AppState>, id: S
     app.opener().reveal_item_in_dir(existing_path(&state, &a)?).map_err(err)
 }
 
-/// The work handed in for a task, each with its revisions.
+fn work_record(provider: &str, f: &multitasker_core::HandedInFile) -> multitasker_deliverables::Record {
+    multitasker_deliverables::Record {
+        id: f.id.clone(),
+        provider: provider.to_owned(),
+        task_id: f.task_id.clone(),
+        name: f.name.clone(),
+        sha256: f.sha256.clone(),
+        size: f.size,
+        source: String::new(),
+        device: f.device.clone(),
+        added_at: f.added_at,
+    }
+}
+
+fn work_file(r: &multitasker_deliverables::Record) -> multitasker_core::HandedInFile {
+    multitasker_core::HandedInFile {
+        id: r.id.clone(),
+        task_id: r.task_id.clone(),
+        name: r.name.clone(),
+        sha256: r.sha256.clone(),
+        size: r.size,
+        device: r.device.clone(),
+        added_at: r.added_at,
+    }
+}
+
+/// The work handed in for a task, each with its revisions; read fresh from the task list when it keeps it.
 #[tauri::command]
-pub fn list_deliverables(state: State<'_, AppState>, task_id: TaskId) -> CmdResult<Vec<multitasker_deliverables::Deliverable>> {
-    state.deliverables.list(state.provider().key(), &task_id).map_err(err)
+pub async fn list_deliverables(
+    state: State<'_, AppState>,
+    task_id: TaskId,
+) -> CmdResult<Vec<multitasker_deliverables::Deliverable>> {
+    let provider = state.provider();
+    let key = provider.key().to_owned();
+    if let Some(work) = provider.work() {
+        // Offline, what's known here is still shown.
+        if let Ok(files) = work.handed_in(&task_id).await {
+            let records: Vec<_> = files.iter().map(|f| work_record(&key, f)).collect();
+            state.deliverables.replace_task(&key, &task_id, &records).map_err(err)?;
+        }
+    }
+    state.deliverables.list(&key, &task_id).map_err(err)
 }
 
 /// Keeps copies of files as the task's deliverables; a file handed in again becomes a new revision.
@@ -283,21 +321,49 @@ pub async fn hand_in(
     if !provider.list().await.map_err(err)?.iter().any(|t| t.id == task_id) {
         return Err("That task no longer exists.".into());
     }
-    let (store, device) = (state.deliverables.clone(), state.device.id.clone());
-    // Copying big files takes a moment, so it happens off the UI's thread.
-    let (handed_in, problems) = tauri::async_runtime::spawn_blocking(move || {
-        let mut handed_in = Vec::new();
-        let mut problems = Vec::new();
-        for path in paths {
-            match store.hand_in(&key, &task_id, std::path::Path::new(path.trim()), Some(&device)) {
-                Ok(h) => handed_in.push(h),
-                Err(e) => problems.push(e.to_string()),
+    let store = state.deliverables.clone();
+    let mut handed_in = Vec::new();
+    let mut problems = Vec::new();
+    for path in paths {
+        // Copying big files takes a moment, so it happens off the UI's thread.
+        let kept = {
+            let (store, path) = (store.clone(), path.trim().to_owned());
+            tauri::async_runtime::spawn_blocking(move || store.keep(std::path::Path::new(&path))).await.map_err(err)?
+        };
+        let kept = match kept {
+            Ok(k) => k,
+            Err(e) => {
+                problems.push(e.to_string());
+                continue;
+            }
+        };
+        if let Some(same) = store.unchanged(&key, &task_id, &kept).map_err(err)? {
+            handed_in.push(same);
+            continue;
+        }
+        let mut record = kept.record(uuid::Uuid::new_v4().to_string(), &key, &task_id, Some(&state.device.id));
+        // A task list that keeps handed-in work gets the file itself, and its id names the revision.
+        if let Some(work) = provider.work() {
+            let bytes = match store.read_copy(&kept.sha256) {
+                Ok(b) => b,
+                Err(e) => {
+                    problems.push(e.to_string());
+                    continue;
+                }
+            };
+            match work.hand_in(work_file(&record), bytes, &state.device.name).await {
+                Ok(stored) => record.id = stored.id,
+                Err(e) => {
+                    problems.push(format!("{}: {e}", kept.name));
+                    continue;
+                }
             }
         }
-        (handed_in, problems)
-    })
-    .await
-    .map_err(err)?;
+        match store.add_record(&record) {
+            Ok(h) => handed_in.push(h),
+            Err(e) => problems.push(e.to_string()),
+        }
+    }
     if !handed_in.is_empty() {
         // Hand-ins aren't task changes, so sync is woken for them directly.
         state.syncer.wake_soon();
@@ -310,9 +376,25 @@ pub async fn hand_in(
     }
 }
 
+/// Makes sure a revision's copy is here, fetching it from the task list if that's where it is.
+async fn ensure_copy(state: &AppState, revision_id: &str) -> CmdResult<()> {
+    let record = state.deliverables.record(revision_id).map_err(err)?;
+    if state.deliverables.has(&record.sha256) {
+        return Ok(());
+    }
+    let provider = state.provider();
+    let Some(work) = provider.work().filter(|_| record.provider == provider.key()) else { return Ok(()) };
+    let bytes = work.download(&work_file(&record)).await.map_err(err)?;
+    if !state.deliverables.receive_copy(&record.sha256, &bytes).map_err(err)? {
+        return Err("The downloaded file doesn't match what was handed in.".into());
+    }
+    Ok(())
+}
+
 /// Opens a read-only copy of a revision, so the kept one can't be changed by accident.
 #[tauri::command]
 pub async fn open_deliverable(app: AppHandle, state: State<'_, AppState>, revision_id: String) -> CmdResult<()> {
+    ensure_copy(&state, &revision_id).await?;
     let path = state.deliverables.open_copy(&revision_id).map_err(err)?;
     app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(err)
 }
@@ -320,6 +402,7 @@ pub async fn open_deliverable(app: AppHandle, state: State<'_, AppState>, revisi
 /// Saves a copy of a revision where the person chose.
 #[tauri::command]
 pub async fn export_deliverable(state: State<'_, AppState>, revision_id: String, dest: String) -> CmdResult<()> {
+    ensure_copy(&state, &revision_id).await?;
     let store = state.deliverables.clone();
     tauri::async_runtime::spawn_blocking(move || store.export(&revision_id, std::path::Path::new(&dest)))
         .await
@@ -328,11 +411,32 @@ pub async fn export_deliverable(state: State<'_, AppState>, revision_id: String,
 }
 
 #[tauri::command]
-pub fn remove_deliverable(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
+pub async fn remove_deliverable(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    let provider = state.provider();
+    if let Some(work) = provider.work() {
+        for revision in state.deliverables.revision_ids(&id).map_err(err)? {
+            work.remove_handed_in(&revision).await.map_err(err)?;
+        }
+    }
     state.deliverables.remove(&id, Some(&state.device.id)).map_err(err)?;
     state.syncer.wake_soon();
     changed(&app);
     Ok(())
+}
+
+/// Brings in work handed in on other computers to a task list that keeps it, a few copies at a time.
+pub async fn catch_up_work(state: &AppState) -> CmdResult<bool> {
+    let provider = state.provider();
+    let Some(work) = provider.work() else { return Ok(false) };
+    let key = provider.key().to_owned();
+    let records: Vec<_> = work.all_handed_in().await.map_err(err)?.iter().map(|f| work_record(&key, f)).collect();
+    let mut changed = state.deliverables.merge(&records, &[]).map_err(err)? > 0;
+    for record in state.deliverables.missing(&key).map_err(err)?.into_iter().take(5) {
+        if let Ok(bytes) = work.download(&work_file(&record)).await {
+            changed |= state.deliverables.receive_copy(&record.sha256, &bytes).map_err(err)?;
+        }
+    }
+    Ok(changed)
 }
 
 #[tauri::command]

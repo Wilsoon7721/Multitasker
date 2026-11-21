@@ -27,8 +27,8 @@ pub struct SyncReport {
     pub downloaded: usize,
 }
 
-/// Swaps lists of handed-in work with the other computers, then the copies themselves.
-pub fn sync(store: &Store, remote: &dyn Remote, me: &str) -> Result<SyncReport, SyncFailure> {
+/// Swaps lists of handed-in work for one provider's tasks with the other computers, then the copies themselves.
+pub fn sync(store: &Store, remote: &dyn Remote, me: &str, provider: &str) -> Result<SyncReport, SyncFailure> {
     let mut report = SyncReport::default();
 
     // Its own list is read too, so a reinstall gets back the work it handed in before.
@@ -39,7 +39,7 @@ pub fn sync(store: &Store, remote: &dyn Remote, me: &str) -> Result<SyncReport, 
         report.learned += store.merge(&manifest.records, &manifest.removals)?;
     }
 
-    let (records, removals) = store.own_records(me)?;
+    let (records, removals) = store.own_records(me, provider)?;
     let manifest = Manifest { device: me.to_owned(), records, removals };
     remote.put(&format!("{RECORDS}{me}.json"), &serde_json::to_vec(&manifest).expect("records always serialize"))?;
 
@@ -90,10 +90,10 @@ mod tests {
 
         let essay = scratch.file("Essay.docx", "draft");
         laptop.hand_in("sqlite", "t1", &essay, Some("laptop")).unwrap();
-        let first = sync(&laptop, &remote, "laptop").unwrap();
+        let first = sync(&laptop, &remote, "laptop", "sqlite").unwrap();
         assert_eq!((first.learned, first.uploaded), (0, 1));
 
-        let arrived = sync(&desktop, &remote, "desktop").unwrap();
+        let arrived = sync(&desktop, &remote, "desktop", "sqlite").unwrap();
         assert_eq!((arrived.learned, arrived.downloaded), (1, 1));
         let list = desktop.list("sqlite", "t1").unwrap();
         assert!(list[0].revisions[0].available);
@@ -103,12 +103,12 @@ mod tests {
         // A second version handed in on the desktop stacks on the laptop's first.
         scratch.file("Essay.docx", "final");
         desktop.hand_in("sqlite", "t1", &essay, Some("desktop")).unwrap();
-        sync(&desktop, &remote, "desktop").unwrap();
-        sync(&laptop, &remote, "laptop").unwrap();
+        sync(&desktop, &remote, "desktop", "sqlite").unwrap();
+        sync(&laptop, &remote, "laptop", "sqlite").unwrap();
         let versions = laptop.list("sqlite", "t1").unwrap()[0].revisions.iter().map(|r| r.number).collect::<Vec<_>>();
         assert_eq!(versions, [2, 1]);
 
-        let quiet = sync(&laptop, &remote, "laptop").unwrap();
+        let quiet = sync(&laptop, &remote, "laptop", "sqlite").unwrap();
         assert_eq!(quiet, SyncReport::default(), "nothing new means nothing moves");
     }
 
@@ -122,19 +122,19 @@ mod tests {
         let desktop = Store::open(scratch.0.join("desktop")).unwrap();
 
         laptop.hand_in("sqlite", "t1", &scratch.file("a.txt", "one"), Some("laptop")).unwrap();
-        sync(&laptop, &remote, "laptop").unwrap();
-        sync(&desktop, &remote, "desktop").unwrap();
+        sync(&laptop, &remote, "laptop", "sqlite").unwrap();
+        sync(&desktop, &remote, "desktop", "sqlite").unwrap();
 
         let id = desktop.list("sqlite", "t1").unwrap()[0].id.clone();
         desktop.remove(&id, Some("desktop")).unwrap();
-        sync(&desktop, &remote, "desktop").unwrap();
-        sync(&laptop, &remote, "laptop").unwrap();
+        sync(&desktop, &remote, "desktop", "sqlite").unwrap();
+        sync(&laptop, &remote, "laptop", "sqlite").unwrap();
         assert!(laptop.list("sqlite", "t1").unwrap().is_empty(), "deleted on the laptop too");
 
         std::thread::sleep(std::time::Duration::from_millis(5));
         laptop.hand_in("sqlite", "t1", &scratch.file("a.txt", "two"), Some("laptop")).unwrap();
-        sync(&laptop, &remote, "laptop").unwrap();
-        sync(&desktop, &remote, "desktop").unwrap();
+        sync(&laptop, &remote, "laptop", "sqlite").unwrap();
+        sync(&desktop, &remote, "desktop", "sqlite").unwrap();
         assert_eq!(desktop.list("sqlite", "t1").unwrap().len(), 1, "work handed in after the deletion survives it");
     }
 
@@ -146,10 +146,10 @@ mod tests {
         let remote = FolderRemote::new(&shared).unwrap();
         let old = Store::open(scratch.0.join("old")).unwrap();
         old.hand_in("sqlite", "t1", &scratch.file("a.txt", "mine"), Some("pc")).unwrap();
-        sync(&old, &remote, "pc").unwrap();
+        sync(&old, &remote, "pc", "sqlite").unwrap();
 
         let fresh = Store::open(scratch.0.join("fresh")).unwrap();
-        sync(&fresh, &remote, "pc").unwrap();
+        sync(&fresh, &remote, "pc", "sqlite").unwrap();
         assert_eq!(fresh.list("sqlite", "t1").unwrap().len(), 1);
         let manifest: Manifest = serde_json::from_slice(&remote.get("multitasker/v1/deliverables/pc.json").unwrap().unwrap()).unwrap();
         assert_eq!(manifest.records.len(), 1, "its list still names that work");

@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, SecondsFormat, TimeZone, Utc};
 use multitasker_core::{
-    check_category, check_title, clean, Attachment, AttachmentKind, DeviceId, Error, ExtrasStore, NewTask, Result, Task,
-    TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus,
+    check_category, check_title, clean, content_type, multipart_file, Attachment, AttachmentKind, DeviceId, Error,
+    ExtrasStore, HandedInFile, NewTask, Result, Task, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus, WorkStore,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -26,6 +26,9 @@ pub const IN_PROGRESS_LABEL: &str = "in-progress";
 
 /// Ends every comment MultiTasker writes, so it can find its own among the person's.
 const MARK: &str = "MultiTasker";
+
+/// The largest file MultiTasker downloads from Todoist in one go.
+const MAX_FILE: u64 = 200 * 1024 * 1024;
 
 /// Tasks kept in Todoist, read and written with a personal API token.
 pub struct Todoist {
@@ -81,6 +84,16 @@ struct Note {
     posted_at: DateTime<Utc>,
     #[serde(default)]
     is_deleted: bool,
+    #[serde(default)]
+    file_attachment: Option<FileAttachment>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct FileAttachment {
+    #[serde(default)]
+    file_name: Option<String>,
+    #[serde(default)]
+    file_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -154,6 +167,37 @@ impl Inner {
             .header("authorization", &format!("Bearer {}", self.token))
             .send_form([("sync_token", "*"), ("resource_types", resources.as_str())]);
         Self::read(response)
+    }
+
+    /// Uploads a file to Todoist's file store, returning what a comment needs to carry it.
+    fn upload(&self, name: &str, bytes: &[u8]) -> Result<Value> {
+        let (body, content_type) = multipart_file("file", name, content_type(name), bytes);
+        let response = self
+            .agent
+            .post(&format!("{API}/uploads"))
+            .header("authorization", &format!("Bearer {}", self.token))
+            .header("content-type", &content_type)
+            .send(&body[..]);
+        Self::read(response)
+    }
+
+    /// A file Todoist stores, following its redirect to wherever the content is served from.
+    fn fetch(&self, url: &str) -> Result<Vec<u8>> {
+        let mut response = self
+            .agent
+            .get(url)
+            .header("authorization", &format!("Bearer {}", self.token))
+            .call()
+            .map_err(|e| Error::Storage(format!("Couldn't download it from Todoist: {e}")))?;
+        if !response.status().is_success() {
+            return Err(Error::Storage(format!("Todoist answered {} for that file.", response.status().as_u16())));
+        }
+        response
+            .body_mut()
+            .with_config()
+            .limit(MAX_FILE)
+            .read_to_vec()
+            .map_err(|e| Error::Storage(format!("Couldn't download it from Todoist: {e}")))
     }
 
     fn read(response: std::result::Result<ureq::http::Response<ureq::Body>, ureq::Error>) -> Result<Value> {
@@ -338,6 +382,18 @@ fn due_body(changes: &TaskChanges, current: Option<NaiveDate>) -> Option<(&'stat
 enum Mark {
     Started { device: Option<String>, device_name: Option<String> },
     Attachment(Attachment),
+    HandedIn(HandedInFile),
+}
+
+fn handed_in_note(file: &HandedInFile, device_name: &str) -> String {
+    format!(
+        "📦 Handed in {} from {}\n\n{MARK} · handed-in · {} · {} · {}",
+        one_line(&file.name),
+        one_line(device_name),
+        file.sha256,
+        file.size,
+        file.device.as_deref().unwrap_or("-")
+    )
 }
 
 fn started_note(device: &DeviceId, device_name: &str) -> String {
@@ -361,6 +417,23 @@ fn parse_note(note: &Note) -> Option<Mark> {
     let footer = lines.last()?.strip_prefix(MARK)?.strip_prefix(" · ")?;
     let parts: Vec<&str> = footer.split(" · ").collect();
     let first = lines.first()?;
+
+    if parts[0] == "handed-in" {
+        let name = note
+            .file_attachment
+            .as_ref()
+            .and_then(|f| f.file_name.clone())
+            .or_else(|| first.strip_prefix("📦 Handed in ").and_then(|r| r.rsplit_once(" from ")).map(|(n, _)| n.to_owned()))?;
+        return Some(Mark::HandedIn(HandedInFile {
+            id: note.id.clone(),
+            task_id: note.item_id.clone(),
+            name,
+            sha256: parts.get(1)?.to_string(),
+            size: parts.get(2)?.parse().ok()?,
+            device: parts.get(3).filter(|d| **d != "-").map(|d| d.to_string()),
+            added_at: note.posted_at,
+        }));
+    }
 
     if parts[0] == "started" {
         return Some(Mark::Started {
@@ -404,7 +477,7 @@ fn extras_of(item: &Item, notes: &[Note]) -> TaskExtras {
                 }
             }
             Some(Mark::Attachment(a)) => attachments.push(a),
-            None => {}
+            Some(Mark::HandedIn(_)) | None => {}
         }
     }
     attachments.sort_by_key(|a| a.added_at);
@@ -431,6 +504,10 @@ impl TaskProvider for Todoist {
     }
 
     fn extras(&self) -> Option<&dyn ExtrasStore> {
+        Some(self)
+    }
+
+    fn work(&self) -> Option<&dyn WorkStore> {
         Some(self)
     }
 
@@ -592,12 +669,117 @@ impl ExtrasStore for Todoist {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct Comments {
+    #[serde(default)]
+    results: Vec<Note>,
+    #[serde(default)]
+    next_cursor: Option<String>,
+}
+
+#[async_trait]
+impl WorkStore for Todoist {
+    async fn handed_in(&self, task_id: &TaskId) -> Result<Vec<HandedInFile>> {
+        let task_id = task_id.clone();
+        self.call(move |inner| {
+            let mut out = Vec::new();
+            let mut cursor: Option<String> = None;
+            for _ in 0..10 {
+                let mut path = format!("/comments?task_id={task_id}&limit=200");
+                if let Some(c) = &cursor {
+                    path.push_str(&format!("&cursor={c}"));
+                }
+                let page: Comments = serde_json::from_value(inner.send("GET", &path, None)?).map_err(|e| Error::Storage(e.to_string()))?;
+                out.extend(page.results.iter().filter(|n| !n.is_deleted).filter_map(|n| match parse_note(n) {
+                    Some(Mark::HandedIn(f)) => Some(f),
+                    _ => None,
+                }));
+                cursor = page.next_cursor;
+                if cursor.is_none() {
+                    break;
+                }
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    async fn all_handed_in(&self) -> Result<Vec<HandedInFile>> {
+        self.call(|inner| {
+            Ok(inner
+                .snapshot()?
+                .notes
+                .iter()
+                .filter_map(|n| match parse_note(n) {
+                    Some(Mark::HandedIn(f)) => Some(f),
+                    _ => None,
+                })
+                .collect())
+        })
+        .await
+    }
+
+    async fn hand_in(&self, file: HandedInFile, bytes: Vec<u8>, device_name: &str) -> Result<HandedInFile> {
+        let content = handed_in_note(&file, device_name);
+        self.call(move |inner| {
+            let uploaded = inner.upload(&file.name, &bytes)?;
+            let pick = |k: &str| uploaded.get(k).cloned().unwrap_or(Value::Null);
+            let attachment = json!({
+                "file_name": file.name,
+                "file_type": pick("file_type"),
+                "file_url": pick("file_url"),
+                "resource_type": pick("resource_type"),
+            });
+            let body = json!({ "task_id": file.task_id, "content": content, "attachment": attachment });
+            let note: Note = serde_json::from_value(inner.send("POST", "/comments", Some(&body))?).map_err(|e| Error::Storage(e.to_string()))?;
+            inner.forget_cache();
+            match parse_note(&note) {
+                Some(Mark::HandedIn(stored)) => Ok(stored),
+                _ => Err(Error::Storage("Todoist changed the handed-in file so MultiTasker can't read it back.".into())),
+            }
+        })
+        .await
+    }
+
+    async fn remove_handed_in(&self, id: &str) -> Result<()> {
+        let id = id.to_owned();
+        self.call(move |inner| {
+            inner.forget_cache();
+            match inner.send("DELETE", &format!("/comments/{id}"), None) {
+                Ok(_) | Err(Error::NotFound(_)) => Ok(()),
+                Err(e) => Err(e),
+            }
+        })
+        .await
+    }
+
+    async fn download(&self, file: &HandedInFile) -> Result<Vec<u8>> {
+        let id = file.id.clone();
+        self.call(move |inner| {
+            let note: Note = serde_json::from_value(inner.send("GET", &format!("/comments/{id}"), None)?).map_err(|e| Error::Storage(e.to_string()))?;
+            let url = note
+                .file_attachment
+                .and_then(|f| f.file_url)
+                .ok_or_else(|| Error::NotFound("That handed-in file is no longer in Todoist.".into()))?;
+            inner.fetch(&url)
+        })
+        .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn note(content: &str) -> Note {
-        Note { id: "n1".into(), item_id: "t1".into(), content: content.into(), posted_at: Utc::now(), is_deleted: false }
+        Note {
+            id: "n1".into(),
+            item_id: "t1".into(),
+            content: content.into(),
+            posted_at: Utc::now(),
+            is_deleted: false,
+            file_attachment: None,
+        }
     }
 
     fn attachment(kind: AttachmentKind, name: &str, target: &str, device: Option<&str>) -> Attachment {
@@ -637,6 +819,22 @@ mod tests {
         );
         assert_eq!(parse_note(&note("Remember to cite the slides")), None);
         assert_eq!(parse_note(&note("📎 [x](y)\n\nMultiTasker · hologram")), None);
+    }
+
+    #[test]
+    fn handed_in_files_round_trip_through_comments() {
+        let file = HandedInFile {
+            id: "n1".into(),
+            task_id: "t1".into(),
+            name: "Essay final.docx".into(),
+            sha256: "ab".repeat(32),
+            size: 12_345,
+            device: Some("pc-1".into()),
+            added_at: Utc::now(),
+        };
+        let mut n = note(&handed_in_note(&file, "LAPTOP"));
+        n.posted_at = file.added_at;
+        assert_eq!(parse_note(&n), Some(Mark::HandedIn(file)));
     }
 
     #[test]
@@ -738,5 +936,36 @@ mod tests {
         if let Some(p) = project {
             inner.send("DELETE", &format!("/projects/{}", p.id), None).unwrap();
         }
+    }
+
+    async fn hand_in_round_trip(list: &(impl TaskProvider + WorkStore), task: &Task) {
+        let bytes = b"final essay".to_vec();
+        let file = HandedInFile {
+            id: String::new(),
+            task_id: task.id.clone(),
+            name: "Essay final.txt".into(),
+            sha256: "ef".repeat(32),
+            size: bytes.len() as u64,
+            device: Some("pc-test".into()),
+            added_at: Utc::now(),
+        };
+        let stored = list.hand_in(file.clone(), bytes.clone(), "TEST-PC").await.unwrap();
+        assert_eq!((stored.name.as_str(), stored.sha256.as_str(), stored.device.as_deref()), ("Essay final.txt", file.sha256.as_str(), Some("pc-test")));
+        let found = WorkStore::handed_in(list, &task.id).await.unwrap();
+        assert_eq!(found.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(), [stored.id.as_str()]);
+        assert_eq!(list.download(&stored).await.unwrap(), bytes);
+        assert!(list.all_handed_in().await.unwrap().iter().any(|f| f.id == stored.id));
+        list.remove_handed_in(&stored.id).await.unwrap();
+        assert!(WorkStore::handed_in(list, &task.id).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn hands_in_work_to_a_real_account() {
+        let Ok(token) = std::env::var("TODOIST_TOKEN") else { return };
+        let todoist = Todoist::new(token);
+        let task = todoist.create(NewTask { title: "MultiTasker hand-in test".into(), ..Default::default() }).await.unwrap();
+        hand_in_round_trip(&todoist, &task).await;
+        todoist.delete(&task.id).await.unwrap();
     }
 }

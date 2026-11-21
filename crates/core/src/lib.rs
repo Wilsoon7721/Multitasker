@@ -4,10 +4,12 @@ mod provider;
 mod state;
 mod sync;
 mod task;
+mod upload;
 
 pub use attachment::{normalize_url, Attachment, AttachmentKind, NewAttachment};
 pub use error::{Error, Result};
-pub use provider::{ExtrasStore, TaskExtras, TaskProvider};
+pub use upload::{content_type, multipart_file};
+pub use provider::{ExtrasStore, HandedInFile, TaskExtras, TaskProvider, WorkStore};
 pub use state::{DeviceId, FocusEntry, StateStore};
 pub use sync::{Change, DeviceInfo, Op, Stamp, TaskFields};
 pub use task::{

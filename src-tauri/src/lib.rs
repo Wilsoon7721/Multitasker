@@ -189,7 +189,9 @@ fn start_remote_refresh(app: &tauri::AppHandle) {
         .name("remote-refresh".into())
         .spawn(move || loop {
             std::thread::sleep(std::time::Duration::from_secs(60));
-            if app.state::<AppState>().provider().key() != multitasker_provider_sqlite::PROVIDER_KEY {
+            let state = app.state::<AppState>();
+            if state.provider().key() != multitasker_provider_sqlite::PROVIDER_KEY {
+                let _ = tauri::async_runtime::block_on(commands::catch_up_work(&state));
                 let _ = app.emit(commands::TASKS_CHANGED, ());
             }
         })

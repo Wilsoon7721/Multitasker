@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use chrono::{DateTime, Local, NaiveDate, SecondsFormat, Utc};
 use multitasker_core::{
-    check_category, check_title, clean, Attachment, AttachmentKind, DeviceId, Error, ExtrasStore, NewTask, Result, Task,
-    TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus,
+    check_category, check_title, clean, content_type, multipart_file, Attachment, AttachmentKind, DeviceId, Error,
+    ExtrasStore, HandedInFile, NewTask, Result, Task, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus, WorkStore,
 };
 use serde_json::{json, Map, Value};
 
@@ -23,6 +23,18 @@ const TEXT_CHUNK: usize = 2000;
 
 /// Marks file paths MultiTasker attached, carrying what kind they are and which computer they're on.
 const FRAGMENT: &str = "multitasker=";
+
+/// Ends the caption of every file MultiTasker hands in, so it can find its own in a page.
+const MARK: &str = " · MultiTasker · ";
+
+/// The largest file MultiTasker downloads from Notion in one go.
+const MAX_FILE: u64 = 200 * 1024 * 1024;
+
+/// A page's handed-in files are looked up again after this long, even if the page seems unchanged.
+const RESCAN_AFTER: Duration = Duration::from_secs(15 * 60);
+
+/// At most this many pages are looked through per background check, to stay inside Notion's rate limit.
+const SCANS_PER_CHECK: usize = 10;
 
 /// A Notion database shared with the integration, as offered in Settings.
 #[derive(Debug, Clone, PartialEq)]
@@ -43,6 +55,8 @@ struct Inner {
     agent: ureq::Agent,
     columns: Mutex<Option<Columns>>,
     cache: Mutex<Option<(Instant, Vec<Page>)>>,
+    /// Each page's handed-in files, with the page's edit time and when they were read.
+    work: Mutex<HashMap<String, (DateTime<Utc>, Instant, Vec<HandedInFile>)>>,
 }
 
 /// Which of the database's properties hold what.
@@ -87,8 +101,16 @@ struct Page {
     properties: Map<String, Value>,
 }
 
+/// Quick to give up on a dead connection, patient with a big file on a slow one.
 fn new_agent() -> ureq::Agent {
-    ureq::Agent::config_builder().http_status_as_error(false).timeout_global(Some(Duration::from_secs(30))).build().into()
+    ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_connect(Some(Duration::from_secs(20)))
+        .timeout_recv_response(Some(Duration::from_secs(60)))
+        .timeout_send_body(Some(Duration::from_secs(15 * 60)))
+        .timeout_recv_body(Some(Duration::from_secs(15 * 60)))
+        .build()
+        .into()
 }
 
 impl Notion {
@@ -100,6 +122,7 @@ impl Notion {
                 agent: new_agent(),
                 columns: Mutex::new(None),
                 cache: Mutex::new(None),
+                work: Mutex::new(HashMap::new()),
             }),
         }
     }
@@ -160,6 +183,7 @@ impl Inner {
         for attempt in 0..3 {
             let response = match (method, body) {
                 ("GET", _) => self.agent.get(&url).header("authorization", &auth).header("notion-version", VERSION).call(),
+                ("DELETE", _) => self.agent.delete(&url).header("authorization", &auth).header("notion-version", VERSION).call(),
                 (m, Some(body)) => {
                     let request = if m == "PATCH" { self.agent.patch(&url) } else { self.agent.post(&url) };
                     request
@@ -616,6 +640,10 @@ impl TaskProvider for Notion {
         Some(self)
     }
 
+    fn work(&self) -> Option<&dyn WorkStore> {
+        Some(self)
+    }
+
     async fn list(&self) -> Result<Vec<Task>> {
         self.call(|inner| {
             let columns = inner.columns()?;
@@ -792,6 +820,199 @@ impl ExtrasStore for Notion {
     }
 }
 
+fn handed_in_caption(file: &HandedInFile, device_name: &str) -> String {
+    format!(
+        "Handed in from {}{MARK}{} · {} · {} · {}",
+        device_name.split_whitespace().collect::<Vec<_>>().join(" "),
+        file.sha256,
+        file.size,
+        file.device.as_deref().unwrap_or("-"),
+        file.added_at.to_rfc3339_opts(SecondsFormat::Millis, true)
+    )
+}
+
+/// A file block MultiTasker added to a task page, read back.
+fn handed_in_block(task_id: &str, block: &Value) -> Option<HandedInFile> {
+    if block.get("type")?.as_str()? != "file" || block.get("in_trash").and_then(|t| t.as_bool()).unwrap_or(false) {
+        return None;
+    }
+    let file = block.get("file")?;
+    let caption = plain(file.get("caption"));
+    let (_, meta) = caption.split_once(MARK)?;
+    let parts: Vec<&str> = meta.split(" · ").collect();
+    let added_at = parts
+        .get(3)
+        .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+        .map(|t| t.with_timezone(&Utc))
+        .or_else(|| block.get("created_time")?.as_str().and_then(|t| DateTime::parse_from_rfc3339(t).ok()).map(|t| t.with_timezone(&Utc)))?;
+    Some(HandedInFile {
+        id: block.get("id")?.as_str()?.to_owned(),
+        task_id: task_id.to_owned(),
+        name: file.get("name").and_then(|n| n.as_str()).unwrap_or("Handed-in file").to_owned(),
+        sha256: parts.first()?.to_string(),
+        size: parts.get(1)?.parse().ok()?,
+        device: parts.get(2).filter(|d| **d != "-").map(|d| d.to_string()),
+        added_at,
+    })
+}
+
+impl Inner {
+    /// The files MultiTasker handed in on one page, read fresh.
+    fn page_work(&self, page: &str) -> Result<Vec<HandedInFile>> {
+        let mut out = Vec::new();
+        let mut cursor: Option<String> = None;
+        for _ in 0..10 {
+            let mut path = format!("/blocks/{page}/children?page_size=100");
+            if let Some(c) = &cursor {
+                path.push_str(&format!("&start_cursor={c}"));
+            }
+            let result = self.send("GET", &path, None)?;
+            out.extend(result.get("results").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|b| handed_in_block(page, b)));
+            cursor = result.get("next_cursor").and_then(|v| v.as_str()).map(str::to_owned);
+            if cursor.is_none() {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
+    fn remember_work(&self, page: &str, edited: DateTime<Utc>, files: Vec<HandedInFile>) {
+        self.work.lock().unwrap_or_else(|e| e.into_inner()).insert(page.to_owned(), (edited, Instant::now(), files));
+    }
+
+    /// The largest file this workspace takes, as Notion reports it.
+    fn upload_limit(&self) -> Option<u64> {
+        self.send("GET", "/users/me", None).ok()?.pointer("/bot/workspace_limits/max_file_upload_size_in_bytes")?.as_u64()
+    }
+
+    /// Uploads a file in Notion's two steps: ask for an upload, then send the content to it.
+    fn upload(&self, name: &str, bytes: &[u8]) -> Result<String> {
+        if let Some(limit) = self.upload_limit().filter(|l| (bytes.len() as u64) > *l) {
+            return Err(Error::Invalid(format!(
+                "{name} is {:.1} MB; this Notion workspace takes files up to {} MB.",
+                bytes.len() as f64 / 1_048_576.0,
+                limit / 1_048_576
+            )));
+        }
+        let kind = content_type(name);
+        let created = self.send("POST", "/file_uploads", Some(&json!({ "mode": "single_part", "filename": name, "content_type": kind })))?;
+        let id = created.get("id").and_then(|v| v.as_str()).ok_or_else(|| Error::Storage("Notion didn't start the upload.".into()))?.to_owned();
+        let (body, form) = multipart_file("file", name, kind, bytes);
+        let mut response = self
+            .agent
+            .post(&format!("{API}/file_uploads/{id}/send"))
+            .header("authorization", &format!("Bearer {}", self.token))
+            .header("notion-version", VERSION)
+            .header("content-type", &form)
+            .send(&body[..])
+            .map_err(|e| Error::Storage(format!("Couldn't upload it to Notion: {e}")))?;
+        let status = response.status().as_u16();
+        let text = response.body_mut().read_to_string().unwrap_or_default();
+        if !(200..300).contains(&status) {
+            let message = serde_json::from_str::<Value>(&text).ok().and_then(|v| v.get("message")?.as_str().map(str::to_owned));
+            return Err(Error::Invalid(message.unwrap_or_else(|| format!("Notion refused the upload ({status})."))));
+        }
+        Ok(id)
+    }
+}
+
+#[async_trait]
+impl WorkStore for Notion {
+    async fn handed_in(&self, task_id: &TaskId) -> Result<Vec<HandedInFile>> {
+        let task_id = task_id.clone();
+        self.call(move |inner| {
+            let files = inner.page_work(&task_id)?;
+            if let Ok(page) = inner.page(&task_id) {
+                inner.remember_work(&task_id, page.edited, files.clone());
+            }
+            Ok(files)
+        })
+        .await
+    }
+
+    async fn all_handed_in(&self) -> Result<Vec<HandedInFile>> {
+        self.call(|inner| {
+            let pages = inner.pages()?;
+            let mut scanned = 0;
+            for page in &pages {
+                let stale = match inner.work.lock().unwrap_or_else(|e| e.into_inner()).get(&page.id) {
+                    Some((edited, read, _)) => *edited != page.edited || read.elapsed() > RESCAN_AFTER,
+                    None => true,
+                };
+                if stale && scanned < SCANS_PER_CHECK {
+                    scanned += 1;
+                    let files = inner.page_work(&page.id)?;
+                    inner.remember_work(&page.id, page.edited, files);
+                }
+            }
+            let ids: std::collections::HashSet<&str> = pages.iter().map(|p| p.id.as_str()).collect();
+            let work = inner.work.lock().unwrap_or_else(|e| e.into_inner());
+            Ok(work.iter().filter(|(id, _)| ids.contains(id.as_str())).flat_map(|(_, (_, _, files))| files.clone()).collect())
+        })
+        .await
+    }
+
+    async fn hand_in(&self, file: HandedInFile, bytes: Vec<u8>, device_name: &str) -> Result<HandedInFile> {
+        let caption = handed_in_caption(&file, device_name);
+        self.call(move |inner| {
+            let upload = inner.upload(&file.name, &bytes)?;
+            let block = json!({
+                "type": "file",
+                "file": {
+                    "type": "file_upload",
+                    "file_upload": { "id": upload },
+                    "name": file.name,
+                    "caption": [{ "type": "text", "text": { "content": caption } }],
+                }
+            });
+            let result = inner.send("PATCH", &format!("/blocks/{}/children", file.task_id), Some(&json!({ "children": [block] })))?;
+            inner.forget_cache();
+            inner.work.lock().unwrap_or_else(|e| e.into_inner()).remove(&file.task_id);
+            result
+                .get("results")
+                .and_then(|r| r.as_array())
+                .and_then(|r| r.iter().rev().find_map(|b| handed_in_block(&file.task_id, b)))
+                .ok_or_else(|| Error::Storage("Notion changed the handed-in file so MultiTasker can't read it back.".into()))
+        })
+        .await
+    }
+
+    async fn remove_handed_in(&self, id: &str) -> Result<()> {
+        let id = id.to_owned();
+        self.call(move |inner| {
+            inner.work.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, (_, _, files)| !files.iter().any(|f| f.id == id));
+            match inner.send("DELETE", &format!("/blocks/{id}"), None) {
+                Ok(_) | Err(Error::NotFound(_)) => Ok(()),
+                Err(e) => Err(e),
+            }
+        })
+        .await
+    }
+
+    async fn download(&self, file: &HandedInFile) -> Result<Vec<u8>> {
+        let id = file.id.clone();
+        self.call(move |inner| {
+            // Notion's file links last an hour, so a fresh one is asked for each time.
+            let block = inner.send("GET", &format!("/blocks/{id}"), None)?;
+            let url = block
+                .pointer("/file/file/url")
+                .and_then(|u| u.as_str())
+                .ok_or_else(|| Error::NotFound("That handed-in file is no longer in Notion.".into()))?;
+            let mut response = inner.agent.get(url).call().map_err(|e| Error::Storage(format!("Couldn't download it from Notion: {e}")))?;
+            if !response.status().is_success() {
+                return Err(Error::Storage(format!("Notion answered {} for that file.", response.status().as_u16())));
+            }
+            response
+                .body_mut()
+                .with_config()
+                .limit(MAX_FILE)
+                .read_to_vec()
+                .map_err(|e| Error::Storage(format!("Couldn't download it from Notion: {e}")))
+        })
+        .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -884,6 +1105,27 @@ mod tests {
     }
 
     #[test]
+    fn handed_in_files_round_trip_through_captions() {
+        let file = HandedInFile {
+            id: "b1".into(),
+            task_id: "p1".into(),
+            name: "Essay final.docx".into(),
+            sha256: "cd".repeat(32),
+            size: 4_321,
+            device: Some("pc-1".into()),
+            added_at: "2026-11-21T03:04:05.678Z".parse().unwrap(),
+        };
+        let block = json!({
+            "id": "b1", "type": "file", "created_time": "2026-11-21T03:04:00.000Z",
+            "file": { "type": "file", "name": "Essay final.docx", "file": { "url": "https://x" },
+                      "caption": [{ "plain_text": handed_in_caption(&file, "MY LAPTOP") }] }
+        });
+        assert_eq!(handed_in_block("p1", &block), Some(file));
+        let theirs = json!({ "id": "b2", "type": "file", "file": { "name": "x.pdf", "caption": [{ "plain_text": "From class" }] } });
+        assert_eq!(handed_in_block("p1", &theirs), None, "files the person added themselves aren't hand-ins");
+    }
+
+    #[test]
     fn edits_keep_the_day_when_only_the_time_goes() {
         let (columns, _) = plan_columns(&schema()).unwrap();
         let day = NaiveDate::from_ymd_opt(2026, 11, 26);
@@ -935,6 +1177,37 @@ mod tests {
         assert!(extras.started_at.is_none(), "finishing it stopped it");
 
         notion.remove_attachment(&stored.id).await.unwrap();
+        notion.delete(&task.id).await.unwrap();
+    }
+
+    async fn hand_in_round_trip(list: &(impl TaskProvider + WorkStore), task: &Task) {
+        let bytes = b"final essay".to_vec();
+        let file = HandedInFile {
+            id: String::new(),
+            task_id: task.id.clone(),
+            name: "Essay final.txt".into(),
+            sha256: "ef".repeat(32),
+            size: bytes.len() as u64,
+            device: Some("pc-test".into()),
+            added_at: Utc::now(),
+        };
+        let stored = list.hand_in(file.clone(), bytes.clone(), "TEST-PC").await.unwrap();
+        assert_eq!((stored.name.as_str(), stored.sha256.as_str(), stored.device.as_deref()), ("Essay final.txt", file.sha256.as_str(), Some("pc-test")));
+        let found = WorkStore::handed_in(list, &task.id).await.unwrap();
+        assert_eq!(found.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(), [stored.id.as_str()]);
+        assert_eq!(list.download(&stored).await.unwrap(), bytes);
+        assert!(list.all_handed_in().await.unwrap().iter().any(|f| f.id == stored.id));
+        list.remove_handed_in(&stored.id).await.unwrap();
+        assert!(WorkStore::handed_in(list, &task.id).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn hands_in_work_to_a_real_database() {
+        let (Ok(token), Ok(source)) = (std::env::var("NOTION_TOKEN"), std::env::var("NOTION_DATABASE")) else { return };
+        let notion = Notion::new(token, source);
+        let task = notion.create(NewTask { title: "MultiTasker hand-in test".into(), ..Default::default() }).await.unwrap();
+        hand_in_round_trip(&notion, &task).await;
         notion.delete(&task.id).await.unwrap();
     }
 }

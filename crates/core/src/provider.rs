@@ -24,6 +24,11 @@ pub trait TaskProvider: Send + Sync {
         None
     }
 
+    /// Where the task list keeps handed-in work itself; `None` means MultiTasker keeps (and syncs) it.
+    fn work(&self) -> Option<&dyn WorkStore> {
+        None
+    }
+
     async fn list(&self) -> Result<Vec<Task>>;
 
     async fn create(&self, task: NewTask) -> Result<Task>;
@@ -58,4 +63,35 @@ pub trait ExtrasStore: Send + Sync {
     async fn add_attachment(&self, attachment: Attachment) -> Result<Attachment>;
 
     async fn remove_attachment(&self, id: &str) -> Result<()>;
+}
+
+/// A copy of handed-in work, as a task list that keeps it reports it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HandedInFile {
+    /// The list's own id for it (a comment, a file block).
+    pub id: String,
+    pub task_id: TaskId,
+    pub name: String,
+    pub sha256: String,
+    pub size: u64,
+    pub device: Option<DeviceId>,
+    pub added_at: DateTime<Utc>,
+}
+
+/// A task list that holds handed-in files itself, so every computer signed in to it gets them.
+#[async_trait]
+pub trait WorkStore: Send + Sync {
+    /// What's been handed in for one task.
+    async fn handed_in(&self, task_id: &TaskId) -> Result<Vec<HandedInFile>>;
+
+    /// What's been handed in for every task, for catching up in the background.
+    async fn all_handed_in(&self) -> Result<Vec<HandedInFile>>;
+
+    /// Uploads a file; `file` says what it is, and its id is replaced with the list's own.
+    async fn hand_in(&self, file: HandedInFile, bytes: Vec<u8>, device_name: &str) -> Result<HandedInFile>;
+
+    async fn remove_handed_in(&self, id: &str) -> Result<()>;
+
+    /// The file's content.
+    async fn download(&self, file: &HandedInFile) -> Result<Vec<u8>>;
 }

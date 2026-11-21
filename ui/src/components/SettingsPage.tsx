@@ -437,7 +437,7 @@ function TaskListSection({ run }: { run: Run }) {
           )}
           <p className="settings-hint">
             Projects show as categories. Starting a task adds an <code>in-progress</code> label, and attachments are
-            kept as comments on the task, so your other computers see them too.
+            kept as comments on the task, so your other computers see them too. Handed-in work is attached to a comment.
           </p>
         </div>
       )}
@@ -453,7 +453,8 @@ function TaskListSection({ run }: { run: Run }) {
           <p className="settings-hint">
             MultiTasker uses the database's Status column for in progress and done (or a Done checkbox), its date for
             the due date and a select for the category. It adds any of those it lacks, plus Started, Started on and an
-            Attachments column, which keeps files as links and remembers which computer they're on.
+            Attachments column, which keeps files as links and remembers which computer they're on. Handed-in work is
+            uploaded into the task's page.
           </p>
         </div>
       )}

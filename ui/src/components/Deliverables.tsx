@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api, onTasksChanged, type Attachment, type Deliverable, type Revision, type TaskView } from '../api';
 import { elapsed } from '../time';
 import { useDevices } from '../useDevices';
+import { useTaskSource } from '../useTaskSource';
 import type { Run } from '../useTasks';
 import { KindIcon, pendingLabel } from './Attachments';
 
@@ -23,8 +24,9 @@ export function sizeText(bytes: number): string {
 const MAX_SYNC_SIZE = 100 * 1024 * 1024;
 
 /** Why a version can't be opened here yet, if it can't. */
-function notHere(r: Revision, nameOf: (id: string) => string): string | null {
-  if (r.available) return null;
+function notHere(r: Revision, nameOf: (id: string) => string, online: boolean): string | null {
+  // An online task list holds the file itself, so opening it downloads it.
+  if (r.available || (online && r.size <= MAX_SYNC_SIZE)) return null;
   const where = r.device ? nameOf(r.device) : 'another computer';
   return r.size > MAX_SYNC_SIZE ? `Over 100 MB, so it stays on ${where}` : `Arriving from ${where} with the next sync`;
 }
@@ -54,6 +56,7 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
   const [open, setOpen] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   const { nameOf } = useDevices();
+  const online = (useTaskSource()?.active ?? 'sqlite') !== 'sqlite';
 
   useEffect(() => {
     const load = () => void api.listDeliverables(task.id).then(setItems, () => setItems([]));
@@ -87,7 +90,7 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
           {items.map((d) => {
             const [latest, ...older] = d.revisions;
             const expanded = open === d.id;
-            const away = notHere(latest, nameOf);
+            const away = notHere(latest, nameOf, online);
             return (
               <li key={d.id} className="deliverable">
                 <div className="attachment">
@@ -162,14 +165,14 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
                       <li key={r.id} className="revision">
                         <span className="revision-text">
                           Version {r.number} · {new Date(r.added_at).toLocaleString()} · {sizeText(r.size)}
-                          {notHere(r, nameOf) && ` · ${notHere(r, nameOf)}`}
+                          {notHere(r, nameOf, online) && ` · ${notHere(r, nameOf, online)}`}
                         </span>
                         <button
                           className="icon-btn"
                           onClick={() => void run(() => api.openDeliverable(r.id))}
                           aria-label={`Open version ${r.number}`}
-                          title={notHere(r, nameOf) ?? 'Open a read-only copy'}
-                          disabled={!r.available}
+                          title={notHere(r, nameOf, online) ?? 'Open a read-only copy'}
+                          disabled={!!notHere(r, nameOf, online)}
                         >
                           <ExternalLink size={14} />
                         </button>
@@ -177,8 +180,8 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
                           className="icon-btn"
                           onClick={() => void saveCopy(run, d.name, r)}
                           aria-label={`Save a copy of version ${r.number}`}
-                          title={notHere(r, nameOf) ?? 'Save a copy'}
-                          disabled={!r.available}
+                          title={notHere(r, nameOf, online) ?? 'Save a copy'}
+                          disabled={!!notHere(r, nameOf, online)}
                         >
                           <Download size={14} />
                         </button>

@@ -228,7 +228,7 @@ fn run_once(app: &AppHandle, syncer: &Syncer) {
     let me = DeviceInfo { id: state.device.id.clone(), name: state.device.name.clone(), last_seen: Utc::now() };
     // Tasks first, then handed-in work, whose copies can take longer to move.
     let outcome = sync_once(&state.db, remote.as_ref(), &me).map_err(|e| e.to_string()).and_then(|report| {
-        multitasker_deliverables::sync(&state.deliverables, remote.as_ref(), &me.id)
+        multitasker_deliverables::sync(&state.deliverables, remote.as_ref(), &me.id, multitasker_provider_sqlite::PROVIDER_KEY)
             .map(|work| (report, work))
             .map_err(|e| e.to_string())
     });
