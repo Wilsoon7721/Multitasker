@@ -2373,3 +2373,242 @@ button.secondary.small {
   background: var(--bg);
   font: inherit;
 }
+
+/* ───────────── Time ───────────── */
+
+.widget-today {
+  margin-left: 6px;
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.time-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 760px;
+}
+
+.time-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.segmented button {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.segmented button.on {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.time-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.time-step span {
+  min-width: 150px;
+  text-align: center;
+}
+
+.time-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.time-total {
+  color: var(--text);
+  font-size: 34px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.time-caption {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.time-chart {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  height: 220px;
+  padding-top: 44px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.time-day {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.time-bar-area {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 18%;
+}
+
+.time-bar {
+  width: 100%;
+  max-width: 36px;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+  transition: opacity 0.15s;
+}
+
+.time-day:hover .time-bar {
+  opacity: 0.8;
+}
+
+.time-day-label {
+  padding-top: 6px;
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: center;
+}
+
+.time-day-label.today {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.time-tip {
+  position: absolute;
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.time-tip strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.time-heading {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.time-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.time-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.time-table tr.clickable {
+  cursor: pointer;
+}
+
+.time-table tr.clickable:hover td {
+  background: var(--surface-hover);
+}
+
+.time-task {
+  width: 100%;
+}
+
+.time-task-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.time-share {
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.time-share span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.time-cat {
+  color: var(--text-3);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.time-num {
+  color: var(--text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.time-categories {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.time-categories li {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13.5px;
+}

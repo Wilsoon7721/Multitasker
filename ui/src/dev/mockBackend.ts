@@ -550,6 +550,36 @@ mockIPC(
       case 'open_task_things':
         return { opened: find(a.taskId as string).attachments.length, skipped: [] };
 
+      // Sample history: a few stretches on each of the past days.
+      case 'work_sessions': {
+        const from = new Date(a.from as string).getTime();
+        const to = new Date(a.to as string).getTime();
+        const out = [];
+        for (let day = 0; day < 9; day++) {
+          const base = new Date();
+          base.setHours(9, 0, 0, 0);
+          base.setDate(base.getDate() - day);
+          const plan = [
+            [tasks[0].id, 0, 50 + day * 7],
+            [tasks[2].id, 90, 130 - day * 4],
+            [tasks[1].id, 200, 215 + (day % 3) * 30],
+          ];
+          for (const [taskId, start, end] of plan) {
+            const s = base.getTime() + (start as number) * 60_000;
+            const e = base.getTime() + (end as number) * 60_000;
+            if (e > from && s < to && e < Date.now())
+              out.push({
+                id: `${day}-${taskId}`,
+                task_id: taskId,
+                device: DEVICE.id,
+                started_at: new Date(s).toISOString(),
+                ended_at: new Date(e).toISOString(),
+              });
+          }
+        }
+        return out;
+      }
+
       case 'hide_switcher':
         return null;
 

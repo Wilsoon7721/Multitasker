@@ -87,6 +87,9 @@ const MIGRATIONS: &[&str] = &[r#"
         device    TEXT NOT NULL,
         PRIMARY KEY (provider, task_id)
     );
+"#, r#"
+    ALTER TABLE work_sessions ADD COLUMN in_list INTEGER NOT NULL DEFAULT 0;
+    CREATE INDEX work_sessions_when ON work_sessions (provider, ended_at);
 "#];
 
 /// Tasks and MultiTasker's own state in one local file, on separate tables so either can be paired with others.
@@ -386,10 +389,34 @@ impl StateStore for SqliteDb {
         tx.commit().map_err(storage)
     }
 
+    async fn sessions(&self, provider: &str, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<WorkSession>> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, provider, task_id, device, started_at, ended_at, in_list FROM work_sessions
+                 WHERE provider = ?1 AND ended_at > ?2 AND started_at < ?3 ORDER BY started_at",
+            )
+            .map_err(storage)?;
+        let rows = stmt
+            .query_map(params![provider, from, to], |r| {
+                Ok(WorkSession {
+                    id: r.get(0)?,
+                    provider: r.get(1)?,
+                    task_id: r.get(2)?,
+                    device: r.get(3)?,
+                    started_at: r.get(4)?,
+                    ended_at: r.get(5)?,
+                    in_list: r.get(6)?,
+                })
+            })
+            .map_err(storage)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(storage)
+    }
+
     async fn worked(&self, provider: &str) -> Result<HashMap<TaskId, i64>> {
         let conn = self.conn();
         let mut stmt = conn
-            .prepare("SELECT task_id, started_at, ended_at FROM work_sessions WHERE provider = ?1")
+            .prepare("SELECT task_id, started_at, ended_at FROM work_sessions WHERE provider = ?1 AND in_list = 0")
             .map_err(storage)?;
         let rows = stmt
             .query_map([provider], |r| {

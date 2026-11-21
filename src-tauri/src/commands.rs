@@ -213,12 +213,14 @@ async fn end_work(state: &AppState, id: &TaskId, ended_at: DateTime<Utc>) -> Cmd
     };
     let Some(started_at) = began.filter(|at| *at < ended_at) else { return Ok(()) };
     // A task list that keeps extras keeps the time too, so it follows the task to other computers.
+    let mut in_list = false;
     if let Some(store) = provider.extras() {
         match store.add_worked(id, (ended_at - started_at).num_seconds()).await {
-            Ok(()) => return Ok(()),
+            Ok(()) => in_list = true,
             Err(e) => eprintln!("{} couldn't keep the time on {id}, so it's kept here: {e}", provider.display_name()),
         }
     }
+    // Every stretch is kept here as well, for seeing where time went day by day.
     {
         let session = WorkSession {
             id: uuid::Uuid::new_v4().to_string(),
@@ -227,6 +229,7 @@ async fn end_work(state: &AppState, id: &TaskId, ended_at: DateTime<Utc>) -> Cmd
             device: state.device.id.clone(),
             started_at,
             ended_at,
+            in_list,
         };
         state.state.log_work(session).await.map_err(err)?;
     }
@@ -934,6 +937,16 @@ pub fn set_switcher_shortcut(app: AppHandle, state: State<'_, AppState>, shortcu
     }
     settings::update(&state.data_dir, |s| s.switcher_shortcut = shortcut).map_err(err)?;
     Ok(())
+}
+
+/// Finished stretches of work between two moments, for the Time view.
+#[tauri::command]
+pub async fn work_sessions(
+    state: State<'_, AppState>,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> CmdResult<Vec<WorkSession>> {
+    state.state.sessions(state.provider().key(), from, to).await.map_err(err)
 }
 
 #[tauri::command]

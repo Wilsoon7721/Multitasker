@@ -103,6 +103,15 @@ export interface LinkCheck {
   message: string;
 }
 
+/** A finished stretch of work on a task. */
+export interface WorkSession {
+  id: string;
+  task_id: string;
+  device: string;
+  started_at: string;
+  ended_at: string;
+}
+
 /** This build's version, and an update waiting for a restart, if there is one. */
 export interface UpdateInfo {
   current: string;
@@ -362,6 +371,7 @@ export const api = {
   runningApps: () => invoke<RunningApp[]>('running_apps'),
   widgetOnTop: () => invoke<OnTop>('widget_on_top'),
   updateInfo: () => invoke<UpdateInfo>('update_info'),
+  workSessions: (from: string, to: string) => invoke<WorkSession[]>('work_sessions', { from, to }),
   hideSwitcher: () => invoke('hide_switcher'),
   switcherShortcut: () => invoke<string | null>('switcher_shortcut'),
   setSwitcherShortcut: (shortcut: string | null) => invoke('set_switcher_shortcut', { shortcut }),

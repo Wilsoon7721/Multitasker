@@ -263,8 +263,9 @@ pub(crate) fn store_left_off(conn: &Connection, provider: &str, task_id: &str, n
 pub(crate) fn insert_work(conn: &Connection, s: &multitasker_core::WorkSession) -> Result<bool> {
     let added = conn
         .execute(
-            "INSERT OR IGNORE INTO work_sessions (id, provider, task_id, device, started_at, ended_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![s.id, s.provider, s.task_id, s.device, s.started_at, s.ended_at],
+            "INSERT OR IGNORE INTO work_sessions (id, provider, task_id, device, started_at, ended_at, in_list)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![s.id, s.provider, s.task_id, s.device, s.started_at, s.ended_at, s.in_list],
         )
         .map_err(storage)?;
     Ok(added > 0)
@@ -568,6 +569,7 @@ mod tests {
             device: device.into(),
             started_at: t0 + chrono::Duration::minutes(from),
             ended_at: t0 + chrono::Duration::minutes(to),
+            in_list: false,
         };
         a.log_work(session("s1", "pc-a", 0, 30)).await.unwrap();
         a.log_work(session("s1", "pc-a", 0, 30)).await.unwrap();
@@ -586,6 +588,29 @@ mod tests {
         a.delete(&task.id).await.unwrap();
         ship(&a, "pc-a", &b);
         assert!(b.worked(PROVIDER_KEY).await.unwrap().is_empty(), "deleting the task drops its time everywhere");
+    }
+
+    #[tokio::test]
+    async fn history_keeps_every_stretch_but_totals_skip_what_the_list_counted() {
+        let db = SqliteDb::open_in_memory().unwrap();
+        let t0 = Utc::now() - chrono::Duration::hours(5);
+        let at = |m: i64| t0 + chrono::Duration::minutes(m);
+        for (id, from, to, in_list) in [("a", 0, 30, false), ("b", 60, 90, true), ("c", 200, 240, false)] {
+            let session = multitasker_core::WorkSession {
+                id: id.into(),
+                provider: "todoist".into(),
+                task_id: "t1".into(),
+                device: "pc".into(),
+                started_at: at(from),
+                ended_at: at(to),
+                in_list,
+            };
+            db.log_work(session).await.unwrap();
+        }
+        assert_eq!(db.worked("todoist").await.unwrap()["t1"], 70 * 60, "the list already counts b");
+        let ids: Vec<String> = db.sessions("todoist", at(20), at(210)).await.unwrap().into_iter().map(|s| s.id).collect();
+        assert_eq!(ids, ["a", "b", "c"], "every stretch overlapping the range, in order");
+        assert!(db.sessions("notion", at(0), at(300)).await.unwrap().is_empty());
     }
 
     #[tokio::test]

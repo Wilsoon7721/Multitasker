@@ -194,6 +194,7 @@ pub fn run() {
             commands::set_detection,
             commands::detection_enabled,
             commands::dismiss_paused,
+            commands::work_sessions,
             commands::hide_switcher,
             commands::switcher_shortcut,
             commands::set_switcher_shortcut,

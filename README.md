@@ -40,6 +40,8 @@ Early development. What works today:
 - **Pauses when you're away**: after 15 minutes with no keyboard or mouse, or while the computer sleeps or MultiTasker
   is closed, what's in progress on that computer pauses. The widget offers to resume when you're back. Change the wait
   or turn it off in Settings.
+- **Where time went**: the Time view shows today, or any day or week, as a total, a bar per day and each task's and
+  category's share; the widget shows today's total. Every stretch of work is kept for this, whichever task list is used.
 - **Quick switcher**: Ctrl+Alt+Space anywhere opens a search of your open tasks. Enter switches to one (pausing what
   you were on), Shift+Enter starts it alongside, Ctrl+Enter pauses it, and typing something new adds it. The hotkey
   can be changed or turned off in Settings.

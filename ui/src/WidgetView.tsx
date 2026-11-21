@@ -12,7 +12,7 @@ import {
   Undo2,
   X,
 } from 'lucide-react';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { api, onWidgetAppearance } from './api';
 import { AppPicker } from './components/AppPicker';
 import { CheckButton } from './components/CheckButton';
@@ -21,6 +21,7 @@ import { WidgetTodo } from './components/WidgetTodo';
 import { dueInfo, localDate, localTime, useNow, workedTime } from './time';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 import { useActivity } from './useActivity';
+import { hours, spentBetween, startOfDay, useSessions } from './useTimeSpent';
 import { useTasks } from './useTasks';
 
 const WIDTH = 320;
@@ -52,6 +53,13 @@ export function WidgetView() {
   const { snapshot, activeNow } = useActivity();
   const suggestion = snapshot.suggestion;
   const paused = snapshot.paused;
+  const dayStart = startOfDay(0, new Date(now));
+  const todaySessions = useSessions(dayStart, startOfDay(1, dayStart));
+  const today = useMemo(
+    () => spentBetween(todaySessions, tasks ?? [], dayStart, startOfDay(1, dayStart), now).total,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [todaySessions, tasks, dayStart.getTime(), now],
+  );
   const switched = snapshot.switched;
   // A task just paused here, to ask where it was left, and one just picked up, to help get back into it.
   const [leftOffFor, setLeftOffFor] = useState<{ id: string; title: string } | null>(null);
@@ -134,6 +142,11 @@ export function WidgetView() {
         <h1 data-tauri-drag-region>
           Tasks In Progress <span className="count">{active.length}</span>
         </h1>
+        {today > 0 && (
+          <span className="widget-today" title="Time spent on tasks today" data-tauri-drag-region>
+            {hours(today)} today
+          </span>
+        )}
         <button
           className={`icon-btn expand${expanded ? ' on' : ''}`}
           onClick={toggleExpanded}

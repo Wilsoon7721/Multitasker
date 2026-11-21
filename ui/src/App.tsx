@@ -1,4 +1,4 @@
-import { CircleCheckBig, Hash, Inbox, ListTodo, Settings, Timer, X } from 'lucide-react';
+import { ChartColumn, CircleCheckBig, Hash, Inbox, ListTodo, Settings, Timer, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, type NewAttachment, type TaskView } from './api';
 import { Composer } from './components/Composer';
@@ -7,6 +7,7 @@ import { HandInDialog } from './components/HandInDialog';
 import { SettingsPage } from './components/SettingsPage';
 import { TaskCard } from './components/TaskCard';
 import { TaskDetail } from './components/TaskDetail';
+import { TimeView } from './components/TimeView';
 import { TitleBar } from './components/TitleBar';
 import { useNow } from './time';
 import { useActivity } from './useActivity';
@@ -14,8 +15,8 @@ import { useDevices } from './useDevices';
 import { useTasks } from './useTasks';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 
-type View = 'open' | 'active' | 'todo' | 'done' | 'settings';
-type TaskViewId = Exclude<View, 'settings'>;
+type View = 'open' | 'active' | 'todo' | 'done' | 'time' | 'settings';
+type TaskViewId = Exclude<View, 'settings' | 'time'>;
 
 const VIEWS: { id: TaskViewId; label: string; icon: ReactNode; empty: string }[] = [
   { id: 'open', label: 'All open', icon: <Inbox size={16} />, empty: 'Nothing open. Add a task above.' },
@@ -84,7 +85,7 @@ export function App() {
     [all],
   );
 
-  const taskView = view === 'settings' ? null : view;
+  const taskView = view === 'settings' || view === 'time' ? null : view;
   const shown = taskView ? all.filter((t) => inView(t, taskView) && (!category || t.category === category)) : [];
   const selected = all.find((t) => t.id === selectedId) ?? null;
   const current = VIEWS.find((v) => v.id === view);
@@ -130,7 +131,7 @@ export function App() {
                   className={`nav${category === c ? ' current' : ''}`}
                   onClick={() => {
                     setCategory((cur) => (cur === c ? null : c));
-                    if (view === 'settings') setView('open');
+                    if (view === 'settings' || view === 'time') setView('open');
                   }}
                   aria-pressed={category === c}
                 >
@@ -142,6 +143,10 @@ export function App() {
           )}
 
           <span className="spacer" />
+          <button className={`nav${view === 'time' ? ' current' : ''}`} onClick={() => setView('time')}>
+            <ChartColumn size={16} />
+            <span className="nav-label">Time</span>
+          </button>
           <button className={`nav${view === 'settings' ? ' current' : ''}`} onClick={() => setView('settings')}>
             <Settings size={16} />
             <span className="nav-label">Settings</span>
@@ -151,7 +156,7 @@ export function App() {
         <main className="content">
           <div className="content-inner">
             <header className="content-header">
-              <h1>{current?.label ?? 'Settings'}</h1>
+              <h1>{current?.label ?? (view === 'time' ? 'Where time went' : 'Settings')}</h1>
               {category && taskView && (
                 <button
                   className="filter-chip"
@@ -173,6 +178,7 @@ export function App() {
             )}
 
             {view === 'settings' && <SettingsPage run={run} />}
+            {view === 'time' && <TimeView tasks={all} now={now} onOpen={setSelectedId} />}
 
             {taskView && taskView !== 'done' && (
               <Composer run={run} categories={categories} pending={pending} setPending={setPending} />

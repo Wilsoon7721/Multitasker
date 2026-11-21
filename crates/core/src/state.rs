@@ -25,6 +25,9 @@ pub struct WorkSession {
     pub device: DeviceId,
     pub started_at: DateTime<Utc>,
     pub ended_at: DateTime<Utc>,
+    /// The task list counted it in the task's own total, so it's kept here only for the history of where time went.
+    #[serde(default)]
+    pub in_list: bool,
 }
 
 /// A note on where work on a task stopped, to pick it up again quickly.
@@ -65,7 +68,10 @@ pub trait StateStore: Send + Sync {
     /// Keeps a finished stretch of work, shared with other computers through sync.
     async fn log_work(&self, session: WorkSession) -> Result<()>;
 
-    /// Seconds of finished work per task, across every computer.
+    /// Finished stretches of work that overlap `from`..`to`, for seeing where time went.
+    async fn sessions(&self, provider: &str, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<WorkSession>>;
+
+    /// Seconds of finished work per task, across every computer, that the task list didn't count itself.
     async fn worked(&self, provider: &str) -> Result<std::collections::HashMap<TaskId, i64>>;
 
     /// Sets or clears a task's where-I-left-off note.
