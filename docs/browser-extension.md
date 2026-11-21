@@ -6,6 +6,8 @@ works in Chrome, Edge and Brave.
 - **Link a tab** to any open task from the toolbar popup, or make a new task from the page. The link is a normal
   attachment, so it opens from MultiTasker on any of your computers.
 - **Start** a task from the popup.
+- Only web pages (http and https) can be linked. The browser's own pages, such as `chrome://extensions`, only open
+  inside the browser, so MultiTasker couldn't open them from a task.
 - **See what's linked**: the toolbar icon shows ✓ on a page linked to an open task.
 - **Activity detection**: while the browser is in front, the tab you're on counts like a linked file or app does. A
   linked page marks its task active, and a page under a linked address (say, another page of the same docs) suggests

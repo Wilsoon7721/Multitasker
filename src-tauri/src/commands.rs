@@ -176,12 +176,16 @@ pub async fn add_attachments(
     id: TaskId,
     items: Vec<NewAttachment>,
 ) -> CmdResult<Vec<Attachment>> {
-    let provider = state.provider();
-    let key = provider.key();
-    if !provider.list().await.map_err(err)?.iter().any(|t| t.id == id) {
+    if !state.provider().list().await.map_err(err)?.iter().any(|t| t.id == id) {
         return Err(format!("task {id} was not found"));
     }
+    attach(&app, &state, id, items).await
+}
 
+/// Adds attachments to a task already known to exist, such as one just created.
+pub async fn attach(app: &AppHandle, state: &AppState, id: TaskId, items: Vec<NewAttachment>) -> CmdResult<Vec<Attachment>> {
+    let provider = state.provider();
+    let key = provider.key();
     let (mut added, mut problems) = (Vec::new(), Vec::new());
     for item in items {
         let attachment = match Attachment::new(key, &id, &state.device.id, item) {
@@ -202,7 +206,7 @@ pub async fn add_attachments(
     }
 
     if !added.is_empty() {
-        changed(&app);
+        changed(app);
     }
     if problems.is_empty() {
         Ok(added)

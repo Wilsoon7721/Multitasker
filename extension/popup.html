@@ -14,7 +14,17 @@
       </div>
     </header>
 
+    <p class="unlinkable" id="unlinkable" hidden>
+      This is one of the browser's own pages, which only open inside the browser, so it can't be linked to a task.
+      Web pages (http and https) can.
+    </p>
+
     <p class="notice" id="notice" hidden></p>
+
+    <div class="confirm" id="confirm" role="status" hidden>
+      <span id="confirm-text"></span>
+      <button type="button" class="link" id="confirm-open">Open MultiTasker</button>
+    </div>
 
     <main id="main" hidden>
       <input id="filter" type="search" placeholder="Find a task" aria-label="Find a task" />
@@ -23,7 +33,7 @@
 
       <form class="create" id="create">
         <input id="new-title" placeholder="New task from this page" aria-label="New task title" maxlength="200" />
-        <button type="submit" class="primary">Add</button>
+        <button type="submit" class="primary" id="add">Add</button>
       </form>
     </main>
 

@@ -535,6 +535,14 @@ button.danger {
 
 .field-pill input {
   width: 110px;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+}
+
+/* The suggestion arrow on a category field makes the pill taller than its neighbours in WebView2. */
+.field-pill input[list]::-webkit-calendar-picker-indicator {
+  display: none !important;
 }
 
 .field-pill input[type='date'] {
@@ -729,6 +737,7 @@ button.danger {
 .detail-fields {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 

@@ -99,11 +99,13 @@ async fn handle(app: &AppHandle, request: Request) -> Result<Value, String> {
         }
         Request::Create { title, url, page_title } => {
             let task = commands::create_task(app.clone(), app.state::<AppState>(), NewTask { title, ..Default::default() }).await?;
+            let mut linked = None;
             if let Some(url) = url {
                 let item = NewAttachment::Link { url, name: page_title.filter(|t| !t.trim().is_empty()) };
-                commands::add_attachments(app.clone(), app.state::<AppState>(), task.id.clone(), vec![item]).await?;
+                linked = commands::attach(app, &state, task.id.clone(), vec![item]).await?.first().map(|a| a.id.clone());
             }
-            Ok(json!({ "task_id": task.id }))
+            let item = TaskItem { id: task.id, title: task.title, category: task.category, in_progress: false, linked };
+            Ok(json!({ "task": item }))
         }
         Request::ActiveTab { url } => {
             let linked: Vec<Value> = state

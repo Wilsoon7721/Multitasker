@@ -10,6 +10,7 @@
   --accent-on: #ffffff;
   --danger: #dc2626;
   --success: #16a34a;
+  --success-soft: #e8f7ee;
   color-scheme: light;
 }
 
@@ -26,6 +27,7 @@
     --accent-on: #ffffff;
     --danger: #f87171;
     --success: #4ade80;
+    --success-soft: #16301f;
     color-scheme: dark;
   }
 }
@@ -72,6 +74,40 @@ body {
   white-space: nowrap;
 }
 
+.unlinkable {
+  margin: 10px 14px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 10px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--success-soft);
+  color: var(--text);
+  font-size: 12px;
+  animation: appear 0.2s ease-out;
+}
+
+.confirm[hidden] {
+  display: none;
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
 .notice {
   margin: 12px 14px;
   color: var(--text-2);
@@ -111,6 +147,10 @@ input:focus {
   gap: 8px;
   padding: 7px 6px;
   border-radius: 8px;
+}
+
+.task.fresh {
+  background: var(--success-soft);
 }
 
 .task:hover {
