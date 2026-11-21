@@ -13,10 +13,9 @@ let freshId = null;
 
 $('page-title').textContent = pageTitle || 'This page';
 $('page-url').textContent = url ? url.replace(/^https?:\/\/(www\.)?/, '') : (tab?.url ?? '');
-$('new-title').value = url ? pageTitle.slice(0, 200) : '';
 if (!url) {
   $('unlinkable').hidden = false;
-  $('new-title').placeholder = 'New task (without this page)';
+  $('link-new-row').hidden = true;
 }
 
 function notice(text, isError = false) {
@@ -141,8 +140,9 @@ $('create').addEventListener('submit', async (e) => {
   add.disabled = true;
   add.textContent = 'Adding…';
   $('filter').value = '';
+  const link = url && $('link-new').checked ? url : null;
   const placeholder = { id: `pending-${Date.now()}`, title, category: null, in_progress: false, linked: null, pending: true };
-  const reply = await run({ type: 'create', title, url, page_title: pageTitle }, () => (tasks = [placeholder, ...tasks]));
+  const reply = await run({ type: 'create', title, url: link, page_title: pageTitle }, () => (tasks = [placeholder, ...tasks]));
   add.disabled = false;
   add.textContent = 'Add';
   if (!reply) return;
@@ -151,7 +151,7 @@ $('create').addEventListener('submit', async (e) => {
   tasks = tasks.map((t) => (t.id === placeholder.id ? reply.task : t));
   render();
   $('tasks').scrollTop = 0;
-  confirm(url ? `Added “${title}” with this page linked.` : `Added “${title}”.`);
+  confirm(link ? `Added “${title}” with this page linked.` : `Added “${title}”.`);
 });
 
 $('confirm-open').addEventListener('click', () => $('show-app').click());

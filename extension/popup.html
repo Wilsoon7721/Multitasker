@@ -32,8 +32,14 @@
       <p class="empty" id="empty" hidden>No open tasks match.</p>
 
       <form class="create" id="create">
-        <input id="new-title" placeholder="New task from this page" aria-label="New task title" maxlength="200" />
-        <button type="submit" class="primary" id="add">Add</button>
+        <div class="create-row">
+          <input id="new-title" placeholder="New task name" aria-label="New task name" maxlength="200" />
+          <button type="submit" class="primary" id="add">Add</button>
+        </div>
+        <label class="check" id="link-new-row">
+          <input type="checkbox" id="link-new" checked />
+          Link the current tab to the new task as reference
+        </label>
       </form>
     </main>
 
