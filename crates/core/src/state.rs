@@ -27,6 +27,14 @@ pub struct WorkSession {
     pub ended_at: DateTime<Utc>,
 }
 
+/// A note on where work on a task stopped, to pick it up again quickly.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LeftOff {
+    pub text: String,
+    pub at: DateTime<Utc>,
+    pub device: DeviceId,
+}
+
 /// Where MultiTasker keeps its own state about tasks, apart from the task provider.
 #[async_trait]
 pub trait StateStore: Send + Sync {
@@ -59,6 +67,12 @@ pub trait StateStore: Send + Sync {
 
     /// Seconds of finished work per task, across every computer.
     async fn worked(&self, provider: &str) -> Result<std::collections::HashMap<TaskId, i64>>;
+
+    /// Sets or clears a task's where-I-left-off note.
+    async fn set_left_off(&self, provider: &str, task_id: &TaskId, note: Option<LeftOff>) -> Result<()>;
+
+    /// Every task's where-I-left-off note.
+    async fn left_off(&self, provider: &str) -> Result<std::collections::HashMap<TaskId, LeftOff>>;
 
     /// Drops everything kept about a task, for when the task itself is deleted.
     async fn forget(&self, provider: &str, task_id: &TaskId) -> Result<()>;

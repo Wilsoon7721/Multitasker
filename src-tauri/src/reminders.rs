@@ -100,6 +100,7 @@ mod tests {
             attachments: Vec::new(),
             deliverables: 0,
             worked_secs: 0,
+            left_off: None,
         }
     }
 

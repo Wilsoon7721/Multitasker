@@ -38,6 +38,12 @@ const SWITCH_AFTER: Duration = Duration::from_secs(30);
 const SWITCH_GAP: Duration = Duration::from_secs(6);
 /// The "switched" note goes away after this long.
 const SWITCH_NOTE_FOR: Duration = Duration::from_secs(5 * 60);
+/// Staying on a page linked to nothing this long, while a task is in progress here, offers to link it.
+const LINK_AFTER: Duration = Duration::from_secs(2 * 60);
+/// Looking away from that page for longer than this starts the count again.
+const LINK_GAP: Duration = Duration::from_secs(20);
+/// An offer to link a page goes away after this long.
+const LINK_OFFER_FOR: Duration = Duration::from_secs(10 * 60);
 /// Browsers whose tab in front the extension can report.
 const BROWSERS: &[&str] = &["chrome.exe", "msedge.exe", "brave.exe", "vivaldi.exe", "opera.exe", "arc.exe"];
 
@@ -80,6 +86,23 @@ pub struct Switched {
     pub reason: String,
 }
 
+/// A page that's been in front for a while, offered as a link for what's in progress.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LinkOffer {
+    pub task_id: TaskId,
+    pub task_title: String,
+    pub url: String,
+    pub title: Option<String>,
+}
+
+/// An unlinked page in front, and since when.
+#[derive(Debug, Clone)]
+struct Unlinked {
+    url: String,
+    first: Instant,
+    last: Instant,
+}
+
 /// A task whose things have been in front, and since when.
 #[derive(Debug, Clone)]
 struct Candidate {
@@ -96,6 +119,7 @@ pub struct Snapshot {
     pub suggestion: Option<Suggestion>,
     pub paused: Vec<Paused>,
     pub switched: Option<Switched>,
+    pub link_offer: Option<LinkOffer>,
 }
 
 /// The tray's "Detect what I'm working on" item, kept so the UI can tick or untick it.
@@ -110,6 +134,10 @@ struct Inner {
     paused: Vec<Paused>,
     candidate: Option<Candidate>,
     switched: Option<(Switched, Instant)>,
+    unlinked: Option<Unlinked>,
+    link_offer: Option<(LinkOffer, Instant)>,
+    /// Pages the person said not to link, by their normalized address.
+    unwanted_links: HashSet<String>,
 }
 
 pub struct Detector {
@@ -119,17 +147,20 @@ pub struct Detector {
     dirty: AtomicBool,
     inner: Mutex<Inner>,
     /// The browser tab in front, as the extension last reported it; `None` once the browser lost focus.
-    tab: Mutex<Option<String>>,
+    tab: Mutex<Option<(String, Option<String>)>>,
+    /// This computer, to tell which in-progress tasks are being worked on here.
+    device: String,
 }
 
 impl Detector {
-    pub fn new(enabled: bool, auto_switch: bool) -> Arc<Self> {
+    pub fn new(enabled: bool, auto_switch: bool, device: String) -> Arc<Self> {
         Arc::new(Self {
             enabled: AtomicBool::new(enabled),
             auto_switch: AtomicBool::new(auto_switch),
             dirty: AtomicBool::new(true),
             inner: Mutex::default(),
             tab: Mutex::new(None),
+            device,
         })
     }
 
@@ -138,8 +169,8 @@ impl Detector {
     }
 
     /// Notes the browser tab in front, and returns the open tasks it's linked to, best match first.
-    pub fn set_tab(&self, url: Option<String>) -> Vec<(TaskId, String)> {
-        *self.tab.lock().unwrap_or_else(|e| e.into_inner()) = url.clone();
+    pub fn set_tab(&self, url: Option<String>, title: Option<String>) -> Vec<(TaskId, String)> {
+        *self.tab.lock().unwrap_or_else(|e| e.into_inner()) = url.clone().map(|u| (u, title));
         let Some(url) = url else { return Vec::new() };
         let inner = self.inner();
         let open: Vec<&TaskView> = inner.tasks.iter().filter(|t| t.task.status == TaskStatus::Todo).collect();
@@ -150,7 +181,7 @@ impl Detector {
             .collect()
     }
 
-    fn tab(&self) -> Option<String> {
+    fn tab(&self) -> Option<(String, Option<String>)> {
         self.tab.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
@@ -166,6 +197,7 @@ impl Detector {
             suggestion: inner.suggestion.as_ref().map(|(s, _)| s.clone()),
             paused: inner.paused.clone(),
             switched: inner.switched.as_ref().map(|(s, _)| s.clone()),
+            link_offer: inner.link_offer.as_ref().map(|(o, _)| o.clone()),
         }
     }
 
@@ -233,6 +265,56 @@ impl Detector {
         Some((c.task_id, c.reason))
     }
 
+    /// Follows a page in front that no open task links to, and offers to link it once it has stayed a while.
+    fn track_unlinked(&self, url: &str, title: Option<&str>) -> bool {
+        let mut inner = self.inner();
+        let open: Vec<&TaskView> = inner.tasks.iter().filter(|t| t.task.status == TaskStatus::Todo).collect();
+        let attachments: Vec<Attachment> = open.iter().flat_map(|t| t.attachments.iter().cloned()).collect();
+        let linked = !matches(&attachments, &Observation::Tab { url: url.to_owned() }).is_empty();
+        // The task worked on most lately here is the one the page is most likely for.
+        let target = open
+            .iter()
+            .filter(|t| t.in_progress && t.in_progress_on.contains(&self.device))
+            .max_by_key(|t| (inner.active.get(&t.task.id).map(|a| a.at), t.started_at))
+            .map(|t| (t.task.id.clone(), t.task.title.clone()));
+        let unwanted = inner.unwanted_links.contains(&multitasker_activity::normalize_url(url));
+        let Some((task_id, task_title)) = target.filter(|_| !linked && !unwanted) else {
+            inner.unlinked = None;
+            return false;
+        };
+
+        let now = Instant::now();
+        let first = match &inner.unlinked {
+            Some(u) if u.url == url && u.last.elapsed() < LINK_GAP => u.first,
+            _ => now,
+        };
+        inner.unlinked = Some(Unlinked { url: url.to_owned(), first, last: now });
+        if first.elapsed() < LINK_AFTER || inner.link_offer.as_ref().is_some_and(|(o, _)| o.url == url) {
+            return false;
+        }
+        let offer = LinkOffer { task_id, task_title, url: url.to_owned(), title: title.map(str::to_owned) };
+        inner.link_offer = Some((offer, now));
+        true
+    }
+
+    /// Clears the offer to link a page and hands it back, for linking.
+    pub fn take_link_offer(&self, app: &AppHandle) -> Option<LinkOffer> {
+        let taken = self.inner().link_offer.take().map(|(o, _)| o);
+        self.emit(app);
+        taken
+    }
+
+    /// Stops offering to link a page, for as long as the app runs.
+    pub fn refuse_link_offer(&self, app: &AppHandle) {
+        {
+            let mut inner = self.inner();
+            if let Some((offer, _)) = inner.link_offer.take() {
+                inner.unwanted_links.insert(multitasker_activity::normalize_url(&offer.url));
+            }
+        }
+        self.emit(app);
+    }
+
     pub fn note_switch(&self, app: &AppHandle, switched: Switched) {
         self.inner().switched = Some((switched, Instant::now()));
         self.emit(app);
@@ -269,6 +351,19 @@ impl Detector {
         let before = inner.paused.len();
         inner.paused.retain(|p| tasks.iter().any(|t| t.task.id == p.task_id && t.task.status == TaskStatus::Todo && !t.in_progress));
         changed |= inner.paused.len() != before;
+        // An offer for a task that's no longer going, or for a page that's now linked, isn't wanted.
+        let still_wanted = |o: &LinkOffer| {
+            let page = multitasker_activity::normalize_url(&o.url);
+            tasks.iter().any(|t| t.task.id == o.task_id && t.in_progress)
+                && !tasks
+                    .iter()
+                    .flat_map(|t| &t.attachments)
+                    .any(|a| a.kind == AttachmentKind::Link && multitasker_activity::normalize_url(&a.target) == page)
+        };
+        if inner.link_offer.as_ref().is_some_and(|(o, _)| !still_wanted(o)) {
+            inner.link_offer = None;
+            changed = true;
+        }
         // Pausing what was switched to by hand leaves nothing to undo.
         if inner.switched.as_ref().is_some_and(|(s, _)| !in_progress.contains(&s.to.task_id)) {
             inner.switched = None;
@@ -338,6 +433,10 @@ impl Detector {
         let before = inner.active.len();
         inner.active.retain(|_, a| (now - a.at).to_std().unwrap_or_default() < FORGET_AFTER);
         inner.dismissed.retain(|_, at| at.elapsed() < DISMISS_FOR);
+        if inner.link_offer.as_ref().is_some_and(|(_, at)| at.elapsed() >= LINK_OFFER_FOR) {
+            inner.link_offer = None;
+            changed = true;
+        }
         if inner.switched.as_ref().is_some_and(|(_, at)| at.elapsed() >= SWITCH_NOTE_FOR) {
             inner.switched = None;
             changed = true;
@@ -402,7 +501,8 @@ fn watch(app: AppHandle, d: Arc<Detector>) {
                 // With a browser in front, the tab the extension reported says more than the window title.
                 let tab = BROWSERS.iter().any(|b| w.exe.eq_ignore_ascii_case(b)).then(|| d.tab()).flatten();
                 changed |= d.observe(&Observation::Window { exe: w.exe, title: w.title });
-                if let Some(url) = tab {
+                if let Some((url, title)) = tab {
+                    changed |= d.track_unlinked(&url, title.as_deref());
                     changed |= d.observe(&Observation::Tab { url });
                 }
             }
@@ -484,6 +584,7 @@ mod tests {
             started_on_name: None,
             deliverables: 0,
             worked_secs: 0,
+            left_off: None,
             attachments: attachments
                 .into_iter()
                 .map(|(kind, name, target)| Attachment {
@@ -505,7 +606,7 @@ mod tests {
     }
 
     fn setup() -> Arc<Detector> {
-        let d = Detector::new(true, true);
+        let d = Detector::new(true, true, "pc".into());
         d.refresh(vec![
             view("essay", true, vec![(AttachmentKind::App, "Word", r"C:\Office\WINWORD.EXE")]),
             view("report", false, vec![(AttachmentKind::Document, "report.docx", r"C:\Docs\report.docx")]),
@@ -566,6 +667,40 @@ mod tests {
         }
         d.observe(&word("report - Word"));
         assert_eq!(d.due_switch(), None);
+    }
+
+    #[test]
+    fn offers_to_link_a_page_that_stays_in_front() {
+        let d = setup();
+        let video = "https://www.youtube.com/watch?v=abc";
+        let stay = |d: &Detector| {
+            if let Some(u) = d.inner().unlinked.as_mut() {
+                u.first -= LINK_AFTER;
+            }
+        };
+        assert!(!d.track_unlinked(video, Some("A video")), "a glance isn't enough");
+        stay(&d);
+        assert!(d.track_unlinked(video, Some("A video")));
+        let offer = d.snapshot().link_offer.unwrap();
+        assert_eq!((offer.task_id.as_str(), offer.title.as_deref()), ("essay", Some("A video")), "for the task in progress here");
+        assert!(!d.track_unlinked(video, None), "offered once");
+
+        {
+            let mut inner = d.inner();
+            if let Some((o, _)) = inner.link_offer.take() {
+                inner.unwanted_links.insert(multitasker_activity::normalize_url(&o.url));
+            }
+        }
+        stay(&d);
+        assert!(!d.track_unlinked(video, None), "not offered again once refused");
+
+        // A page some task already links to is never offered.
+        let mut tasks = d.inner().tasks.clone();
+        tasks[1].attachments[0].kind = AttachmentKind::Link;
+        tasks[1].attachments[0].target = "https://docs.example.com".into();
+        d.refresh(tasks);
+        d.track_unlinked("https://docs.example.com", None);
+        assert!(d.inner().unlinked.is_none());
     }
 
     #[test]

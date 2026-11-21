@@ -73,6 +73,8 @@ pub enum Change {
     AttachmentRemoved { id: String },
     /// A finished stretch of work; never changed once made.
     WorkLogged { session: crate::WorkSession },
+    /// A task's where-I-left-off note was set or cleared (`None`).
+    LeftOff { provider: String, task_id: TaskId, note: Option<crate::LeftOff> },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

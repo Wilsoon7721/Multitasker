@@ -92,12 +92,13 @@ pub fn run() {
             let db = Arc::new(SqliteDb::open(data_dir.join("multitasker.db"))?);
             let deliverables = Arc::new(multitasker_deliverables::Store::open(data_dir.join("deliverables"))?);
             let prefs = settings::load(&data_dir);
-            let detector = detection::Detector::new(prefs.detection, prefs.auto_switch);
+            let device = device::load_or_create(&data_dir)?;
+            let detector = detection::Detector::new(prefs.detection, prefs.auto_switch, device.id.clone());
             let syncer = syncing::Syncer::new(prefs.sync.clone());
             app.manage(AppState {
                 provider: RwLock::new(initial_provider(&prefs.tasks, db.clone())),
                 state: db.clone(),
-                device: device::load_or_create(&data_dir)?,
+                device,
                 detector: detector.clone(),
                 syncer: syncer.clone(),
                 db,
@@ -165,6 +166,10 @@ pub fn run() {
             commands::set_detection,
             commands::detection_enabled,
             commands::dismiss_paused,
+            commands::accept_link_offer,
+            commands::refuse_link_offer,
+            commands::set_left_off,
+            commands::open_task_things,
             commands::switch_task,
             commands::undo_switch,
             commands::dismiss_switch,

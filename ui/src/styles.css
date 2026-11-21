@@ -29,7 +29,12 @@
   --widget-alpha: 94%;
 
   color-scheme: light;
-  font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family:
+    'Segoe UI Variable Text',
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    sans-serif;
   font-size: 14px;
   line-height: 1.45;
   color: var(--text);
@@ -628,6 +633,56 @@ button.danger {
   font-size: 13px;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.card-left-off {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.card-left-off svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.left-off-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-3);
+  cursor: text;
+}
+
+.left-off-field:focus-within {
+  border-color: var(--accent);
+}
+
+.left-off-field input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  color: var(--text);
+}
+
+.open-all {
+  align-self: flex-start;
+}
+
+.left-off-prompt input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  color: var(--text);
+  font-size: 13px;
 }
 
 .card-meta {
@@ -1302,6 +1357,9 @@ html.widget body {
 }
 
 .suggestion.switched,
+.suggestion.pick-up,
+.suggestion.link-offer,
+.suggestion.left-off-prompt,
 .suggestion.away {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));

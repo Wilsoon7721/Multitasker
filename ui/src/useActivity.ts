@@ -4,7 +4,14 @@ import { api, onActivity, type Activity, type ActivitySnapshot } from './api';
 /** Activity this recent counts as "active now". */
 const ACTIVE_FOR_MS = 90_000;
 
-const EMPTY: ActivitySnapshot = { enabled: false, active: [], suggestion: null, paused: [], switched: null };
+const EMPTY: ActivitySnapshot = {
+  enabled: false,
+  active: [],
+  suggestion: null,
+  paused: [],
+  switched: null,
+  link_offer: null,
+};
 
 export function useActivity() {
   const [snapshot, setSnapshot] = useState<ActivitySnapshot>(EMPTY);

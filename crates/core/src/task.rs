@@ -96,6 +96,8 @@ pub struct TaskView {
     pub deliverables: u32,
     /// Seconds worked on it before the stretch in progress now, across computers.
     pub worked_secs: i64,
+    /// Where work on it stopped, as noted when it was paused.
+    pub left_off: Option<crate::LeftOff>,
 }
 
 /// Trims text and turns blank into `None`.

@@ -28,6 +28,8 @@ export interface TaskView {
   deliverables: number;
   /** Seconds worked before the stretch in progress now, across computers. */
   worked_secs: number;
+  /** Where work on it stopped, as noted when it was paused. */
+  left_off: { text: string; at: string; device: string } | null;
 }
 
 /** A copy of handed-in work, kept as it was each time it was handed in. */
@@ -104,6 +106,8 @@ export interface ActivitySnapshot {
   paused: { task_id: string; title: string; since: string }[];
   /** A switch detection made on its own, until undone or dismissed. */
   switched: { to: TaskRef; from: TaskRef[]; reason: string } | null;
+  /** A page that's been in front a while, offered as a link for the task in progress. */
+  link_offer: { task_id: string; task_title: string; url: string; title: string | null } | null;
 }
 
 export interface TaskRef {
@@ -322,6 +326,10 @@ export const api = {
   setDetection: (enabled: boolean) => invoke('set_detection', { enabled }),
   detectionEnabled: () => invoke<boolean>('detection_enabled'),
   dismissPaused: () => invoke('dismiss_paused'),
+  acceptLinkOffer: () => invoke('accept_link_offer'),
+  refuseLinkOffer: () => invoke('refuse_link_offer'),
+  setLeftOff: (taskId: string, text: string) => invoke('set_left_off', { taskId, text }),
+  openTaskThings: (taskId: string) => invoke<{ opened: number; skipped: string[] }>('open_task_things', { taskId }),
   switchTask: (taskId: string) => invoke('switch_task', { taskId }),
   undoSwitch: () => invoke('undo_switch'),
   dismissSwitch: () => invoke('dismiss_switch'),

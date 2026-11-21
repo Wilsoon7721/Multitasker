@@ -1,4 +1,4 @@
-import { CalendarDays, Clock, Pause, Play, Tag, Trash2, X } from 'lucide-react';
+import { CalendarDays, Clock, FolderOpen, NotebookPen, Pause, Play, Tag, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, type Activity, type TaskChanges, type TaskView } from '../api';
 import { localDate, localTime, toDueAt, workedTime } from '../time';
@@ -8,6 +8,7 @@ import { AutoTextarea } from './AutoTextarea';
 import { useTaskSource } from '../useTaskSource';
 import { CheckButton } from './CheckButton';
 import { DeliverableList } from './Deliverables';
+import { reopenable } from './PickUp';
 
 /** The side panel for one task. Fields save as you leave them. */
 export function TaskDetail(props: {
@@ -26,6 +27,7 @@ export function TaskDetail(props: {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
   const [category, setCategory] = useState(task.category ?? '');
+  const [leftOff, setLeftOff] = useState(task.left_off?.text ?? '');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const done = task.status === 'done';
   // A timed task's date and time are shown in this computer's time zone.
@@ -38,7 +40,8 @@ export function TaskDetail(props: {
     setTitle(task.title);
     setDescription(task.description ?? '');
     setCategory(task.category ?? '');
-  }, [task.id, task.title, task.description, task.category]);
+    setLeftOff(task.left_off?.text ?? '');
+  }, [task.id, task.title, task.description, task.category, task.left_off?.text]);
 
   useEffect(() => setConfirmDelete(false), [task.id]);
 
@@ -144,6 +147,37 @@ export function TaskDetail(props: {
             </label>
           )}
         </div>
+
+        {!done && (
+          <label className="left-off-field">
+            <NotebookPen size={14} />
+            <input
+              placeholder="Where I left off"
+              value={leftOff}
+              onChange={(e) => setLeftOff(e.target.value)}
+              onBlur={() =>
+                leftOff.trim() !== (task.left_off?.text ?? '') && void run(() => api.setLeftOff(task.id, leftOff))
+              }
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+              maxLength={500}
+              aria-label="Where I left off"
+            />
+          </label>
+        )}
+
+        {!done && reopenable(task, deviceId) > 1 && (
+          <button
+            className="secondary small open-all"
+            onClick={() =>
+              void run(async () => {
+                const r = await api.openTaskThings(task.id);
+                if (r.skipped.length) throw r.skipped.join(' ');
+              })
+            }
+          >
+            <FolderOpen size={13} /> Open all {reopenable(task, deviceId)}
+          </button>
+        )}
 
         <AttachmentList taskId={task.id} attachments={task.attachments} run={run} deviceId={deviceId} />
         <DeliverableList task={task} run={run} now={now} />

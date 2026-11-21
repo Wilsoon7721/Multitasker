@@ -141,6 +141,7 @@ fn mark(conn: &Connection, change: &Change, stamp: &Stamp) -> Result<()> {
             set_clock(conn, "focus", &focus_key(provider, task_id, device), "", stamp)?
         }
         Change::AttachmentAdded { .. } | Change::WorkLogged { .. } => {}
+        Change::LeftOff { provider, task_id, .. } => set_clock(conn, "left_off", &left_off_key(provider, task_id), "", stamp)?,
         Change::AttachmentRemoved { id } => set_tombstone(conn, "attachment", id, stamp)?,
     }
     Ok(())
@@ -189,7 +190,7 @@ fn apply(conn: &Connection, op: &Op) -> Result<bool> {
         Change::TaskDeleted { id } => {
             set_tombstone(conn, "task", id, stamp)?;
             let removed = conn.execute("DELETE FROM tasks WHERE id = ?1", [id]).map_err(storage)?;
-            for table in ["focus", "attachments", "work_sessions"] {
+            for table in ["focus", "attachments", "work_sessions", "left_off"] {
                 conn.execute(&format!("DELETE FROM {table} WHERE provider = ?1 AND task_id = ?2"), params![PROVIDER_KEY, id])
                     .map_err(storage)?;
             }
@@ -224,6 +225,15 @@ fn apply(conn: &Connection, op: &Op) -> Result<bool> {
             set_tombstone(conn, "attachment", id, stamp)?;
             Ok(conn.execute("DELETE FROM attachments WHERE id = ?1", [id]).map_err(storage)? > 0)
         }
+        Change::LeftOff { provider, task_id, note } => {
+            let key = left_off_key(provider, task_id);
+            if clock(conn, "left_off", &key, "")?.is_some_and(|c| &c >= stamp) {
+                return Ok(false);
+            }
+            set_clock(conn, "left_off", &key, "", stamp)?;
+            store_left_off(conn, provider, task_id, note.as_ref())?;
+            Ok(true)
+        }
         Change::WorkLogged { session } => {
             if session.provider == PROVIDER_KEY && is_tombstoned(conn, "task", &session.task_id)? {
                 return Ok(false);
@@ -231,6 +241,22 @@ fn apply(conn: &Connection, op: &Op) -> Result<bool> {
             insert_work(conn, session)
         }
     }
+}
+
+fn left_off_key(provider: &str, task_id: &str) -> String {
+    format!("{provider}\x1f{task_id}")
+}
+
+pub(crate) fn store_left_off(conn: &Connection, provider: &str, task_id: &str, note: Option<&multitasker_core::LeftOff>) -> Result<()> {
+    match note {
+        Some(n) => conn.execute(
+            "INSERT OR REPLACE INTO left_off (provider, task_id, text, at, device) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![provider, task_id, n.text, n.at, n.device],
+        ),
+        None => conn.execute("DELETE FROM left_off WHERE provider = ?1 AND task_id = ?2", params![provider, task_id]),
+    }
+    .map_err(storage)?;
+    Ok(())
 }
 
 /// Stores a stretch of work unless it's already here; returns whether it was new.
@@ -560,6 +586,29 @@ mod tests {
         a.delete(&task.id).await.unwrap();
         ship(&a, "pc-a", &b);
         assert!(b.worked(PROVIDER_KEY).await.unwrap().is_empty(), "deleting the task drops its time everywhere");
+    }
+
+    #[tokio::test]
+    async fn the_newest_left_off_note_wins_everywhere() {
+        let (a, b) = pair().await;
+        let task = a.create(new("Essay")).await.unwrap();
+        ship(&a, "pc-a", &b);
+        drain(&a);
+        let note = |text: &str, device: &str| multitasker_core::LeftOff { text: text.into(), at: Utc::now(), device: device.into() };
+        a.set_left_off(PROVIDER_KEY, &task.id, Some(note("Intro done", "pc-a"))).await.unwrap();
+        b.set_left_off(PROVIDER_KEY, &task.id, Some(note("Halfway through part 2", "pc-b"))).await.unwrap();
+        ship(&a, "pc-a", &b);
+        ship(&b, "pc-b", &a);
+        for db in [&a, &b] {
+            let notes = db.left_off(PROVIDER_KEY).await.unwrap();
+            assert_eq!(notes[&task.id].text, "Halfway through part 2");
+        }
+
+        drain(&a);
+        drain(&b);
+        a.set_left_off(PROVIDER_KEY, &task.id, None).await.unwrap();
+        ship(&a, "pc-a", &b);
+        assert!(b.left_off(PROVIDER_KEY).await.unwrap().is_empty(), "clearing it clears it everywhere");
     }
 
     #[tokio::test]

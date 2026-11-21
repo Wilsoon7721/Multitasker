@@ -45,7 +45,11 @@ enum Request {
     /// A new task with the page linked to it.
     Create { title: String, url: Option<String>, page_title: Option<String> },
     /// The tab in front changed; `None` when the browser lost focus.
-    ActiveTab { url: Option<String> },
+    ActiveTab {
+        url: Option<String>,
+        #[serde(default)]
+        title: Option<String>,
+    },
     ShowApp,
 }
 
@@ -107,10 +111,10 @@ async fn handle(app: &AppHandle, request: Request) -> Result<Value, String> {
             let item = TaskItem { id: task.id, title: task.title, category: task.category, in_progress: false, linked };
             Ok(json!({ "task": item }))
         }
-        Request::ActiveTab { url } => {
+        Request::ActiveTab { url, title } => {
             let linked: Vec<Value> = state
                 .detector
-                .set_tab(url)
+                .set_tab(url, title)
                 .into_iter()
                 .map(|(task_id, title)| json!({ "task_id": task_id, "title": title }))
                 .collect();
@@ -354,7 +358,7 @@ mod tests {
         assert_eq!(e.id, json!(7));
         assert!(matches!(e.request, Request::Link { ref task_id, .. } if task_id == "t1"));
         let e: Envelope = serde_json::from_str(r#"{"type":"active_tab","url":null}"#).unwrap();
-        assert!(matches!(e.request, Request::ActiveTab { url: None }));
+        assert!(matches!(e.request, Request::ActiveTab { url: None, .. }));
     }
 
     #[test]

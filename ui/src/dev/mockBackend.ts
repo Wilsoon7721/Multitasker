@@ -41,7 +41,12 @@ let tasks: TaskView[] = [
     started_at: iso(20 * 60_000),
     in_progress_on: ['laptop'],
   }),
-  task('Draft project proposal', { category: 'School', due_date: day(-1), worked_secs: 50 * 60 }),
+  task('Draft project proposal', {
+    category: 'School',
+    due_date: day(-1),
+    worked_secs: 50 * 60,
+    left_off: { text: 'Section 3 needs the budget table', at: iso(3600_000), device: 'preview-device' },
+  }),
   task('Book dentist appointment', { due_date: day(4) }),
   task('Read chapter 5', { category: 'School', description: 'Pages 120–158.' }),
   task('Renew domain', { status: 'done', completed_at: iso(86_400_000) }),
@@ -66,6 +71,7 @@ function task(title: string, extra: Partial<TaskView> = {}): TaskView {
     attachments: [],
     deliverables: 0,
     worked_secs: 0,
+    left_off: null,
     ...extra,
   };
 }
@@ -169,6 +175,12 @@ let activity: ActivitySnapshot = {
     to: { task_id: tasks[1].id, title: tasks[1].title },
     from: [{ task_id: tasks[4].id, title: tasks[4].title }],
     reason: '“calendar-sync” is open',
+  },
+  link_offer: {
+    task_id: tasks[0].id,
+    task_title: tasks[0].title,
+    url: 'https://www.youtube.com/watch?v=abc',
+    title: 'Lecture 7 recap - YouTube',
   },
   paused: [{ task_id: tasks[3].id, title: tasks[3].title, since: new Date(Date.now() - 40 * 60_000).toISOString() }],
 };
@@ -510,6 +522,23 @@ mockIPC(
       case 'set_auto_switch':
         autoSwitch = !!a.enabled;
         return null;
+
+      case 'accept_link_offer':
+      case 'refuse_link_offer':
+        activity = { ...activity, link_offer: null };
+        activityChanged();
+        return null;
+
+      case 'set_left_off': {
+        const t = find(a.taskId as string);
+        const text = String(a.text).trim();
+        t.left_off = text ? { text, at: new Date().toISOString(), device: DEVICE.id } : null;
+        changed();
+        return null;
+      }
+
+      case 'open_task_things':
+        return { opened: find(a.taskId as string).attachments.length, skipped: [] };
 
       case 'dismiss_paused':
         activity = { ...activity, paused: [] };

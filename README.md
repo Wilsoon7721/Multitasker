@@ -36,6 +36,11 @@ Early development. What works today:
 - **Pauses when you're away**: after 15 minutes with no keyboard or mouse, or while the computer sleeps or MultiTasker
   is closed, what's in progress on that computer pauses. The widget offers to resume when you're back. Change the wait
   or turn it off in Settings.
+- **Getting back into a task**: when a task pauses or you switch away, the widget asks where you left off, and the
+  note shows on the task until you replace it. Going back to a task shows that note and opens its linked pages, files
+  and folders in one click ("Open all" in its details does the same).
+- **Linking as you go**: stay on a page that isn't linked to anything for two minutes while a task is in progress, and
+  the widget offers to link it to that task (needs the browser extension).
 - **Sync between computers**, three ways:
   - sign in to **Google Drive** or **OneDrive**; MultiTasker only gets its own app folder (setting up the app
     registrations: [docs/cloud-sign-in.md](docs/cloud-sign-in.md));

@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use multitasker_core::{
     check_category, check_title, clean, Attachment, AttachmentKind, Change, Error, FocusEntry, NewTask, Result, StateStore,
-    Task, TaskChanges, TaskFields, TaskId, TaskProvider, TaskStatus, WorkSession,
+    Task, TaskChanges, TaskFields, TaskId, TaskProvider, TaskStatus, WorkSession, LeftOff,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
@@ -76,6 +76,15 @@ const MIGRATIONS: &[&str] = &[r#"
         provider    TEXT NOT NULL,
         task_id     TEXT NOT NULL,
         started_at  TEXT NOT NULL,
+        PRIMARY KEY (provider, task_id)
+    );
+"#, r#"
+    CREATE TABLE left_off (
+        provider  TEXT NOT NULL,
+        task_id   TEXT NOT NULL,
+        text      TEXT NOT NULL,
+        at        TEXT NOT NULL,
+        device    TEXT NOT NULL,
         PRIMARY KEY (provider, task_id)
     );
 "#];
@@ -395,11 +404,28 @@ impl StateStore for SqliteDb {
         Ok(totals)
     }
 
+    async fn set_left_off(&self, provider: &str, task_id: &TaskId, note: Option<LeftOff>) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        sync::store_left_off(&tx, provider, task_id, note.as_ref())?;
+        sync::record(&tx, Change::LeftOff { provider: provider.to_owned(), task_id: task_id.clone(), note })?;
+        tx.commit().map_err(storage)
+    }
+
+    async fn left_off(&self, provider: &str) -> Result<HashMap<TaskId, LeftOff>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT task_id, text, at, device FROM left_off WHERE provider = ?1").map_err(storage)?;
+        let rows = stmt
+            .query_map([provider], |r| Ok((r.get::<_, TaskId>(0)?, LeftOff { text: r.get(1)?, at: r.get(2)?, device: r.get(3)? })))
+            .map_err(storage)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(storage)
+    }
+
     async fn forget(&self, provider: &str, task_id: &TaskId) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction().map_err(storage)?;
         sync::stop_focus(&tx, provider, task_id)?;
-        for table in ["work_sessions", "work_open"] {
+        for table in ["work_sessions", "work_open", "left_off"] {
             tx.execute(&format!("DELETE FROM {table} WHERE provider = ?1 AND task_id = ?2"), params![provider, task_id])
                 .map_err(storage)?;
         }

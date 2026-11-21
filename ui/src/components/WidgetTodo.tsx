@@ -22,13 +22,16 @@ export function WidgetTodo(props: {
   target: RefObject<HTMLElement | null>;
   onDragChange: (state: 'idle' | 'dragging' | 'over') => void;
   onCollapse: () => void;
+  /** Called once a task has been started from here. */
+  onStarted?: (task: TaskView) => void;
 }) {
-  const { tasks, run, target, onDragChange, onCollapse } = props;
+  const { tasks, run, target, onDragChange, onCollapse, onStarted } = props;
   const [drag, setDrag] = useState<Drag | null>(null);
   const origin = useRef({ x: 0, y: 0 });
   const now = useNow();
 
-  const start = (task: TaskView) => void run(() => api.setInProgress(task.id, true));
+  const start = (task: TaskView) =>
+    void run(() => api.setInProgress(task.id, true)).then((ok) => ok && onStarted?.(task));
 
   const isOverTarget = (x: number, y: number) => {
     const el = document.elementFromPoint(x, y);

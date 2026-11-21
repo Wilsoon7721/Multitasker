@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use multitasker_core::{
-    Attachment, AttachmentKind, NewAttachment, NewTask, Task, TaskChanges, TaskId, TaskStatus, TaskView, WorkSession,
+    Attachment, AttachmentKind, NewAttachment, NewTask, Task, TaskChanges, TaskId, TaskStatus, TaskView, WorkSession, LeftOff,
 };
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
@@ -43,6 +43,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
     let key = provider.key();
     let mut handed_in = state.deliverables.counts(key).map_err(err)?;
     let mut worked = state.state.worked(key).await.map_err(err)?;
+    let mut left_off = state.state.left_off(key).await.map_err(err)?;
 
     if let Some(store) = provider.extras() {
         let mut extras = store.extras().await.map_err(err)?;
@@ -61,6 +62,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
                     attachments: e.attachments,
                     deliverables: handed_in.remove(&task.id).unwrap_or(0),
                     worked_secs: worked.remove(&task.id).unwrap_or(0),
+                    left_off: left_off.remove(&task.id),
                     task,
                 }
             })
@@ -89,6 +91,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
             let in_progress_on = devices.remove(&task.id).unwrap_or_default();
             let deliverables = handed_in.remove(&task.id).unwrap_or(0);
             let worked_secs = worked.remove(&task.id).unwrap_or(0);
+            let left_off = left_off.remove(&task.id);
             TaskView {
                 task,
                 in_progress: started_at.is_some(),
@@ -98,6 +101,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
                 attachments,
                 deliverables,
                 worked_secs,
+                left_off,
             }
         })
         .collect())
@@ -298,6 +302,56 @@ fn existing_path(state: &AppState, a: &Attachment) -> CmdResult<std::path::PathB
         Some(device) if device != &state.device.id => format!("'{}' was attached on another computer.", a.name),
         _ => format!("'{}' has been moved or deleted ({}).", a.name, a.target),
     })
+}
+
+/// Notes where work on a task stopped; blank clears the note.
+#[tauri::command]
+pub async fn set_left_off(app: AppHandle, state: State<'_, AppState>, task_id: TaskId, text: String) -> CmdResult<()> {
+    let text = text.trim();
+    let note = (!text.is_empty()).then(|| LeftOff {
+        text: text.chars().take(500).collect(),
+        at: Utc::now(),
+        device: state.device.id.clone(),
+    });
+    state.state.set_left_off(state.provider().key(), &task_id, note).await.map_err(err)?;
+    changed(&app);
+    Ok(())
+}
+
+/// What opening a task's things managed, for the UI to report.
+#[derive(serde::Serialize)]
+pub struct Reopened {
+    pub opened: usize,
+    /// Things that couldn't be opened here, with why.
+    pub skipped: Vec<String>,
+}
+
+/// Opens a task's pages, and its files and folders that are on this computer, to pick it up again.
+#[tauri::command]
+pub async fn open_task_things(app: AppHandle, state: State<'_, AppState>, task_id: TaskId) -> CmdResult<Reopened> {
+    let task = task_views(&state)
+        .await?
+        .into_iter()
+        .find(|t| t.task.id == task_id)
+        .ok_or_else(|| format!("task {task_id} was not found"))?;
+    let mut report = Reopened { opened: 0, skipped: Vec::new() };
+    for a in &task.attachments {
+        let opened = match a.kind {
+            AttachmentKind::Link => app.opener().open_url(&a.target, None::<&str>).map_err(err),
+            // An app that's already open is left as it is rather than started a second time.
+            AttachmentKind::App if multitasker_activity::is_process_running(file_name(&a.target)) == Some(true) => continue,
+            _ => existing_path(&state, a).and_then(|p| app.opener().open_path(p.to_string_lossy(), None::<&str>).map_err(err)),
+        };
+        match opened {
+            Ok(()) => report.opened += 1,
+            Err(e) => report.skipped.push(e),
+        }
+    }
+    Ok(report)
+}
+
+fn file_name(path: &str) -> &str {
+    path.rsplit(['\\', '/']).next().unwrap_or(path)
 }
 
 /// Opens an attachment in its default app; done here so the webview can only open what was attached.
@@ -729,6 +783,20 @@ pub fn set_auto_switch(state: State<'_, AppState>, enabled: bool) -> CmdResult<(
     settings::update(&state.data_dir, |s| s.auto_switch = enabled).map_err(err)?;
     state.detector.set_auto_switch(enabled);
     Ok(())
+}
+
+/// Links the page detection offered to the task in progress.
+#[tauri::command]
+pub async fn accept_link_offer(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    let Some(offer) = state.detector.take_link_offer(&app) else { return Ok(()) };
+    let item = NewAttachment::Link { url: offer.url, name: offer.title.filter(|t| !t.trim().is_empty()) };
+    attach(&app, &state, offer.task_id, vec![item]).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn refuse_link_offer(app: AppHandle, state: State<'_, AppState>) {
+    state.detector.refuse_link_offer(&app);
 }
 
 #[tauri::command]

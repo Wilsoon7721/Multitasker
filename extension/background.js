@@ -61,9 +61,12 @@ async function report() {
   const win = await chrome.windows.getLastFocused().catch(() => null);
   const [tab] = win?.focused ? await chrome.tabs.query({ active: true, windowId: win.id }) : [];
   const url = tab && linkable(tab.url) ? tab.url : null;
-  if (url === lastReported) return;
-  lastReported = url;
-  const reply = await ask({ type: 'active_tab', url });
+  const title = url ? (tab.title ?? '').replace(/^\(\d+\+?\)\s*/, '') : null;
+  // The title often arrives after the address, so a new title is worth reporting too.
+  const key = JSON.stringify([url, title]);
+  if (key === lastReported) return;
+  lastReported = key;
+  const reply = await ask({ type: 'active_tab', url, title });
   // Not running yet: the same page is reported again on the next change.
   if (reply.error) lastReported = undefined;
   if (tab) showLinked(tab.id, reply.linked ?? []);

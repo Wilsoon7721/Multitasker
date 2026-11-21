@@ -16,6 +16,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { api, onWidgetAppearance } from './api';
 import { AppPicker } from './components/AppPicker';
 import { CheckButton } from './components/CheckButton';
+import { LeftOffPrompt, LinkOfferNote, PickUpBar } from './components/PickUp';
 import { WidgetTodo } from './components/WidgetTodo';
 import { dueInfo, localDate, localTime, useNow, workedTime } from './time';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
@@ -52,6 +53,39 @@ export function WidgetView() {
   const suggestion = snapshot.suggestion;
   const paused = snapshot.paused;
   const switched = snapshot.switched;
+  // A task just paused here, to ask where it was left, and one just picked up, to help get back into it.
+  const [leftOffFor, setLeftOffFor] = useState<{ id: string; title: string } | null>(null);
+  const [picking, setPicking] = useState<{ id: string; noteOnly: boolean } | null>(null);
+  const setPickUpId = (id: string | null, noteOnly = false) => setPicking(id ? { id, noteOnly } : null);
+  const pickUp = picking ? ((tasks ?? []).find((t) => t.id === picking.id && t.in_progress) ?? null) : null;
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+
+  useEffect(
+    () =>
+      void api.thisDevice().then(
+        (d) => setDeviceId(d.id),
+        () => {},
+      ),
+    [],
+  );
+
+  // A switch made on its own asks about the task left behind and helps with the one moved to.
+  const switchedKey = switched ? `${switched.to.task_id}:${switched.from.map((f) => f.task_id).join(',')}` : null;
+  useEffect(() => {
+    if (!switched) return;
+    // Its things are already in front, so only a note on where it was left is worth showing.
+    setPickUpId(switched.to.task_id, true);
+    if (switched.from.length === 1) setLeftOffFor({ id: switched.from[0].task_id, title: switched.from[0].title });
+    // Only a new switch should prompt; the snapshot is re-sent often.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [switchedKey]);
+
+  const pause = (t: { id: string; title: string }) =>
+    void run(() => api.setInProgress(t.id, false)).then((ok) => {
+      if (!ok) return;
+      setLeftOffFor({ id: t.id, title: t.title });
+      if (picking?.id === t.id) setPickUpId(null);
+    });
 
   const toggleExpanded = () =>
     setExpanded((cur) => {
@@ -138,7 +172,12 @@ export function WidgetView() {
             </span>
             <span className="suggestion-reason">{suggestion.reason}</span>
           </div>
-          <button className="primary small" onClick={() => void run(() => api.switchTask(suggestion.task_id))}>
+          <button
+            className="primary small"
+            onClick={() =>
+              void run(() => api.switchTask(suggestion.task_id)).then((ok) => ok && setPickUpId(suggestion.task_id))
+            }
+          >
             <Play size={12} /> {active.length ? 'Switch' : 'Start'}
           </button>
           <button
@@ -150,6 +189,23 @@ export function WidgetView() {
             <X size={14} />
           </button>
         </div>
+      )}
+
+      {snapshot.link_offer && <LinkOfferNote offer={snapshot.link_offer} run={run} />}
+
+      {leftOffFor && (
+        <LeftOffPrompt key={leftOffFor.id} task={leftOffFor} run={run} onClose={() => setLeftOffFor(null)} />
+      )}
+
+      {pickUp && (
+        <PickUpBar
+          key={pickUp.id}
+          task={pickUp}
+          deviceId={deviceId}
+          noteOnly={!!picking?.noteOnly}
+          run={run}
+          onClose={() => setPickUpId(null)}
+        />
       )}
 
       {switched && (
@@ -184,7 +240,11 @@ export function WidgetView() {
           </div>
           <button
             className="primary small"
-            onClick={() => void run(async () => Promise.all(paused.map((p) => api.setInProgress(p.task_id, true))))}
+            onClick={() =>
+              void run(async () => Promise.all(paused.map((p) => api.setInProgress(p.task_id, true)))).then(
+                (ok) => ok && setPickUpId(paused[0].task_id),
+              )
+            }
           >
             <Play size={12} /> Resume
           </button>
@@ -264,7 +324,7 @@ export function WidgetView() {
                       </button>
                       <button
                         className="icon-btn"
-                        onClick={() => void run(() => api.setInProgress(t.id, false))}
+                        onClick={() => pause(t)}
                         aria-label={`Pause "${t.title}"`}
                         title="Pause"
                       >
@@ -296,6 +356,7 @@ export function WidgetView() {
         <WidgetTodo
           tasks={todo}
           run={run}
+          onStarted={(t) => setPickUpId(t.id)}
           target={activeZone}
           onDragChange={setDragState}
           onCollapse={toggleExpanded}

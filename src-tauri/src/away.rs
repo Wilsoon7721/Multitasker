@@ -128,6 +128,7 @@ mod tests {
             attachments: Vec::new(),
             deliverables: 0,
             worked_secs: 0,
+            left_off: None,
         };
         let tasks = vec![view("old", "me", 0), view("elsewhere", "laptop", 0), view("after", "me", 20)];
         let ids: Vec<_> = to_pause(&tasks, "me", at(10)).into_iter().map(|t| t.task.id.clone()).collect();

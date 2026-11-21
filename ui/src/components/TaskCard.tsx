@@ -1,4 +1,4 @@
-import { CalendarDays, PackageCheck, Paperclip, Pause, Play, Timer } from 'lucide-react';
+import { CalendarDays, NotebookPen, PackageCheck, Paperclip, Pause, Play, Timer } from 'lucide-react';
 import { api, type Activity, type TaskView } from '../api';
 import { dueInfo, workedTime } from '../time';
 import type { Run } from '../useTasks';
@@ -44,6 +44,11 @@ export function TaskCard(props: {
           {task.title}
         </span>
         {task.description && <span className="card-desc">{task.description}</span>}
+        {task.left_off && !done && (
+          <span className="card-left-off" title={`Where you left off: ${task.left_off.text}`}>
+            <NotebookPen size={12} /> {task.left_off.text}
+          </span>
+        )}
         <span className="card-meta">
           {worked && (
             <span className={`meta${task.in_progress ? ' accent' : ''}`} title="Time spent on it in total">
