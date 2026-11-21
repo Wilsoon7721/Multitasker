@@ -1,6 +1,6 @@
 import { CalendarDays, PackageCheck, Paperclip, Pause, Play, Timer } from 'lucide-react';
 import { api, type Activity, type TaskView } from '../api';
-import { dueInfo, elapsed } from '../time';
+import { dueInfo, workedTime } from '../time';
 import type { Run } from '../useTasks';
 import { CheckButton } from './CheckButton';
 
@@ -17,6 +17,7 @@ export function TaskCard(props: {
   const { task, run, now, selected, live, onOpen, onDone } = props;
   const done = task.status === 'done';
   const due = done ? null : dueInfo(task, now);
+  const worked = workedTime(task, now);
 
   return (
     <li
@@ -44,9 +45,9 @@ export function TaskCard(props: {
         </span>
         {task.description && <span className="card-desc">{task.description}</span>}
         <span className="card-meta">
-          {task.in_progress && task.started_at && (
-            <span className="meta accent">
-              <Timer size={12} /> {elapsed(task.started_at, now)}
+          {worked && (
+            <span className={`meta${task.in_progress ? ' accent' : ''}`} title="Time spent on it in total">
+              <Timer size={12} /> {worked}
             </span>
           )}
           {task.category && <span className="tag">{task.category}</span>}

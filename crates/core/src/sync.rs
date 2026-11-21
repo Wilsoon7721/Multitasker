@@ -71,6 +71,8 @@ pub enum Change {
     Focus { provider: String, task_id: TaskId, device: DeviceId, started_at: Option<DateTime<Utc>> },
     AttachmentAdded { attachment: Attachment },
     AttachmentRemoved { id: String },
+    /// A finished stretch of work; never changed once made.
+    WorkLogged { session: crate::WorkSession },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

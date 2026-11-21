@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use multitasker_core::{Attachment, AttachmentKind, NewAttachment, NewTask, Task, TaskChanges, TaskId, TaskStatus, TaskView};
+use chrono::{DateTime, Utc};
+use multitasker_core::{
+    Attachment, AttachmentKind, NewAttachment, NewTask, Task, TaskChanges, TaskId, TaskStatus, TaskView, WorkSession,
+};
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 
@@ -39,6 +42,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
     let tasks = provider.list().await.map_err(err)?;
     let key = provider.key();
     let mut handed_in = state.deliverables.counts(key).map_err(err)?;
+    let mut worked = state.state.worked(key).await.map_err(err)?;
 
     if let Some(store) = provider.extras() {
         let mut extras = store.extras().await.map_err(err)?;
@@ -56,6 +60,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
                     started_on_name: e.started_on_name,
                     attachments: e.attachments,
                     deliverables: handed_in.remove(&task.id).unwrap_or(0),
+                    worked_secs: worked.remove(&task.id).unwrap_or(0),
                     task,
                 }
             })
@@ -83,6 +88,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
             let attachments = attachments.remove(&task.id).unwrap_or_default();
             let in_progress_on = devices.remove(&task.id).unwrap_or_default();
             let deliverables = handed_in.remove(&task.id).unwrap_or(0);
+            let worked_secs = worked.remove(&task.id).unwrap_or(0);
             TaskView {
                 task,
                 in_progress: started_at.is_some(),
@@ -91,6 +97,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
                 started_on_name: None,
                 attachments,
                 deliverables,
+                worked_secs,
             }
         })
         .collect())
@@ -113,8 +120,11 @@ pub async fn update_task(
     let provider = state.provider();
     let task = provider.update(&id, changes).await.map_err(err)?;
     // A finished task is no longer in progress anywhere; a task list that keeps extras clears that itself.
-    if task.status == TaskStatus::Done && provider.extras().is_none() {
-        state.state.stop(provider.key(), &id).await.map_err(err)?;
+    if task.status == TaskStatus::Done {
+        end_work(&state, &id, Utc::now()).await?;
+        if provider.extras().is_none() {
+            state.state.stop(provider.key(), &id).await.map_err(err)?;
+        }
     }
     changed(&app);
     Ok(task)
@@ -158,13 +168,55 @@ pub async fn set_in_progress(
                 state.state.start(key, &id, &state.device.id).await.map_err(err)?;
             }
         }
+        state.state.begin_work(key, &id, Utc::now()).await.map_err(err)?;
+        changed(&app);
+        Ok(())
     } else {
-        match provider.extras() {
-            Some(store) => store.stop(&id).await.map_err(err)?,
-            None => state.state.stop(key, &id).await.map_err(err)?,
-        }
+        stop_task(&app, &state, &id, Utc::now()).await
     }
-    changed(&app);
+}
+
+/// Pauses a task, counting the work on it up to `ended_at`, such as when the person left rather than now.
+pub async fn stop_task(app: &AppHandle, state: &AppState, id: &TaskId, ended_at: DateTime<Utc>) -> CmdResult<()> {
+    let provider = state.provider();
+    end_work(state, id, ended_at).await?;
+    match provider.extras() {
+        Some(store) => store.stop(id).await.map_err(err)?,
+        None => state.state.stop(provider.key(), id).await.map_err(err)?,
+    }
+    changed(app);
+    Ok(())
+}
+
+/// Keeps the stretch of work this computer began on a task, if there was one.
+async fn end_work(state: &AppState, id: &TaskId, ended_at: DateTime<Utc>) -> CmdResult<()> {
+    let provider = state.provider();
+    let key = provider.key();
+    let began = state.state.end_work(key, id).await.map_err(err)?;
+    // Tasks started before time was kept still count from when this computer started them.
+    let began = match began {
+        Some(at) => Some(at),
+        None if provider.extras().is_none() => state
+            .state
+            .focus()
+            .await
+            .map_err(err)?
+            .into_iter()
+            .find(|f| f.provider == key && &f.task_id == id && f.device == state.device.id)
+            .map(|f| f.started_at),
+        None => None,
+    };
+    if let Some(started_at) = began.filter(|at| *at < ended_at) {
+        let session = WorkSession {
+            id: uuid::Uuid::new_v4().to_string(),
+            provider: key.to_owned(),
+            task_id: id.clone(),
+            device: state.device.id.clone(),
+            started_at,
+            ended_at,
+        };
+        state.state.log_work(session).await.map_err(err)?;
+    }
     Ok(())
 }
 

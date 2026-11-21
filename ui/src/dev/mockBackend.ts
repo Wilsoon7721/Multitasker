@@ -33,6 +33,7 @@ let tasks: TaskView[] = [
     in_progress: true,
     started_at: iso(95 * 60_000),
     in_progress_on: ['preview-device'],
+    worked_secs: 2 * 3600 + 10 * 60,
   }),
   task('Fix calendar sync bug in JavaDashboard', {
     category: 'Dev',
@@ -40,7 +41,7 @@ let tasks: TaskView[] = [
     started_at: iso(20 * 60_000),
     in_progress_on: ['laptop'],
   }),
-  task('Draft project proposal', { category: 'School', due_date: day(-1) }),
+  task('Draft project proposal', { category: 'School', due_date: day(-1), worked_secs: 50 * 60 }),
   task('Book dentist appointment', { due_date: day(4) }),
   task('Read chapter 5', { category: 'School', description: 'Pages 120–158.' }),
   task('Renew domain', { status: 'done', completed_at: iso(86_400_000) }),
@@ -64,6 +65,7 @@ function task(title: string, extra: Partial<TaskView> = {}): TaskView {
     started_on_name: null,
     attachments: [],
     deliverables: 0,
+    worked_secs: 0,
     ...extra,
   };
 }
@@ -299,7 +301,13 @@ mockIPC(
             activityChanged();
           }
         } else {
-          Object.assign(t, { in_progress: false, started_at: null, in_progress_on: [] });
+          const ran = t.started_at ? Math.floor((Date.now() - new Date(t.started_at).getTime()) / 1000) : 0;
+          Object.assign(t, {
+            in_progress: false,
+            started_at: null,
+            in_progress_on: [],
+            worked_secs: t.worked_secs + ran,
+          });
         }
         changed();
         return null;

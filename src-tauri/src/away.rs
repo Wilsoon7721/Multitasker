@@ -76,12 +76,7 @@ fn pause(app: &AppHandle, state: &AppState, since: DateTime<Utc>) {
     let Ok(tasks) = tauri::async_runtime::block_on(task_views(state)) else { return };
     let mut paused = Vec::new();
     for t in to_pause(&tasks, &state.device.id, since) {
-        let stopped = tauri::async_runtime::block_on(commands::set_in_progress(
-            app.clone(),
-            app.state::<AppState>(),
-            t.task.id.clone(),
-            false,
-        ));
+        let stopped = tauri::async_runtime::block_on(commands::stop_task(app, state, &t.task.id, since));
         match stopped {
             Ok(()) => paused.push(Paused { task_id: t.task.id.clone(), title: t.task.title.clone(), since }),
             Err(e) => eprintln!("couldn't pause {} while away: {e}", t.task.id),
@@ -132,6 +127,7 @@ mod tests {
             started_on_name: None,
             attachments: Vec::new(),
             deliverables: 0,
+            worked_secs: 0,
         };
         let tasks = vec![view("old", "me", 0), view("elsewhere", "laptop", 0), view("after", "me", 20)];
         let ids: Vec<_> = to_pause(&tasks, "me", at(10)).into_iter().map(|t| t.task.id.clone()).collect();

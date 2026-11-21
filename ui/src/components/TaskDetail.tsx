@@ -1,7 +1,7 @@
 import { CalendarDays, Clock, Pause, Play, Tag, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, type Activity, type TaskChanges, type TaskView } from '../api';
-import { elapsed, localDate, localTime, toDueAt } from '../time';
+import { localDate, localTime, toDueAt, workedTime } from '../time';
 import type { Run } from '../useTasks';
 import { AttachmentList } from './Attachments';
 import { AutoTextarea } from './AutoTextarea';
@@ -65,9 +65,10 @@ export function TaskDetail(props: {
         <span className="detail-status">
           {done
             ? 'Done'
-            : task.in_progress && task.started_at
-              ? `In progress · ${elapsed(task.started_at, now)}${startedOn ? ` · started on ${startedOn}` : ''}`
+            : task.in_progress
+              ? `In progress · ${workedTime(task, now)} in total${startedOn ? ` · started on ${startedOn}` : ''}`
               : 'To do'}
+          {!task.in_progress && workedTime(task, now) && <span> · {workedTime(task, now)} spent</span>}
           {live && (
             <span className="detail-live">
               <span className="live-dot" /> Active now — {live.reason}

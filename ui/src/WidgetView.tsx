@@ -17,7 +17,7 @@ import { api, onWidgetAppearance } from './api';
 import { AppPicker } from './components/AppPicker';
 import { CheckButton } from './components/CheckButton';
 import { WidgetTodo } from './components/WidgetTodo';
-import { dueInfo, elapsed, localDate, localTime, useNow } from './time';
+import { dueInfo, localDate, localTime, useNow, workedTime } from './time';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 import { useActivity } from './useActivity';
 import { useTasks } from './useTasks';
@@ -229,7 +229,9 @@ export function WidgetView() {
                         {t.title}
                       </span>
                       <span className="card-meta">
-                        {t.started_at && <span className="meta accent">{elapsed(t.started_at, now)}</span>}
+                        <span className="meta accent" title="Time spent on it in total">
+                          {workedTime(t, now)}
+                        </span>
                         {t.category && <span className="tag">{t.category}</span>}
                         {due && (
                           <span className={`meta${due.late ? ' late' : due.soon ? ' soon' : ''}`}>

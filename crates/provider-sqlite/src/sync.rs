@@ -140,7 +140,7 @@ fn mark(conn: &Connection, change: &Change, stamp: &Stamp) -> Result<()> {
         Change::Focus { provider, task_id, device, .. } => {
             set_clock(conn, "focus", &focus_key(provider, task_id, device), "", stamp)?
         }
-        Change::AttachmentAdded { .. } => {}
+        Change::AttachmentAdded { .. } | Change::WorkLogged { .. } => {}
         Change::AttachmentRemoved { id } => set_tombstone(conn, "attachment", id, stamp)?,
     }
     Ok(())
@@ -189,7 +189,7 @@ fn apply(conn: &Connection, op: &Op) -> Result<bool> {
         Change::TaskDeleted { id } => {
             set_tombstone(conn, "task", id, stamp)?;
             let removed = conn.execute("DELETE FROM tasks WHERE id = ?1", [id]).map_err(storage)?;
-            for table in ["focus", "attachments"] {
+            for table in ["focus", "attachments", "work_sessions"] {
                 conn.execute(&format!("DELETE FROM {table} WHERE provider = ?1 AND task_id = ?2"), params![PROVIDER_KEY, id])
                     .map_err(storage)?;
             }
@@ -224,7 +224,24 @@ fn apply(conn: &Connection, op: &Op) -> Result<bool> {
             set_tombstone(conn, "attachment", id, stamp)?;
             Ok(conn.execute("DELETE FROM attachments WHERE id = ?1", [id]).map_err(storage)? > 0)
         }
+        Change::WorkLogged { session } => {
+            if session.provider == PROVIDER_KEY && is_tombstoned(conn, "task", &session.task_id)? {
+                return Ok(false);
+            }
+            insert_work(conn, session)
+        }
     }
+}
+
+/// Stores a stretch of work unless it's already here; returns whether it was new.
+pub(crate) fn insert_work(conn: &Connection, s: &multitasker_core::WorkSession) -> Result<bool> {
+    let added = conn
+        .execute(
+            "INSERT OR IGNORE INTO work_sessions (id, provider, task_id, device, started_at, ended_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![s.id, s.provider, s.task_id, s.device, s.started_at, s.ended_at],
+        )
+        .map_err(storage)?;
+    Ok(added > 0)
 }
 
 fn set_field(conn: &Connection, id: &str, name: &str, f: &TaskFields) -> Result<()> {
@@ -510,6 +527,39 @@ mod tests {
         assert_eq!(b.apply_ops("pc-a", 1, &ops).unwrap(), 1);
         assert_eq!(b.apply_ops("pc-a", 1, &ops).unwrap(), 0);
         assert_eq!(b.cursor("pc-a").unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn worked_time_adds_up_across_computers() {
+        let (a, b) = pair().await;
+        let task = a.create(new("Essay")).await.unwrap();
+        ship(&a, "pc-a", &b);
+        let t0 = Utc::now() - chrono::Duration::hours(3);
+        let session = |id: &str, device: &str, from: i64, to: i64| multitasker_core::WorkSession {
+            id: id.into(),
+            provider: PROVIDER_KEY.into(),
+            task_id: task.id.clone(),
+            device: device.into(),
+            started_at: t0 + chrono::Duration::minutes(from),
+            ended_at: t0 + chrono::Duration::minutes(to),
+        };
+        a.log_work(session("s1", "pc-a", 0, 30)).await.unwrap();
+        a.log_work(session("s1", "pc-a", 0, 30)).await.unwrap();
+        b.log_work(session("s2", "pc-b", 60, 75)).await.unwrap();
+        ship(&a, "pc-a", &b);
+        ship(&b, "pc-b", &a);
+        for db in [&a, &b] {
+            assert_eq!(db.worked(PROVIDER_KEY).await.unwrap().get(&task.id), Some(&(45 * 60)), "the same stretch counts once");
+        }
+
+        a.begin_work(PROVIDER_KEY, &task.id, t0).await.unwrap();
+        a.begin_work(PROVIDER_KEY, &task.id, Utc::now()).await.unwrap();
+        assert_eq!(a.end_work(PROVIDER_KEY, &task.id).await.unwrap(), Some(t0), "starting again keeps the first time");
+        assert_eq!(a.end_work(PROVIDER_KEY, &task.id).await.unwrap(), None);
+
+        a.delete(&task.id).await.unwrap();
+        ship(&a, "pc-a", &b);
+        assert!(b.worked(PROVIDER_KEY).await.unwrap().is_empty(), "deleting the task drops its time everywhere");
     }
 
     #[tokio::test]

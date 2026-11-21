@@ -16,6 +16,17 @@ pub struct FocusEntry {
     pub started_at: DateTime<Utc>,
 }
 
+/// A stretch of time spent on a task, from starting it to pausing or finishing it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkSession {
+    pub id: String,
+    pub provider: String,
+    pub task_id: TaskId,
+    pub device: DeviceId,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: DateTime<Utc>,
+}
+
 /// Where MultiTasker keeps its own state about tasks, apart from the task provider.
 #[async_trait]
 pub trait StateStore: Send + Sync {
@@ -36,6 +47,18 @@ pub trait StateStore: Send + Sync {
 
     /// Removes one attachment. The file or link it points at is left alone.
     async fn remove_attachment(&self, id: &str) -> Result<()>;
+
+    /// Notes that work on a task began on this computer; a task already being worked on keeps its first time.
+    async fn begin_work(&self, provider: &str, task_id: &TaskId, at: DateTime<Utc>) -> Result<()>;
+
+    /// Ends the work begun on this computer, returning when it began, if it had.
+    async fn end_work(&self, provider: &str, task_id: &TaskId) -> Result<Option<DateTime<Utc>>>;
+
+    /// Keeps a finished stretch of work, shared with other computers through sync.
+    async fn log_work(&self, session: WorkSession) -> Result<()>;
+
+    /// Seconds of finished work per task, across every computer.
+    async fn worked(&self, provider: &str) -> Result<std::collections::HashMap<TaskId, i64>>;
 
     /// Drops everything kept about a task, for when the task itself is deleted.
     async fn forget(&self, provider: &str, task_id: &TaskId) -> Result<()>;

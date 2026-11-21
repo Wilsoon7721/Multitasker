@@ -1,5 +1,6 @@
 mod sync;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
@@ -7,7 +8,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use multitasker_core::{
     check_category, check_title, clean, Attachment, AttachmentKind, Change, Error, FocusEntry, NewTask, Result, StateStore,
-    Task, TaskChanges, TaskFields, TaskId, TaskProvider, TaskStatus,
+    Task, TaskChanges, TaskFields, TaskId, TaskProvider, TaskStatus, WorkSession,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
@@ -61,6 +62,22 @@ const MIGRATIONS: &[&str] = &[r#"
     CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, last_seen TEXT NOT NULL);
 "#, r#"
     ALTER TABLE tasks ADD COLUMN due_at TEXT;
+"#, r#"
+    CREATE TABLE work_sessions (
+        id          TEXT PRIMARY KEY,
+        provider    TEXT NOT NULL,
+        task_id     TEXT NOT NULL,
+        device      TEXT NOT NULL,
+        started_at  TEXT NOT NULL,
+        ended_at    TEXT NOT NULL
+    );
+    CREATE INDEX work_sessions_task ON work_sessions (provider, task_id);
+    CREATE TABLE work_open (
+        provider    TEXT NOT NULL,
+        task_id     TEXT NOT NULL,
+        started_at  TEXT NOT NULL,
+        PRIMARY KEY (provider, task_id)
+    );
 "#];
 
 /// Tasks and MultiTasker's own state in one local file, on separate tables so either can be paired with others.
@@ -326,10 +343,66 @@ impl StateStore for SqliteDb {
         tx.commit().map_err(storage)
     }
 
+    async fn begin_work(&self, provider: &str, task_id: &TaskId, at: DateTime<Utc>) -> Result<()> {
+        self.conn()
+            .execute(
+                "INSERT OR IGNORE INTO work_open (provider, task_id, started_at) VALUES (?1, ?2, ?3)",
+                params![provider, task_id, at],
+            )
+            .map_err(storage)?;
+        Ok(())
+    }
+
+    async fn end_work(&self, provider: &str, task_id: &TaskId) -> Result<Option<DateTime<Utc>>> {
+        let conn = self.conn();
+        let began: Option<DateTime<Utc>> = conn
+            .query_row(
+                "SELECT started_at FROM work_open WHERE provider = ?1 AND task_id = ?2",
+                params![provider, task_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(storage)?;
+        conn.execute("DELETE FROM work_open WHERE provider = ?1 AND task_id = ?2", params![provider, task_id])
+            .map_err(storage)?;
+        Ok(began)
+    }
+
+    async fn log_work(&self, session: WorkSession) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        if sync::insert_work(&tx, &session)? {
+            sync::record(&tx, Change::WorkLogged { session })?;
+        }
+        tx.commit().map_err(storage)
+    }
+
+    async fn worked(&self, provider: &str) -> Result<HashMap<TaskId, i64>> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare("SELECT task_id, started_at, ended_at FROM work_sessions WHERE provider = ?1")
+            .map_err(storage)?;
+        let rows = stmt
+            .query_map([provider], |r| {
+                Ok((r.get::<_, TaskId>(0)?, r.get::<_, DateTime<Utc>>(1)?, r.get::<_, DateTime<Utc>>(2)?))
+            })
+            .map_err(storage)?;
+        let mut totals = HashMap::new();
+        for row in rows {
+            let (task, start, end) = row.map_err(storage)?;
+            *totals.entry(task).or_insert(0) += (end - start).num_seconds().max(0);
+        }
+        Ok(totals)
+    }
+
     async fn forget(&self, provider: &str, task_id: &TaskId) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction().map_err(storage)?;
         sync::stop_focus(&tx, provider, task_id)?;
+        for table in ["work_sessions", "work_open"] {
+            tx.execute(&format!("DELETE FROM {table} WHERE provider = ?1 AND task_id = ?2"), params![provider, task_id])
+                .map_err(storage)?;
+        }
         let ids: Vec<String> = {
             let mut stmt =
                 tx.prepare("SELECT id FROM attachments WHERE provider = ?1 AND task_id = ?2").map_err(storage)?;

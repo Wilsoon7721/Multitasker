@@ -94,6 +94,8 @@ pub struct TaskView {
     pub attachments: Vec<crate::Attachment>,
     /// How many pieces of work have been handed in for it.
     pub deliverables: u32,
+    /// Seconds worked on it before the stretch in progress now, across computers.
+    pub worked_secs: i64,
 }
 
 /// Trims text and turns blank into `None`.

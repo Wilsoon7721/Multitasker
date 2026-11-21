@@ -99,6 +99,7 @@ mod tests {
             started_on_name: None,
             attachments: Vec::new(),
             deliverables: 0,
+            worked_secs: 0,
         }
     }
 

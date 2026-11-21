@@ -26,6 +26,8 @@ export interface TaskView {
   attachments: Attachment[];
   /** How many pieces of work have been handed in for it. */
   deliverables: number;
+  /** Seconds worked before the stretch in progress now, across computers. */
+  worked_secs: number;
 }
 
 /** A copy of handed-in work, kept as it was each time it was handed in. */
@@ -282,7 +284,17 @@ export const api = {
               in_progress: true,
               started_at: t.started_at ?? new Date().toISOString(),
             }
-          : { ...t, in_progress: false, started_at: null, in_progress_on: [], started_on_name: null },
+          : {
+              ...t,
+              in_progress: false,
+              started_at: null,
+              in_progress_on: [],
+              started_on_name: null,
+              // The stretch just ended counts toward the total straight away.
+              worked_secs:
+                t.worked_secs +
+                (t.started_at ? Math.max(0, Math.floor((Date.now() - new Date(t.started_at).getTime()) / 1000)) : 0),
+            },
       ),
       () => invoke('set_in_progress', { id, inProgress }),
     ),

@@ -10,6 +10,26 @@ export function elapsed(iso: string, now = Date.now()): string {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
+/** "45m", "2h 10m", "3d 4h" for a length of time. */
+export function duration(ms: number): string {
+  const minutes = Math.max(0, Math.floor(ms / 60_000));
+  if (minutes < 1) return '<1m';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+/** All the time spent on a task, counting the stretch in progress now; null if none yet. */
+export function workedTime(
+  task: { worked_secs: number; in_progress: boolean; started_at: string | null },
+  now = Date.now(),
+): string | null {
+  const running = task.in_progress && task.started_at ? Math.max(0, now - new Date(task.started_at).getTime()) : 0;
+  const total = task.worked_secs * 1000 + running;
+  if (total === 0 && !task.in_progress) return null;
+  return duration(total);
+}
+
 /** "Today", "Tomorrow", "3 days late", "Mon 24 Nov" for a YYYY-MM-DD due date. */
 export function dueLabel(date: string, today = new Date()): { text: string; late: boolean } {
   const [y, m, d] = date.split('-').map(Number);
