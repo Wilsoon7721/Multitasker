@@ -1,5 +1,5 @@
 import { save } from '@tauri-apps/plugin-dialog';
-import { ChevronDown, Download, ExternalLink, PackageCheck, PackagePlus, Trash2 } from 'lucide-react';
+import { ChevronDown, Download, ExternalLink, PackagePlus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, onTasksChanged, type Attachment, type Deliverable, type Revision, type TaskView } from '../api';
 import { elapsed } from '../time';
@@ -43,6 +43,10 @@ export function handInCandidates(task: TaskView, deviceId: string | null): Attac
   );
 }
 
+/** Handed-in links are kept as internet shortcuts. */
+const isLink = (name: string) => /\.url$/i.test(name);
+const shownName = (name: string) => (isLink(name) ? name.replace(/\.url$/i, '') : name);
+
 async function saveCopy(run: Run, name: string, revision: Revision) {
   await run(async () => {
     const dest = await save({ defaultPath: name, title: `Save a copy of ${name}` });
@@ -51,7 +55,8 @@ async function saveCopy(run: Run, name: string, revision: Revision) {
 }
 
 /** The work handed in for a task: a copy of each file as it was, with every revision. */
-export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; now: number }) {
+export function DeliverableList(props: { task: TaskView; run: Run; now: number; onHandIn: () => void }) {
+  const { task, run, now, onHandIn } = props;
   const [items, setItems] = useState<Deliverable[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
@@ -64,18 +69,12 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
     return onTasksChanged(load);
   }, [task.id]);
 
-  const handIn = () =>
-    void run(async () => {
-      const paths = await api.pickFiles('Hand in files');
-      if (paths.length) await api.handIn(task.id, paths);
-    });
-
   return (
     <section className="attachments deliverables" data-drop={`deliver:${task.id}`}>
       <header className="attachments-header">
         <h3>Handed in {items.length > 0 && <span className="count">{items.length}</span>}</h3>
         <span className="attach-buttons">
-          <button type="button" className="ghost-pill" onClick={handIn} title="Keep a copy of finished work">
+          <button type="button" className="ghost-pill" onClick={onHandIn} title="Keep a copy of finished work">
             <PackagePlus size={14} /> Hand in
           </button>
         </span>
@@ -97,19 +96,21 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
                   <button
                     className="attachment-open"
                     onClick={() => void run(() => api.openDeliverable(latest.id))}
-                    title={away ?? `Open a read-only copy of ${d.name}`}
+                    title={away ?? (isLink(d.name) ? 'Open the link' : `Open a read-only copy of ${d.name}`)}
                     disabled={!!away}
                   >
-                    <KindIcon kind={pendingLabel({ type: 'path', path: d.name }).kind} size={18} />
+                    <KindIcon
+                      kind={isLink(d.name) ? 'link' : pendingLabel({ type: 'path', path: d.name }).kind}
+                      size={18}
+                    />
                     <span className="attachment-text">
-                      <span className="attachment-name">{d.name}</span>
+                      <span className="attachment-name">{shownName(d.name)}</span>
                       <span className="attachment-where">
                         {d.revisions.length > 1 ? `Version ${latest.number} · ` : ''}
                         {elapsed(latest.added_at, now) === 'just now'
                           ? 'just now'
                           : `${elapsed(latest.added_at, now)} ago`}
-                        {' · '}
-                        {sizeText(latest.size)}
+                        {!isLink(d.name) && ` · ${sizeText(latest.size)}`}
                       </span>
                       {away && <span className="attachment-where">{away}</span>}
                     </span>
@@ -195,93 +196,5 @@ export function DeliverableList({ task, run, now }: { task: TaskView; run: Run; 
         </ul>
       )}
     </section>
-  );
-}
-
-/** Asked after finishing a task that has files attached: keep copies of them as handed-in work? */
-export function HandInDialog(props: { task: TaskView; deviceId: string | null; run: Run; onClose: () => void }) {
-  const { task, deviceId, run, onClose } = props;
-  const candidates = handInCandidates(task, deviceId);
-  const [chosen, setChosen] = useState<Set<string>>(() => new Set(candidates.map((a) => a.target)));
-  const [extra, setExtra] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  const paths = [...chosen, ...extra];
-  const toggle = (path: string) =>
-    setChosen((cur) => {
-      const next = new Set(cur);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-
-  const submit = async () => {
-    setBusy(true);
-    const ok = await run(() => api.handIn(task.id, paths));
-    setBusy(false);
-    if (ok) onClose();
-  };
-
-  return (
-    <div className="dialog-scrim" onClick={onClose}>
-      <div
-        className="dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="hand-in-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 id="hand-in-title">
-          <PackageCheck size={18} /> Hand in your work?
-        </h3>
-        <p>
-          MultiTasker keeps a copy of each file as it is now, so you can get this version of "{task.title}" back later,
-          even after the files change.
-        </p>
-        <ul className="hand-in-list">
-          {candidates.map((a) => (
-            <li key={a.id}>
-              <label>
-                <input type="checkbox" checked={chosen.has(a.target)} onChange={() => toggle(a.target)} />
-                <KindIcon kind={a.kind} />
-                <span>{a.name}</span>
-              </label>
-            </li>
-          ))}
-          {extra.map((path) => (
-            <li key={path}>
-              <label>
-                <input type="checkbox" checked onChange={() => setExtra((cur) => cur.filter((p) => p !== path))} />
-                <KindIcon kind={pendingLabel({ type: 'path', path }).kind} />
-                <span>{pendingLabel({ type: 'path', path }).name}</span>
-              </label>
-            </li>
-          ))}
-        </ul>
-        <button
-          type="button"
-          className="ghost-pill"
-          onClick={() =>
-            void api.pickFiles('Hand in files').then((picked) => setExtra((cur) => [...new Set([...cur, ...picked])]))
-          }
-        >
-          <PackagePlus size={14} /> Other files…
-        </button>
-        <div className="dialog-actions">
-          <button className="secondary" onClick={onClose}>
-            Not now
-          </button>
-          <button className="primary" disabled={!paths.length || busy} onClick={() => void submit()}>
-            {paths.length === 1 ? 'Hand in 1 file' : `Hand in ${paths.length} files`}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

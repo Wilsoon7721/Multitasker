@@ -14,6 +14,22 @@ use sha2::{Digest, Sha256};
 
 pub use sync::{sync, SyncReport};
 
+/// The SHA-256 of a file's contents, as handed-in copies are named by.
+pub fn hash_file(path: &Path) -> Result<String> {
+    let mut file = File::open(path).map_err(|e| Error::Invalid(format!("Can't open {}: {e}", path.display())))?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 256 * 1024];
+    loop {
+        let read = std::io::Read::read(&mut file, &mut buf)
+            .map_err(|e| Error::Invalid(format!("Can't read {}: {e}", path.display())))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buf[..read]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
 /// Copies bigger than this stay on the computer they were handed in on, so sync rounds stay quick.
 pub const MAX_SYNC_SIZE: u64 = 100 * 1024 * 1024;
 
@@ -195,6 +211,20 @@ impl Store {
     }
 
     /// What handing in a kept file amounts to when it matches the latest version already handed in.
+    /// The SHA-256 of the newest version handed in under a name, if any.
+    pub fn latest_sha(&self, provider: &str, task_id: &str, name: &str) -> Result<Option<String>> {
+        self.conn()
+            .query_row(
+                "SELECT r.sha256 FROM deliverables d JOIN revisions r ON r.deliverable_id = d.id
+                 WHERE d.provider = ?1 AND d.task_id = ?2 AND d.name = ?3 COLLATE NOCASE
+                 ORDER BY r.added_at DESC, r.id DESC LIMIT 1",
+                params![provider, task_id, name],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(storage)
+    }
+
     pub fn unchanged(&self, provider: &str, task_id: &str, kept: &Kept) -> Result<Option<HandedIn>> {
         let conn = self.conn();
         let latest: Option<(String, i64)> = conn

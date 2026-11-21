@@ -1,5 +1,5 @@
 #[cfg(windows)]
-pub use imp::{app_windows, foreground_window, idle_time, is_process_running};
+pub use imp::{app_windows, foreground_is_fullscreen, foreground_window, idle_time, is_process_running};
 
 /// The window in front and the program that owns it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,6 +30,11 @@ pub fn foreground_window() -> Option<ForegroundWindow> {
 #[cfg(not(windows))]
 pub fn app_windows() -> Vec<AppWindow> {
     Vec::new()
+}
+
+#[cfg(not(windows))]
+pub fn foreground_is_fullscreen() -> bool {
+    false
 }
 
 #[cfg(not(windows))]
@@ -84,6 +89,37 @@ mod imp {
             }
         }
         Some(ForegroundWindow { pid, exe: file_name(&exe_path).to_owned(), exe_path, title })
+    }
+
+    /// Whether the window in front covers its whole screen, as games, presentations and full-screen video do.
+    pub fn foreground_is_fullscreen() -> bool {
+        use windows_sys::Win32::Foundation::RECT;
+        use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetWindowRect};
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if hwnd.is_null() {
+                return false;
+            }
+            // The desktop itself covers the screen too.
+            let mut class = [0u16; 64];
+            let len = GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32).max(0) as usize;
+            let class = String::from_utf16_lossy(&class[..len]);
+            if class == "Progman" || class == "WorkerW" {
+                return false;
+            }
+            let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+            if GetWindowRect(hwnd, &mut rect) == 0 {
+                return false;
+            }
+            let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+            if GetMonitorInfoW(monitor, &mut info) == 0 {
+                return false;
+            }
+            let screen = info.rcMonitor;
+            rect.left <= screen.left && rect.top <= screen.top && rect.right >= screen.right && rect.bottom >= screen.bottom
+        }
     }
 
     /// Whether a program with this file name (e.g. `OneDrive.exe`) is running; `None` if processes can't be listed.

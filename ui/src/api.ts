@@ -83,6 +83,33 @@ export type NewAttachment =
   | { type: 'app'; path: string; name: string };
 
 /** A program with a window open, offered when linking an app to a task. */
+/** What's worth knowing about a file before handing it in. */
+export interface FileCheck {
+  path: string;
+  name: string;
+  size: number;
+  modified: string | null;
+  /** Programs holding it open, whose unsaved changes wouldn't be included. */
+  open_in: string[];
+  problem: string | null;
+  same_as_last: boolean;
+}
+
+/** Whether a link opens for someone without your sign-in. */
+export interface LinkCheck {
+  url: string;
+  title: string | null;
+  verdict: 'ok' | 'sign_in' | 'broken' | 'unreachable' | 'unchecked';
+  message: string;
+}
+
+/** Whether the widget stays above other windows, and when it steps aside. */
+export interface OnTop {
+  enabled: boolean;
+  except_fullscreen: boolean;
+  exceptions: { exe: string; name: string }[];
+}
+
 export interface RunningApp {
   exe_path: string;
   exe: string;
@@ -316,11 +343,17 @@ export const api = {
   revealAttachment: (id: string) => invoke('reveal_attachment', { id }),
   listDeliverables: (taskId: string) => invoke<Deliverable[]>('list_deliverables', { taskId }),
   handIn: (taskId: string, paths: string[]) => invoke<HandedIn[]>('hand_in', { taskId, paths }),
+  checkHandIn: (taskId: string, paths: string[]) => invoke<FileCheck[]>('check_hand_in', { taskId, paths }),
+  checkLink: (url: string) => invoke<LinkCheck>('check_link', { url }),
+  handInLink: (taskId: string, url: string, title: string | null) =>
+    invoke<HandedIn[]>('hand_in_link', { taskId, url, title }),
   openDeliverable: (revisionId: string) => invoke('open_deliverable', { revisionId }),
   exportDeliverable: (revisionId: string, dest: string) => invoke('export_deliverable', { revisionId, dest }),
   removeDeliverable: (id: string) => invoke('remove_deliverable', { id }),
   thisDevice: () => invoke<Device>('this_device'),
   runningApps: () => invoke<RunningApp[]>('running_apps'),
+  widgetOnTop: () => invoke<OnTop>('widget_on_top'),
+  setWidgetOnTop: (onTop: OnTop) => invoke('set_widget_on_top', { onTop }),
   activity: () => invoke<ActivitySnapshot>('activity'),
   dismissSuggestion: (taskId: string) => invoke('dismiss_suggestion', { taskId }),
   setDetection: (enabled: boolean) => invoke('set_detection', { enabled }),

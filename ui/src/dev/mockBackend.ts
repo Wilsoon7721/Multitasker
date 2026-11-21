@@ -186,6 +186,9 @@ let activity: ActivitySnapshot = {
 };
 let pauseAfterAway: number | null = 15;
 let autoSwitch = true;
+let onTop = { enabled: true, except_fullscreen: true, exceptions: [{ exe: 'POWERPNT.EXE', name: 'PowerPoint' }] };
+// The sample Word document stays open until this is set from the console.
+const wordClosed = false;
 
 let sync: SyncStatus = {
   target: { kind: 'folder', path: 'C:\\Users\\you\\OneDrive' },
@@ -346,6 +349,10 @@ mockIPC(
       case 'list_deliverables':
         return deliverables.filter((d) => d.task_id === a.taskId);
 
+      // A link is kept as an internet shortcut, so it's handed in like a file.
+      case 'hand_in_link':
+        a.paths = [`${String(a.title ?? a.url).slice(0, 60)}.url`];
+      // falls through
       case 'hand_in': {
         const t = find(a.taskId as string);
         const result = (a.paths as string[]).map((path) => {
@@ -539,6 +546,41 @@ mockIPC(
 
       case 'open_task_things':
         return { opened: find(a.taskId as string).attachments.length, skipped: [] };
+
+      case 'widget_on_top':
+        return onTop;
+
+      case 'set_widget_on_top':
+        onTop = a.onTop as typeof onTop;
+        return null;
+
+      // Sample checks: one file open in Word, one empty, the rest fine.
+      case 'check_hand_in':
+        return (a.paths as string[]).map((path) => {
+          const name = path.split(/[\\/]/).pop() ?? path;
+          return {
+            path,
+            name,
+            size: /empty/i.test(name) ? 0 : 248_000,
+            modified: new Date(Date.now() - 3 * 3600_000).toISOString(),
+            open_in: /draft/i.test(name) && !wordClosed ? ['Microsoft Word'] : [],
+            problem: /empty/i.test(name) ? "It's empty." : null,
+            same_as_last: false,
+          };
+        });
+
+      case 'check_link': {
+        const url = String(a.url);
+        const check = /docs\.google/.test(url)
+          ? {
+              url,
+              title: null,
+              verdict: 'sign_in',
+              message: 'Others have to sign in to open it. Check its sharing settings let anyone with the link see it.',
+            }
+          : { url, title: 'Final report – Example', verdict: 'ok', message: 'It opens for anyone with the link.' };
+        return new Promise((resolve) => setTimeout(() => resolve(check), 600));
+      }
 
       case 'dismiss_paused':
         activity = { ...activity, paused: [] };

@@ -19,6 +19,8 @@ import {
   LoaderCircle,
   Radar,
   RefreshCw,
+  Plus,
+  X,
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import {
@@ -30,11 +32,13 @@ import {
   type FolderSuggestion,
   type ReminderSettings,
   type NotionDatabases,
+  type OnTop,
   type TaskSourceView,
   type S3Settings,
   type SyncStatus,
   type SyncTarget,
 } from '../api';
+import { AppPicker } from './AppPicker';
 import { guessProvider, providerById, S3_PROVIDERS } from '../s3Providers';
 import { elapsed, useNow } from '../time';
 import type { Run } from '../useTasks';
@@ -622,10 +626,18 @@ function TodoistForm({ run, onConnected }: { run: Run; onConnected: () => void }
 
 function WidgetSection({ run }: { run: Run }) {
   const [opacity, setOpacity] = useState<number | null>(null);
+  const [onTop, setOnTop] = useState<OnTop | null>(null);
+  const [picking, setPicking] = useState(false);
 
   useEffect(() => {
     void api.widgetOpacity().then(setOpacity, () => {});
+    void api.widgetOnTop().then(setOnTop, () => {});
   }, []);
+
+  const changeOnTop = (next: OnTop) => {
+    setOnTop(next);
+    void run(() => api.setWidgetOnTop(next));
+  };
 
   // Dragging previews on the widget as it moves; letting go saves.
   const preview = (value: number) => {
@@ -657,6 +669,67 @@ function WidgetSection({ run }: { run: Run }) {
           <output>{opacity ?? 94}%</output>
         </span>
       </label>
+      <label className="toggle-row reminder-row">
+        <span>
+          <span className="choice-title">Always on top</span>
+          <span className="choice-detail">Keeps the widget above other windows, except where you say below.</span>
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          className="switch"
+          checked={!!onTop?.enabled}
+          disabled={!onTop}
+          onChange={(e) => onTop && changeOnTop({ ...onTop, enabled: e.target.checked })}
+        />
+      </label>
+      {onTop?.enabled && (
+        <div className="on-top-exceptions">
+          <span className="choice-title">Except</span>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={onTop.except_fullscreen}
+              onChange={(e) => changeOnTop({ ...onTop, except_fullscreen: e.target.checked })}
+            />
+            When something is full screen, like a game, a presentation or a film
+          </label>
+          <ul className="exception-list">
+            {onTop.exceptions.map((app) => (
+              <li key={app.exe}>
+                <span>
+                  {app.name} <span className="muted">{app.exe}</span>
+                </span>
+                <button
+                  className="icon-btn"
+                  onClick={() =>
+                    changeOnTop({ ...onTop, exceptions: onTop.exceptions.filter((e) => e.exe !== app.exe) })
+                  }
+                  aria-label={`Stop stepping aside for ${app.name}`}
+                  title="Remove"
+                >
+                  <X size={14} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="exception-add">
+            <button className="secondary small" onClick={() => setPicking((p) => !p)}>
+              <Plus size={13} /> Add a program
+            </button>
+            {picking && (
+              <AppPicker
+                onClose={() => setPicking(false)}
+                onPick={(app) => {
+                  setPicking(false);
+                  if (onTop.exceptions.some((e) => e.exe.toLowerCase() === app.exe.toLowerCase())) return;
+                  changeOnTop({ ...onTop, exceptions: [...onTop.exceptions, { exe: app.exe, name: app.name }] });
+                }}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </Section>
   );
 }

@@ -2056,3 +2056,166 @@ button.secondary.small {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ───────────── Widget on top ───────────── */
+
+.on-top-exceptions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border);
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.check-row input {
+  accent-color: var(--accent);
+}
+
+.exception-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.exception-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.exception-list .muted {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.exception-add {
+  position: relative;
+}
+
+.exception-add .app-picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+}
+
+/* ───────────── Hand-in checks ───────────── */
+
+.hand-in-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.hand-in-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hand-in-item label {
+  flex: 1;
+  min-width: 0;
+}
+
+.hand-in-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hand-in-list .hand-in-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.hand-in-status svg {
+  flex: none;
+}
+
+.hand-in-status.bad {
+  color: var(--danger);
+}
+
+.hand-in-status.warn {
+  color: #d97706;
+}
+
+.hand-in-status.good {
+  color: var(--success);
+}
+
+.hand-in-item.problem .hand-in-name,
+.hand-in-item.open .hand-in-name {
+  color: var(--danger);
+}
+
+.link-button {
+  flex: none;
+  padding: 0 6px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.hand-in-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hand-in-link {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.hand-in-link input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.hand-in-link input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.hand-in-link button {
+  height: 30px;
+}

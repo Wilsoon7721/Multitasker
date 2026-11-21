@@ -800,6 +800,68 @@ pub fn refuse_link_offer(app: AppHandle, state: State<'_, AppState>) {
 }
 
 #[tauri::command]
+pub fn widget_on_top(state: State<'_, AppState>) -> settings::OnTop {
+    settings::load(&state.data_dir).widget_on_top
+}
+
+#[tauri::command]
+pub fn set_widget_on_top(state: State<'_, AppState>, on_top: settings::OnTop) -> CmdResult<()> {
+    settings::update(&state.data_dir, |s| s.widget_on_top = on_top.clone()).map_err(err)?;
+    crate::on_top::set(on_top);
+    Ok(())
+}
+
+/// Looks files over before they're handed in: open in another program, empty, misnamed or unchanged since last time.
+#[tauri::command]
+pub async fn check_hand_in(
+    state: State<'_, AppState>,
+    task_id: TaskId,
+    paths: Vec<String>,
+) -> CmdResult<Vec<crate::checks::FileCheck>> {
+    let key = state.provider().key().to_owned();
+    let store = state.deliverables.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        paths
+            .iter()
+            .map(|p| {
+                let path = std::path::Path::new(p.trim());
+                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                let last = store.latest_sha(&key, &task_id, &name).ok().flatten();
+                crate::checks::check_file(path, last.as_deref())
+            })
+            .collect()
+    })
+    .await
+    .map_err(err)
+}
+
+/// Opens a link the way someone without your sign-in would, to tell whether others can see it.
+#[tauri::command]
+pub async fn check_link(url: String) -> CmdResult<crate::checks::LinkCheck> {
+    tauri::async_runtime::spawn_blocking(move || crate::checks::check_link(&url)).await.map_err(err)
+}
+
+/// Hands in a link, kept as an internet shortcut so it copies, syncs and opens like any handed-in file.
+#[tauri::command]
+pub async fn hand_in_link(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: TaskId,
+    url: String,
+    title: Option<String>,
+) -> CmdResult<Vec<multitasker_deliverables::HandedIn>> {
+    let url = url.trim();
+    let url = if url.contains("://") { url.to_owned() } else { format!("https://{url}") };
+    let dir = std::env::temp_dir().join(format!("multitasker-link-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    let path = dir.join(crate::checks::shortcut_name(&url, title.as_deref()));
+    std::fs::write(&path, crate::checks::shortcut(&url)).map_err(err)?;
+    let handed = hand_in(app, state, task_id, vec![path.display().to_string()]).await;
+    let _ = std::fs::remove_dir_all(&dir);
+    handed
+}
+
+#[tauri::command]
 pub fn dismiss_paused(app: AppHandle, state: State<'_, AppState>) {
     state.detector.dismiss_paused(&app);
 }

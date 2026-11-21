@@ -1,9 +1,11 @@
 mod away;
 mod bridge;
+mod checks;
 mod cloud;
 mod commands;
 mod detection;
 mod device;
+mod on_top;
 mod reminders;
 mod settings;
 mod syncing;
@@ -130,6 +132,7 @@ pub fn run() {
             syncing::start(app.handle(), syncer);
             reminders::start(app.handle());
             away::start(app.handle());
+            on_top::start(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -166,6 +169,11 @@ pub fn run() {
             commands::set_detection,
             commands::detection_enabled,
             commands::dismiss_paused,
+            commands::check_hand_in,
+            commands::check_link,
+            commands::hand_in_link,
+            commands::widget_on_top,
+            commands::set_widget_on_top,
             commands::accept_link_offer,
             commands::refuse_link_offer,
             commands::set_left_off,

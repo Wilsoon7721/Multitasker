@@ -2510,6 +2510,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tokio",
+ "ureq",
  "uuid",
  "windows-sys 0.61.2",
 ]

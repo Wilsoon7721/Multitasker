@@ -17,13 +17,17 @@ Early development. What works today:
 - **Due dates with an optional time.** Timed tasks count down ("in 2h 15m") once they're within a day, and
   MultiTasker reminds you with a Windows notification beforehand (15 minutes by default) and when they're due.
 - Mark tasks **in progress**; they appear in an always-on-top widget pinned to the top-right of your screen, with how
-  long they've been going.
+  long they've been going. It can stop staying on top while something is full screen or while chosen programs (say,
+  PowerPoint) are in front, or stop staying on top altogether (Settings → Widget).
 - Attach files, folders and links to tasks (by picker, or by dragging files from the desktop onto a task in the main
   window or the widget). Files stay where they are; MultiTasker keeps a reference and opens them in their default app.
 - **Hand in** finished work: MultiTasker keeps a read-only copy of each file as it was, so you can open or save that
   version later even after the original changes. Handing the same file in again keeps every version. Finishing a task
   that has files attached offers to hand them in. Copies are kept in MultiTasker's data folder, and Sync carries them
   (up to 100 MB each) to your other computers. With Todoist or Notion, handed-in work is uploaded to the task itself.
+  Links can be handed in too, such as a shared doc. Before handing in, MultiTasker checks each file isn't still open
+  in another program (so unsaved changes aren't missed), empty, or not what its name says, and that each link opens
+  for someone who isn't signed in. A file open elsewhere is handed in as soon as that program closes.
 - Expand the widget to see your to-do list and drag a task up into In Progress to start it.
 - A **browser extension** for Chrome, Edge and Brave links tabs, such as AI chats and docs, to tasks. While the
   browser is in front, the linked tab counts as working on its task (see

@@ -22,6 +22,31 @@ pub struct Settings {
     pub pause_after_away: Option<u32>,
     /// Switch to a task on its own when its things stay in front, rather than asking first.
     pub auto_switch: bool,
+    /// Whether the widget stays above other windows, and when it steps aside.
+    pub widget_on_top: OnTop,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OnTop {
+    pub enabled: bool,
+    /// Step aside while something is full screen, like a game, a presentation or a film.
+    pub except_fullscreen: bool,
+    /// Programs the widget steps aside for while they're in front.
+    pub exceptions: Vec<ExceptedApp>,
+}
+
+impl Default for OnTop {
+    fn default() -> Self {
+        Self { enabled: true, except_fullscreen: true, exceptions: Vec::new() }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExceptedApp {
+    /// The program's file name, e.g. `POWERPNT.EXE`.
+    pub exe: String,
+    pub name: String,
 }
 
 /// The widget's background never goes fully clear, so its text stays readable over anything.
@@ -51,6 +76,7 @@ impl Default for Settings {
             widget_opacity: 94,
             pause_after_away: Some(15),
             auto_switch: true,
+            widget_on_top: OnTop::default(),
         }
     }
 }

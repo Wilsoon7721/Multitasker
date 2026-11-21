@@ -1,4 +1,4 @@
-import { CalendarDays, Clock, FolderOpen, NotebookPen, Pause, Play, Tag, Trash2, X } from 'lucide-react';
+import { CalendarDays, Clock, FolderOpen, PackageCheck, NotebookPen, Pause, Play, Tag, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, type Activity, type TaskChanges, type TaskView } from '../api';
 import { localDate, localTime, toDueAt, workedTime } from '../time';
@@ -22,8 +22,9 @@ export function TaskDetail(props: {
   onClose: () => void;
   /** Called once the task has been marked done here. */
   onDone: (task: TaskView) => void;
+  onHandIn: (task: TaskView) => void;
 }) {
-  const { task, run, now, deviceId, live, startedOn, onClose, onDone } = props;
+  const { task, run, now, deviceId, live, startedOn, onClose, onDone, onHandIn } = props;
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
   const [category, setCategory] = useState(task.category ?? '');
@@ -180,7 +181,7 @@ export function TaskDetail(props: {
         )}
 
         <AttachmentList taskId={task.id} attachments={task.attachments} run={run} deviceId={deviceId} />
-        <DeliverableList task={task} run={run} now={now} />
+        <DeliverableList task={task} run={run} now={now} onHandIn={() => onHandIn(task)} />
       </div>
 
       <footer className="detail-footer">
@@ -193,6 +194,9 @@ export function TaskDetail(props: {
             {task.in_progress ? 'Pause' : 'Start'}
           </button>
         )}
+        <button className="secondary" onClick={() => onHandIn(task)} title="Keep a copy of work for this task">
+          <PackageCheck size={15} /> Hand in…
+        </button>
         <span className="spacer" />
         {confirmDelete ? (
           <>
