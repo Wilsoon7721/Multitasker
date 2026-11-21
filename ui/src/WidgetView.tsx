@@ -16,6 +16,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { api, onWidgetAppearance } from './api';
 import { AppPicker } from './components/AppPicker';
 import { CheckButton } from './components/CheckButton';
+import { DueNudge, nudgeFor } from './components/DueNudge';
 import { LeftOffPrompt, LinkOfferNote, PickUpBar } from './components/PickUp';
 import { WidgetTodo } from './components/WidgetTodo';
 import { dueInfo, localDate, localTime, useNow, workedTime } from './time';
@@ -53,6 +54,9 @@ export function WidgetView() {
   const { snapshot, activeNow } = useActivity();
   const suggestion = snapshot.suggestion;
   const paused = snapshot.paused;
+  // Only one nudge at a time, and none while a suggestion already asks for attention.
+  const [, nudgesPutOff] = useState(0);
+  const nudge = suggestion ? null : nudgeFor(tasks ?? [], now);
   const dayStart = startOfDay(0, new Date(now));
   const todaySessions = useSessions(dayStart, startOfDay(1, dayStart));
   const today = useMemo(
@@ -204,15 +208,31 @@ export function WidgetView() {
         </div>
       )}
 
+      {nudge && (
+        <DueNudge
+          key={`due-${nudge.id}`}
+          task={nudge}
+          now={now}
+          somethingInProgress={active.length > 0}
+          run={run}
+          onLater={() => nudgesPutOff((n) => n + 1)}
+        />
+      )}
+
       {snapshot.link_offer && <LinkOfferNote offer={snapshot.link_offer} run={run} />}
 
       {leftOffFor && (
-        <LeftOffPrompt key={leftOffFor.id} task={leftOffFor} run={run} onClose={() => setLeftOffFor(null)} />
+        <LeftOffPrompt
+          key={`left-off-${leftOffFor.id}`}
+          task={leftOffFor}
+          run={run}
+          onClose={() => setLeftOffFor(null)}
+        />
       )}
 
       {pickUp && (
         <PickUpBar
-          key={pickUp.id}
+          key={`pick-up-${pickUp.id}`}
           task={pickUp}
           deviceId={deviceId}
           noteOnly={!!picking?.noteOnly}

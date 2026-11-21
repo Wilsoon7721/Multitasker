@@ -48,7 +48,12 @@ let tasks: TaskView[] = [
     left_off: { text: 'Section 3 needs the budget table', at: iso(3600_000), device: 'preview-device' },
   }),
   task('Book dentist appointment', { due_date: day(4) }),
-  task('Read chapter 5', { category: 'School', description: 'Pages 120–158.' }),
+  task('Read chapter 5', {
+    category: 'School',
+    description: 'Pages 120–158.',
+    due_date: day(0),
+    due_at: new Date(now + 3 * 3600_000).toISOString(),
+  }),
   task('Renew domain', { status: 'done', completed_at: iso(86_400_000) }),
 ];
 

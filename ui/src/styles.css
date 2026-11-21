@@ -1358,6 +1358,15 @@ html.switcher body {
   background: color-mix(in srgb, var(--success) 9%, var(--surface));
 }
 
+.suggestion.due-nudge {
+  border-color: color-mix(in srgb, #d97706 40%, var(--border));
+  background: color-mix(in srgb, #d97706 9%, var(--surface));
+}
+
+.suggestion.due-nudge .away-icon {
+  color: #d97706;
+}
+
 .suggestion.switched,
 .suggestion.pick-up,
 .suggestion.link-offer,
