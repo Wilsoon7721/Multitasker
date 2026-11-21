@@ -51,11 +51,21 @@ pub struct Suggestion {
     pub reason: String,
 }
 
+/// A task paused because nobody was at the computer.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Paused {
+    pub task_id: TaskId,
+    pub title: String,
+    /// When the person left.
+    pub since: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Snapshot {
     pub enabled: bool,
     pub active: Vec<Activity>,
     pub suggestion: Option<Suggestion>,
+    pub paused: Vec<Paused>,
 }
 
 /// The tray's "Detect what I'm working on" item, kept so the UI can tick or untick it.
@@ -67,6 +77,7 @@ struct Inner {
     active: HashMap<TaskId, Activity>,
     suggestion: Option<(Suggestion, Instant)>,
     dismissed: HashMap<TaskId, Instant>,
+    paused: Vec<Paused>,
 }
 
 pub struct Detector {
@@ -118,6 +129,7 @@ impl Detector {
             enabled: self.enabled(),
             active: inner.active.values().cloned().collect(),
             suggestion: inner.suggestion.as_ref().map(|(s, _)| s.clone()),
+            paused: inner.paused.clone(),
         }
     }
 
@@ -146,6 +158,21 @@ impl Detector {
         self.emit(app);
     }
 
+    /// Notes tasks that were paused while nobody was here, so the widget can offer to resume them.
+    pub fn add_paused(&self, app: &AppHandle, paused: Vec<Paused>) {
+        {
+            let mut inner = self.inner();
+            inner.paused.retain(|p| !paused.iter().any(|n| n.task_id == p.task_id));
+            inner.paused.extend(paused);
+        }
+        self.emit(app);
+    }
+
+    pub fn dismiss_paused(&self, app: &AppHandle) {
+        self.inner().paused.clear();
+        self.emit(app);
+    }
+
     /// Takes the latest task list, dropping activity and suggestions that no longer apply.
     fn refresh(&self, tasks: Vec<TaskView>) -> bool {
         let mut inner = self.inner();
@@ -161,6 +188,10 @@ impl Detector {
             inner.suggestion = None;
             changed = true;
         }
+        // A paused task that was started again, finished or deleted needs no reminder.
+        let before = inner.paused.len();
+        inner.paused.retain(|p| tasks.iter().any(|t| t.task.id == p.task_id && t.task.status == TaskStatus::Todo && !t.in_progress));
+        changed |= inner.paused.len() != before;
         inner.tasks = tasks;
         changed
     }

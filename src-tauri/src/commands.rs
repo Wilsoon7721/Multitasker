@@ -644,6 +644,22 @@ pub fn detection_enabled(state: State<'_, AppState>) -> bool {
 }
 
 #[tauri::command]
+pub fn dismiss_paused(app: AppHandle, state: State<'_, AppState>) {
+    state.detector.dismiss_paused(&app);
+}
+
+#[tauri::command]
+pub fn pause_after_away(state: State<'_, AppState>) -> Option<u32> {
+    settings::load(&state.data_dir).pause_after_away
+}
+
+#[tauri::command]
+pub fn set_pause_after_away(state: State<'_, AppState>, minutes: Option<u32>) -> CmdResult<()> {
+    settings::update(&state.data_dir, |s| s.pause_after_away = minutes.filter(|m| *m > 0)).map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn reminder_settings(state: State<'_, AppState>) -> settings::Reminders {
     settings::load(&state.data_dir).reminders
 }

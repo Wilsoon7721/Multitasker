@@ -32,6 +32,9 @@ Early development. What works today:
   them — from the window in front and from file saves. Tasks in progress show as *active now*; if you're clearly
   working on a task you haven't started, the widget offers to start it. Everything stays on your computer; window
   titles are only read in memory. Turn it off from the tray ("Detect what I'm working on").
+- **Pauses when you're away**: after 15 minutes with no keyboard or mouse, or while the computer sleeps or MultiTasker
+  is closed, what's in progress on that computer pauses. The widget offers to resume when you're back. Change the wait
+  or turn it off in Settings.
 - **Sync between computers**, three ways:
   - sign in to **Google Drive** or **OneDrive**; MultiTasker only gets its own app folder (setting up the app
     registrations: [docs/cloud-sign-in.md](docs/cloud-sign-in.md));

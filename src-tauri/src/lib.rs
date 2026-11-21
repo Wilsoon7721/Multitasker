@@ -1,3 +1,4 @@
+mod away;
 mod bridge;
 mod cloud;
 mod commands;
@@ -127,6 +128,7 @@ pub fn run() {
             detection::start(app.handle(), detector);
             syncing::start(app.handle(), syncer);
             reminders::start(app.handle());
+            away::start(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -162,6 +164,9 @@ pub fn run() {
             commands::dismiss_suggestion,
             commands::set_detection,
             commands::detection_enabled,
+            commands::dismiss_paused,
+            commands::pause_after_away,
+            commands::set_pause_after_away,
             commands::sync_status,
             commands::set_sync_target,
             commands::sync_now,

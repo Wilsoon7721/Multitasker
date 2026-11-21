@@ -1301,6 +1301,16 @@ html.widget body {
   background: color-mix(in srgb, var(--success) 9%, var(--surface));
 }
 
+.suggestion.away {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.away-icon {
+  flex: none;
+  color: var(--accent);
+}
+
 .suggestion .live-dot {
   margin-right: 0;
 }

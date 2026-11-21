@@ -18,6 +18,8 @@ pub struct Settings {
     pub tasks: TaskSource,
     /// How opaque the widget's background is, in percent; its text always stays solid.
     pub widget_opacity: u8,
+    /// Minutes nobody is at the computer before its in-progress tasks pause, if ever.
+    pub pause_after_away: Option<u32>,
 }
 
 /// The widget's background never goes fully clear, so its text stays readable over anything.
@@ -45,6 +47,7 @@ impl Default for Settings {
             reminders: Reminders::default(),
             tasks: TaskSource::Local,
             widget_opacity: 94,
+            pause_after_away: Some(15),
         }
     }
 }

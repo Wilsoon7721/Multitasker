@@ -19,8 +19,8 @@ import {
   LoaderCircle,
   Radar,
   RefreshCw,
-} from 'lucide-react';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+} from "lucide-react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   api,
   onActivity,
@@ -34,21 +34,21 @@ import {
   type S3Settings,
   type SyncStatus,
   type SyncTarget,
-} from '../api';
-import { guessProvider, providerById, S3_PROVIDERS } from '../s3Providers';
-import { elapsed, useNow } from '../time';
-import type { Run } from '../useTasks';
-import { useTaskSource } from '../useTaskSource';
+} from "../api";
+import { guessProvider, providerById, S3_PROVIDERS } from "../s3Providers";
+import { elapsed, useNow } from "../time";
+import type { Run } from "../useTasks";
+import { useTaskSource } from "../useTaskSource";
 
 const ago = (iso: string, now: number) => {
   const e = elapsed(iso, now);
-  return e === 'just now' ? e : `${e} ago`;
+  return e === "just now" ? e : `${e} ago`;
 };
 
 export function SettingsPage({ run }: { run: Run }) {
   const source = useTaskSource();
   // An online task list keeps in-progress marks and attachments itself, so there's nothing to sync.
-  const syncs = source?.active === 'sqlite';
+  const syncs = source?.active === "sqlite";
   return (
     <>
       <TaskListSection run={run} />
@@ -86,7 +86,7 @@ function Section({
 function SyncSection({ run }: { run: Run }) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [suggestions, setSuggestions] = useState<FolderSuggestion[]>([]);
-  const [choosing, setChoosing] = useState<SyncTarget['kind'] | null>(null);
+  const [choosing, setChoosing] = useState<SyncTarget["kind"] | null>(null);
   const now = useNow(15_000);
 
   useEffect(() => {
@@ -95,13 +95,17 @@ function SyncSection({ run }: { run: Run }) {
     return onSyncStatus(setStatus);
   }, []);
 
-  const target = status?.target ?? { kind: 'off' };
-  const [question, setQuestion] = useState<{ where: string | null; resolve: (ok: boolean) => void } | null>(null);
+  const target = status?.target ?? { kind: "off" };
+  const [question, setQuestion] = useState<{
+    where: string | null;
+    resolve: (ok: boolean) => void;
+  } | null>(null);
 
   // Leaving a location that's already been synced to splits the tasks between the two, so ask first.
   const confirmMove = (where: string | null) =>
     new Promise<boolean>((resolve) => {
-      if (!status || status.target.kind === 'off' || !status.last_synced) return resolve(true);
+      if (!status || status.target.kind === "off" || !status.last_synced)
+        return resolve(true);
       setQuestion({ where, resolve });
     });
 
@@ -113,106 +117,115 @@ function SyncSection({ run }: { run: Run }) {
       const path = await api.pickFolder();
       if (
         path &&
-        path !== (target.kind === 'folder' ? target.path : null) &&
-        (await confirmMove('the folder you picked'))
+        path !== (target.kind === "folder" ? target.path : null) &&
+        (await confirmMove("the folder you picked"))
       ) {
-        await api.setSyncTarget({ kind: 'folder', path });
+        await api.setSyncTarget({ kind: "folder", path });
       }
     });
 
   const mode = choosing ?? target.kind;
 
   return (
-    <Section icon={<FolderSync size={18} />} title="Sync" aside={status && <SyncBadge status={status} now={now} />}>
+    <Section
+      icon={<FolderSync size={18} />}
+      title="Sync"
+      aside={status && <SyncBadge status={status} now={now} />}
+    >
       <p className="settings-lead">
-        Keep tasks, what's in progress and attachments the same on all your computers. Each computer only writes its own
-        files, so they never overwrite each other.
+        Keep tasks, what's in progress and attachments the same on all your
+        computers. Each computer only writes its own files, so they never
+        overwrite each other.
       </p>
 
       <div className="choice-list" role="radiogroup" aria-label="Where to sync">
         <Choice
-          selected={mode === 'off'}
+          selected={mode === "off"}
           onSelect={() => {
             setChoosing(null);
-            if (target.kind !== 'off') void choose({ kind: 'off' }, null);
+            if (target.kind !== "off") void choose({ kind: "off" }, null);
           }}
           icon={<CloudOff size={18} />}
           title="Off"
           detail="Tasks stay on this computer only."
         />
         <Choice
-          selected={mode === 'google_drive'}
-          onSelect={() => setChoosing('google_drive')}
+          selected={mode === "google_drive"}
+          onSelect={() => setChoosing("google_drive")}
           icon={<Cloud size={18} />}
           title="Google Drive"
           detail="Sign in with Google. Kept in a hidden app folder, so nothing shows up in your Drive."
         />
         <Choice
-          selected={mode === 'one_drive'}
-          onSelect={() => setChoosing('one_drive')}
+          selected={mode === "one_drive"}
+          onSelect={() => setChoosing("one_drive")}
           icon={<Cloud size={18} />}
           title="OneDrive"
           detail="Sign in with a personal Microsoft account. Kept in its own Apps/MultiTasker folder."
         />
         <Choice
-          selected={mode === 'folder'}
-          onSelect={() => setChoosing('folder')}
+          selected={mode === "folder"}
+          onSelect={() => setChoosing("folder")}
           icon={<Folder size={18} />}
           title="Shared folder"
           detail="A folder in Dropbox or another sync app; that app carries it between computers while it's running."
         />
         <Choice
-          selected={mode === 's3'}
-          onSelect={() => setChoosing('s3')}
+          selected={mode === "s3"}
+          onSelect={() => setChoosing("s3")}
           icon={<Database size={18} />}
           title="S3-compatible storage"
           detail="AWS S3, Cloudflare R2, MinIO or any service with the S3 API."
         />
       </div>
 
-      {(mode === 'google_drive' || mode === 'one_drive') && (
+      {(mode === "google_drive" || mode === "one_drive") && (
         <CloudSetup
-          service={mode === 'google_drive' ? 'google' : 'microsoft'}
+          service={mode === "google_drive" ? "google" : "microsoft"}
           signedInAs={target.kind === mode ? target.account : null}
           run={run}
           onDone={() => setChoosing(null)}
           onSignOut={() => {
             setChoosing(null);
-            void choose({ kind: 'off' }, null);
+            void choose({ kind: "off" }, null);
           }}
           confirm={() =>
             confirmMove(
               target.kind === mode
-                ? `a different ${mode === 'google_drive' ? 'Google' : 'Microsoft'} account`
-                : mode === 'google_drive'
-                  ? 'Google Drive'
-                  : 'OneDrive',
+                ? `a different ${mode === "google_drive" ? "Google" : "Microsoft"} account`
+                : mode === "google_drive"
+                  ? "Google Drive"
+                  : "OneDrive",
             )
           }
         />
       )}
 
-      {mode === 's3' && (
+      {mode === "s3" && (
         <S3Form
-          current={target.kind === 's3' ? target : null}
+          current={target.kind === "s3" ? target : null}
           onSave={(settings, secret) =>
             run(async () => {
               const same =
-                target.kind === 's3' &&
+                target.kind === "s3" &&
                 target.bucket === settings.bucket &&
                 (target.endpoint ?? null) === settings.endpoint &&
                 (target.prefix ?? null) === settings.prefix;
-              if (!same && !(await confirmMove(`the ${settings.bucket} bucket`))) return;
-              await api.setSyncTarget({ kind: 's3', ...settings }, secret);
+              if (
+                !same &&
+                !(await confirmMove(`the ${settings.bucket} bucket`))
+              )
+                return;
+              await api.setSyncTarget({ kind: "s3", ...settings }, secret);
               setChoosing(null);
             })
           }
         />
       )}
 
-      {mode === 'folder' && (
+      {mode === "folder" && (
         <div className="folder-setup">
-          {target.kind === 'folder' ? (
+          {target.kind === "folder" ? (
             <div className="folder-current">
               <Folder size={16} className="kind kind-folder" />
               <span className="folder-path" title={target.path}>
@@ -231,7 +244,12 @@ function SyncSection({ run }: { run: Run }) {
                     <button
                       key={s.path}
                       className="secondary"
-                      onClick={() => void choose({ kind: 'folder', path: s.path }, `your ${s.label} folder`)}
+                      onClick={() =>
+                        void choose(
+                          { kind: "folder", path: s.path },
+                          `your ${s.label} folder`,
+                        )
+                      }
                       title={s.path}
                     >
                       <Folder size={14} /> {s.label}
@@ -245,33 +263,41 @@ function SyncSection({ run }: { run: Run }) {
             </>
           )}
           <p className="settings-hint">
-            MultiTasker keeps its files in a <code>multitasker</code> folder inside the one you choose. Use the same
-            folder on each computer.
+            MultiTasker keeps its files in a <code>multitasker</code> folder
+            inside the one you choose. Use the same folder on each computer.
           </p>
         </div>
       )}
 
-      {status && status.state !== 'off' && mode === target.kind && (
+      {status && status.state !== "off" && mode === target.kind && (
         <>
           {status.client?.running === false && (
             <p className="settings-warning">
-              <CircleAlert size={15} /> {status.client.name} isn't running, so changes are only saved in the folder on
-              this computer. Start {status.client.name} and they'll go out.
+              <CircleAlert size={15} /> {status.client.name} isn't running, so
+              changes are only saved in the folder on this computer. Start{" "}
+              {status.client.name} and they'll go out.
             </p>
           )}
-          {status.target.kind === 'folder' && status.client?.running !== false && (
-            <p className="settings-hint">
-              Changes reach your other computers once {status.client?.name ?? 'your sync app'} uploads them; a computer
-              listed below with a recent "last seen" shows that round trip works.
-            </p>
-          )}
+          {status.target.kind === "folder" &&
+            status.client?.running !== false && (
+              <p className="settings-hint">
+                Changes reach your other computers once{" "}
+                {status.client?.name ?? "your sync app"} uploads them; a
+                computer listed below with a recent "last seen" shows that round
+                trip works.
+              </p>
+            )}
           {status.error && (
             <p className="settings-error">
               <CircleAlert size={15} /> {status.error}
             </p>
           )}
           <div className="sync-actions">
-            <button className="secondary" onClick={() => void run(api.syncNow)} disabled={status.state === 'syncing'}>
+            <button
+              className="secondary"
+              onClick={() => void run(api.syncNow)}
+              disabled={status.state === "syncing"}
+            >
               <RefreshCw size={14} /> Sync now
             </button>
           </div>
@@ -285,7 +311,9 @@ function SyncSection({ run }: { run: Run }) {
                     <Laptop size={16} />
                     <span className="device-name">{d.name}</span>
                     <span className="muted">
-                      {d.this_device ? 'This computer' : `Last seen ${ago(d.last_seen, now)}`}
+                      {d.this_device
+                        ? "This computer"
+                        : `Last seen ${ago(d.last_seen, now)}`}
                     </span>
                   </li>
                 ))}
@@ -298,7 +326,9 @@ function SyncSection({ run }: { run: Run }) {
         <MoveDialog
           current={describeTarget(status.target)}
           where={question.where}
-          others={status.devices.filter((d) => !d.this_device).map((d) => d.name)}
+          others={status.devices
+            .filter((d) => !d.this_device)
+            .map((d) => d.name)}
           onAnswer={(ok) => {
             question.resolve(ok);
             setQuestion(null);
@@ -311,10 +341,12 @@ function SyncSection({ run }: { run: Run }) {
 
 // For a shared folder MultiTasker only knows its files reached the folder; the sync app does the rest.
 function SyncBadge({ status, now }: { status: SyncStatus; now: number }) {
-  if (status.state === 'off') return <span className="badge">Off</span>;
-  if (status.state === 'error') return <span className="badge error">Needs attention</span>;
-  if (status.client?.running === false) return <span className="badge warn">Not leaving this computer</span>;
-  if (status.state === 'syncing' || !status.last_synced) {
+  if (status.state === "off") return <span className="badge">Off</span>;
+  if (status.state === "error")
+    return <span className="badge error">Needs attention</span>;
+  if (status.client?.running === false)
+    return <span className="badge warn">Not leaving this computer</span>;
+  if (status.state === "syncing" || !status.last_synced) {
     return (
       <span className="badge">
         <LoaderCircle size={12} className="spin" /> Syncing
@@ -322,14 +354,21 @@ function SyncBadge({ status, now }: { status: SyncStatus; now: number }) {
     );
   }
   const when = ago(status.last_synced, now);
-  if (status.target.kind === 'folder') return <span className="badge ok">Saved to folder {when}</span>;
+  if (status.target.kind === "folder")
+    return <span className="badge ok">Saved to folder {when}</span>;
   return <span className="badge ok">Synced {when}</span>;
 }
 
-function Choice(props: { selected: boolean; onSelect: () => void; icon: ReactNode; title: string; detail: string }) {
+function Choice(props: {
+  selected: boolean;
+  onSelect: () => void;
+  icon: ReactNode;
+  title: string;
+  detail: string;
+}) {
   return (
     <button
-      className={`choice${props.selected ? ' selected' : ''}`}
+      className={`choice${props.selected ? " selected" : ""}`}
       role="radio"
       aria-checked={props.selected}
       onClick={props.onSelect}
@@ -344,7 +383,7 @@ function Choice(props: { selected: boolean; onSelect: () => void; icon: ReactNod
   );
 }
 
-type SourceKind = TaskSourceView['kind'];
+type SourceKind = TaskSourceView["kind"];
 
 function TaskListSection({ run }: { run: Run }) {
   const [source, setSource] = useState<TaskSourceView | null>(null);
@@ -360,10 +399,11 @@ function TaskListSection({ run }: { run: Run }) {
   if (!source) return null;
 
   const mode = choosing ?? source.kind;
-  const connected = source.kind !== 'local' && source.active !== 'sqlite';
-  const account = source.kind !== 'local' ? source.account : null;
+  const connected = source.kind !== "local" && source.active !== "sqlite";
+  const account = source.kind !== "local" ? source.account : null;
   // Only builds made with a WilsoonID registration can use JavaDashboard.
-  const offerDashboard = source.wilsoon_available || source.kind === 'java_dashboard';
+  const offerDashboard =
+    source.wilsoon_available || source.kind === "java_dashboard";
 
   const signIn = async () => {
     setWaiting(true);
@@ -385,41 +425,46 @@ function TaskListSection({ run }: { run: Run }) {
     source.kind === mode &&
     !connected && (
       <p className="settings-warning">
-        <CircleAlert size={15} /> {what} has gone, so tasks on this computer are showing for now.
+        <CircleAlert size={15} /> {what} has gone, so tasks on this computer are
+        showing for now.
       </p>
     );
 
   return (
     <Section icon={<ListChecks size={18} />} title="Task list">
-      <div className="choice-list" role="radiogroup" aria-label="Where tasks come from">
+      <div
+        className="choice-list"
+        role="radiogroup"
+        aria-label="Where tasks come from"
+      >
         <Choice
-          selected={mode === 'local'}
+          selected={mode === "local"}
           onSelect={() => {
             setChoosing(null);
-            if (source.kind !== 'local') void run(api.useLocalTasks);
+            if (source.kind !== "local") void run(api.useLocalTasks);
           }}
           icon={<HardDrive size={18} />}
           title="On this computer"
           detail="Kept by MultiTasker; sync carries them to your other computers."
         />
         <Choice
-          selected={mode === 'todoist'}
-          onSelect={() => setChoosing('todoist')}
+          selected={mode === "todoist"}
+          onSelect={() => setChoosing("todoist")}
           icon={<ListTodo size={18} />}
           title="Todoist"
           detail="Your Todoist tasks, connected with your own API token."
         />
         <Choice
-          selected={mode === 'notion'}
-          onSelect={() => setChoosing('notion')}
+          selected={mode === "notion"}
+          onSelect={() => setChoosing("notion")}
           icon={<NotebookText size={18} />}
           title="Notion"
           detail="A task database in Notion, connected with an integration token."
         />
         {offerDashboard && (
           <Choice
-            selected={mode === 'java_dashboard'}
-            onSelect={() => setChoosing('java_dashboard')}
+            selected={mode === "java_dashboard"}
+            onSelect={() => setChoosing("java_dashboard")}
             icon={<LayoutDashboard size={18} />}
             title="JavaDashboard"
             detail="Your dashboard's task board, signed in with WilsoonID."
@@ -427,48 +472,64 @@ function TaskListSection({ run }: { run: Run }) {
         )}
       </div>
 
-      {mode === 'todoist' && (
+      {mode === "todoist" && (
         <div className="cloud-setup">
-          {lost('The Todoist token')}
-          {source.kind === 'todoist' && connected ? (
-            signedIn(<ListTodo size={16} className="kind kind-link" />, `Connected as ${account}`)
+          {lost("The Todoist token")}
+          {source.kind === "todoist" && connected ? (
+            signedIn(
+              <ListTodo size={16} className="kind kind-link" />,
+              `Connected as ${account}`,
+            )
           ) : (
             <TodoistForm run={run} onConnected={() => setChoosing(null)} />
           )}
           <p className="settings-hint">
-            Projects show as categories. Starting a task adds an <code>in-progress</code> label, and attachments are
-            kept as comments on the task, so your other computers see them too. Handed-in work is attached to a comment.
+            Projects show as categories. Starting a task adds an{" "}
+            <code>in-progress</code> label, and attachments are kept as comments
+            on the task, so your other computers see them too. Handed-in work is
+            attached to a comment.
           </p>
         </div>
       )}
 
-      {mode === 'notion' && (
+      {mode === "notion" && (
         <div className="cloud-setup">
-          {lost('The Notion token')}
-          {source.kind === 'notion' && connected ? (
-            signedIn(<NotebookText size={16} className="kind kind-link" />, `${source.name} in ${source.account}`)
+          {lost("The Notion token")}
+          {source.kind === "notion" && connected ? (
+            signedIn(
+              <NotebookText size={16} className="kind kind-link" />,
+              `${source.name} in ${source.account}`,
+            )
           ) : (
             <NotionForm run={run} onConnected={() => setChoosing(null)} />
           )}
           <p className="settings-hint">
-            MultiTasker uses the database's Status column for in progress and done (or a Done checkbox), its date for
-            the due date and a select for the category. It adds any of those it lacks, plus Started, Started on and an
-            Attachments column, which keeps files as links and remembers which computer they're on. Handed-in work is
-            uploaded into the task's page.
+            MultiTasker uses the database's Status column for in progress and
+            done (or a Done checkbox), its date for the due date and a select
+            for the category. It adds any of those it lacks, plus Started,
+            Started on and an Attachments column, which keeps files as links and
+            remembers which computer they're on. Handed-in work is uploaded into
+            the task's page.
           </p>
         </div>
       )}
 
-      {mode === 'java_dashboard' && (
+      {mode === "java_dashboard" && (
         <div className="cloud-setup">
-          {!waiting && lost('The WilsoonID sign-in')}
-          {source.kind === 'java_dashboard' && connected && !waiting ? (
-            signedIn(<LayoutDashboard size={16} className="kind kind-link" />, `Signed in as ${account}`)
+          {!waiting && lost("The WilsoonID sign-in")}
+          {source.kind === "java_dashboard" && connected && !waiting ? (
+            signedIn(
+              <LayoutDashboard size={16} className="kind kind-link" />,
+              `Signed in as ${account}`,
+            )
           ) : waiting ? (
             <div className="sign-in-wait">
               <LoaderCircle size={16} className="spin" />
               <span>Finish signing in to WilsoonID in your browser…</span>
-              <button className="secondary" onClick={() => void api.cancelSignIn()}>
+              <button
+                className="secondary"
+                onClick={() => void api.cancelSignIn()}
+              >
                 Cancel
               </button>
             </div>
@@ -477,14 +538,19 @@ function TaskListSection({ run }: { run: Run }) {
               className="primary sign-in"
               onClick={() => void signIn()}
               disabled={!source.wilsoon_available}
-              title={source.wilsoon_available ? undefined : 'This build has no WilsoonID registration.'}
+              title={
+                source.wilsoon_available
+                  ? undefined
+                  : "This build has no WilsoonID registration."
+              }
             >
               <LogIn size={15} /> Sign in with WilsoonID
             </button>
           )}
           <p className="settings-hint">
-            Tasks on this computer stay saved while you use JavaDashboard. JavaDashboard tasks have due dates but no
-            times, so they don't get timed reminders.
+            Tasks on this computer stay saved while you use JavaDashboard.
+            JavaDashboard tasks have due dates but no times, so they don't get
+            timed reminders.
           </p>
         </div>
       )}
@@ -492,10 +558,16 @@ function TaskListSection({ run }: { run: Run }) {
   );
 }
 
-function NotionForm({ run, onConnected }: { run: Run; onConnected: () => void }) {
-  const [token, setToken] = useState('');
+function NotionForm({
+  run,
+  onConnected,
+}: {
+  run: Run;
+  onConnected: () => void;
+}) {
+  const [token, setToken] = useState("");
   const [found, setFound] = useState<NotionDatabases | null>(null);
-  const [database, setDatabase] = useState('');
+  const [database, setDatabase] = useState("");
   const [busy, setBusy] = useState(false);
 
   const look = async (e: FormEvent) => {
@@ -507,7 +579,7 @@ function NotionForm({ run, onConnected }: { run: Run; onConnected: () => void })
     });
     setBusy(false);
     setFound(result);
-    setDatabase((result as NotionDatabases | null)?.databases[0]?.id ?? '');
+    setDatabase((result as NotionDatabases | null)?.databases[0]?.id ?? "");
   };
 
   const connect = async () => {
@@ -515,7 +587,7 @@ function NotionForm({ run, onConnected }: { run: Run; onConnected: () => void })
     const ok = await run(() => api.connectNotion(token, database));
     setBusy(false);
     if (ok) {
-      setToken('');
+      setToken("");
       setFound(null);
       onConnected();
     }
@@ -538,20 +610,26 @@ function NotionForm({ run, onConnected }: { run: Run; onConnected: () => void })
         />
       </label>
       <p className="settings-hint wide">
-        <KeyRound size={13} /> In Notion, open Settings → Connections → Develop or manage integrations, make an internal
-        integration and copy its token. Then open your task database, choose ••• → Connections and add the integration
-        so MultiTasker can see it. The token is kept in Windows Credential Manager.
+        <KeyRound size={13} /> In Notion, open Settings → Connections → Develop
+        or manage integrations, make an internal integration and copy its token.
+        Then open your task database, choose ••• → Connections and add the
+        integration so MultiTasker can see it. The token is kept in Windows
+        Credential Manager.
       </p>
       {found && found.databases.length === 0 && (
         <p className="settings-warning wide">
-          <CircleAlert size={15} /> {found.workspace} hasn't shared any databases with this integration yet. Add it
-          under ••• → Connections on your task database (or the page it's in), then look again.
+          <CircleAlert size={15} /> {found.workspace} hasn't shared any
+          databases with this integration yet. Add it under ••• → Connections on
+          your task database (or the page it's in), then look again.
         </p>
       )}
       {found && found.databases.length > 0 && (
         <label className="field wide">
           <span>Task database in {found.workspace}</span>
-          <select value={database} onChange={(e) => setDatabase(e.target.value)}>
+          <select
+            value={database}
+            onChange={(e) => setDatabase(e.target.value)}
+          >
             {found.databases.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
@@ -562,14 +640,23 @@ function NotionForm({ run, onConnected }: { run: Run; onConnected: () => void })
       )}
       <div className="wide">
         {found && found.databases.length > 0 ? (
-          <button type="button" className="primary" disabled={!database || busy} onClick={() => void connect()}>
+          <button
+            type="button"
+            className="primary"
+            disabled={!database || busy}
+            onClick={() => void connect()}
+          >
             {busy && <LoaderCircle size={14} className="spin" />}
             Connect
           </button>
         ) : (
-          <button type="submit" className="primary" disabled={!token.trim() || busy}>
+          <button
+            type="submit"
+            className="primary"
+            disabled={!token.trim() || busy}
+          >
             {busy && <LoaderCircle size={14} className="spin" />}
-            {found ? 'Look again' : 'Find databases'}
+            {found ? "Look again" : "Find databases"}
           </button>
         )}
       </div>
@@ -577,8 +664,14 @@ function NotionForm({ run, onConnected }: { run: Run; onConnected: () => void })
   );
 }
 
-function TodoistForm({ run, onConnected }: { run: Run; onConnected: () => void }) {
-  const [token, setToken] = useState('');
+function TodoistForm({
+  run,
+  onConnected,
+}: {
+  run: Run;
+  onConnected: () => void;
+}) {
+  const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
 
   const submit = async (e: FormEvent) => {
@@ -587,7 +680,7 @@ function TodoistForm({ run, onConnected }: { run: Run; onConnected: () => void }
     const ok = await run(() => api.connectTodoist(token));
     setSaving(false);
     if (ok) {
-      setToken('');
+      setToken("");
       onConnected();
     }
   };
@@ -606,12 +699,17 @@ function TodoistForm({ run, onConnected }: { run: Run; onConnected: () => void }
         />
       </label>
       <p className="settings-hint wide">
-        <KeyRound size={13} /> In Todoist, open Settings → Integrations → Developer and copy your API token. It's kept
-        in Windows Credential Manager, never in MultiTasker's files. Tasks on this computer stay saved while you use
-        Todoist.
+        <KeyRound size={13} /> In Todoist, open Settings → Integrations →
+        Developer and copy your API token. It's kept in Windows Credential
+        Manager, never in MultiTasker's files. Tasks on this computer stay saved
+        while you use Todoist.
       </p>
       <div className="wide">
-        <button type="submit" className="primary" disabled={!token.trim() || saving}>
+        <button
+          type="submit"
+          className="primary"
+          disabled={!token.trim() || saving}
+        >
           {saving && <LoaderCircle size={14} className="spin" />}
           Connect
         </button>
@@ -632,14 +730,17 @@ function WidgetSection({ run }: { run: Run }) {
     setOpacity(value);
     void api.setWidgetOpacity(value, false);
   };
-  const save = () => opacity !== null && void run(() => api.setWidgetOpacity(opacity, true));
+  const save = () =>
+    opacity !== null && void run(() => api.setWidgetOpacity(opacity, true));
 
   return (
     <Section icon={<PictureInPicture2 size={18} />} title="Widget">
       <label className="toggle-row">
         <span>
           <span className="choice-title">Background opacity</span>
-          <span className="choice-detail">Lower lets more of what's behind show through. Text stays solid.</span>
+          <span className="choice-detail">
+            Lower lets more of what's behind show through. Text stays solid.
+          </span>
         </span>
         <span className="slider-field">
           <input
@@ -678,24 +779,35 @@ function RemindersSection({ run }: { run: Run }) {
   return (
     <Section icon={<BellRing size={18} />} title="Reminders">
       <p className="settings-lead">
-        For tasks with a due time. They show as Windows notifications while MultiTasker is running.
+        For tasks with a due time. They show as Windows notifications while
+        MultiTasker is running.
       </p>
       <label className="toggle-row">
         <span>
           <span className="choice-title">Before it's due</span>
-          <span className="choice-detail">A heads-up so there's time to wrap up.</span>
+          <span className="choice-detail">
+            A heads-up so there's time to wrap up.
+          </span>
         </span>
         <select
           className="inline-select"
-          value={prefs?.minutes_before ?? ''}
+          value={prefs?.minutes_before ?? ""}
           disabled={!prefs}
           onChange={(e) =>
-            prefs && change({ ...prefs, minutes_before: e.target.value ? Number(e.target.value) : null })
+            prefs &&
+            change({
+              ...prefs,
+              minutes_before: e.target.value ? Number(e.target.value) : null,
+            })
           }
         >
           {EARLY_OPTIONS.map((m) => (
-            <option key={m ?? 'off'} value={m ?? ''}>
-              {m === null ? 'Off' : m === 60 ? '1 hour before' : `${m} minutes before`}
+            <option key={m ?? "off"} value={m ?? ""}>
+              {m === null
+                ? "Off"
+                : m === 60
+                  ? "1 hour before"
+                  : `${m} minutes before`}
             </option>
           ))}
         </select>
@@ -703,7 +815,9 @@ function RemindersSection({ run }: { run: Run }) {
       <label className="toggle-row reminder-row">
         <span>
           <span className="choice-title">When it's due</span>
-          <span className="choice-detail">Another reminder at the due time itself.</span>
+          <span className="choice-detail">
+            Another reminder at the due time itself.
+          </span>
         </span>
         <input
           type="checkbox"
@@ -711,17 +825,23 @@ function RemindersSection({ run }: { run: Run }) {
           className="switch"
           checked={!!prefs?.at_due_time}
           disabled={!prefs}
-          onChange={(e) => prefs && change({ ...prefs, at_due_time: e.target.checked })}
+          onChange={(e) =>
+            prefs && change({ ...prefs, at_due_time: e.target.checked })
+          }
         />
       </label>
     </Section>
   );
 }
 
+const AWAY_OPTIONS = [5, 10, 15, 30, 60, null];
+
 function DetectionSection({ run }: { run: Run }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [away, setAway] = useState<number | null | undefined>(undefined);
 
   useEffect(() => {
+    void api.pauseAfterAway().then(setAway, () => {});
     void api.detectionEnabled().then(setEnabled, () => {});
     return onActivity((s) => setEnabled(s.enabled));
   }, []);
@@ -732,8 +852,8 @@ function DetectionSection({ run }: { run: Run }) {
         <span>
           <span className="choice-title">Detect what I'm working on</span>
           <span className="choice-detail">
-            Watches the window in front and linked files to mark tasks active and suggest ones to start. Nothing leaves
-            this computer.
+            Watches the window in front and linked files to mark tasks active
+            and suggest ones to start. Nothing leaves this computer.
           </span>
         </span>
         <input
@@ -745,43 +865,84 @@ function DetectionSection({ run }: { run: Run }) {
           onChange={(e) => void run(() => api.setDetection(e.target.checked))}
         />
       </label>
+      <label className="toggle-row reminder-row">
+        <span>
+          <span className="choice-title">Pause when I'm away</span>
+          <span className="choice-detail">
+            Pauses what's in progress on this computer after a while with no
+            keyboard or mouse, or while it sleeps. Coming back offers to resume.
+          </span>
+        </span>
+        <select
+          className="inline-select"
+          value={away ?? ""}
+          disabled={away === undefined}
+          onChange={(e) => {
+            const minutes = e.target.value ? Number(e.target.value) : null;
+            setAway(minutes);
+            void run(() => api.setPauseAfterAway(minutes));
+          }}
+        >
+          {AWAY_OPTIONS.map((m) => (
+            <option key={m ?? "never"} value={m ?? ""}>
+              {m === null
+                ? "Never"
+                : m === 60
+                  ? "After 1 hour"
+                  : `After ${m} minutes`}
+            </option>
+          ))}
+        </select>
+      </label>
     </Section>
   );
 }
 
-function S3Form(props: { current: S3Settings | null; onSave: (s: S3Settings, secret: string) => Promise<boolean> }) {
+function S3Form(props: {
+  current: S3Settings | null;
+  onSave: (s: S3Settings, secret: string) => Promise<boolean>;
+}) {
   const { current, onSave } = props;
   const initial = guessProvider(current?.provider, current?.endpoint);
   const [providerId, setProviderId] = useState(initial.id);
   const provider = providerById(providerId);
   const [param, setParam] = useState(
-    () => (current?.endpoint && initial.param?.pattern.exec(current.endpoint)?.[1]) || '',
+    () =>
+      (current?.endpoint &&
+        initial.param?.pattern.exec(current.endpoint)?.[1]) ||
+      "",
   );
-  const [endpoint, setEndpoint] = useState(current?.endpoint ?? '');
-  const [region, setRegion] = useState(current?.region ?? initial.region.initial);
-  const [bucket, setBucket] = useState(current?.bucket ?? '');
-  const [prefix, setPrefix] = useState(current?.prefix ?? '');
-  const [keyId, setKeyId] = useState(current?.access_key_id ?? '');
-  const [secret, setSecret] = useState('');
+  const [endpoint, setEndpoint] = useState(current?.endpoint ?? "");
+  const [region, setRegion] = useState(
+    current?.region ?? initial.region.initial,
+  );
+  const [bucket, setBucket] = useState(current?.bucket ?? "");
+  const [prefix, setPrefix] = useState(current?.prefix ?? "");
+  const [keyId, setKeyId] = useState(current?.access_key_id ?? "");
+  const [secret, setSecret] = useState("");
   const [saving, setSaving] = useState(false);
 
   const chooseProvider = (id: string) => {
     const next = providerById(id);
     setProviderId(id);
-    setParam('');
-    if (id !== 'custom') setEndpoint('');
+    setParam("");
+    if (id !== "custom") setEndpoint("");
     setRegion(current?.provider === id ? current.region : next.region.initial);
   };
 
   const builtEndpoint =
-    provider.id === 'custom' ? endpoint.trim() || null : provider.endpoint(param.trim(), region.trim());
-  const sameKey = current?.access_key_id === keyId.trim() && (current?.endpoint ?? null) === builtEndpoint;
+    provider.id === "custom"
+      ? endpoint.trim() || null
+      : provider.endpoint(param.trim(), region.trim());
+  const sameKey =
+    current?.access_key_id === keyId.trim() &&
+    (current?.endpoint ?? null) === builtEndpoint;
   const ready =
     bucket.trim() &&
     region.trim() &&
     keyId.trim() &&
     (!provider.param || param.trim()) &&
-    (provider.id !== 'custom' || endpoint.trim()) &&
+    (provider.id !== "custom" || endpoint.trim()) &&
     (secret || sameKey);
 
   const submit = async (e: FormEvent) => {
@@ -799,14 +960,17 @@ function S3Form(props: { current: S3Settings | null; onSave: (s: S3Settings, sec
       secret,
     );
     setSaving(false);
-    setSecret('');
+    setSecret("");
   };
 
   return (
     <form className="s3-form" onSubmit={submit}>
       <label className="field wide">
         <span>Service</span>
-        <select value={providerId} onChange={(e) => chooseProvider(e.target.value)}>
+        <select
+          value={providerId}
+          onChange={(e) => chooseProvider(e.target.value)}
+        >
           {S3_PROVIDERS.map((p) => (
             <option key={p.id} value={p.id}>
               {p.label}
@@ -817,10 +981,14 @@ function S3Form(props: { current: S3Settings | null; onSave: (s: S3Settings, sec
       {provider.param && (
         <label className="field wide">
           <span>{provider.param.label}</span>
-          <input value={param} onChange={(e) => setParam(e.target.value)} placeholder={provider.param.placeholder} />
+          <input
+            value={param}
+            onChange={(e) => setParam(e.target.value)}
+            placeholder={provider.param.placeholder}
+          />
         </label>
       )}
-      {provider.id === 'custom' && (
+      {provider.id === "custom" && (
         <label className="field wide">
           <span>Endpoint</span>
           <input
@@ -830,19 +998,31 @@ function S3Form(props: { current: S3Settings | null; onSave: (s: S3Settings, sec
           />
         </label>
       )}
-      <label className={`field${provider.region.fixed ? ' wide' : ''}`}>
+      <label className={`field${provider.region.fixed ? " wide" : ""}`}>
         <span>Bucket</span>
-        <input value={bucket} onChange={(e) => setBucket(e.target.value)} required />
+        <input
+          value={bucket}
+          onChange={(e) => setBucket(e.target.value)}
+          required
+        />
       </label>
       {!provider.region.fixed && (
         <label className="field">
           <span>Region</span>
-          <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder={provider.region.placeholder} />
+          <input
+            value={region}
+            onChange={(e) => setRegion(e.target.value)}
+            placeholder={provider.region.placeholder}
+          />
         </label>
       )}
       <label className="field wide">
         <span>Folder in bucket (optional)</span>
-        <input value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="e.g. multitasker-sync" />
+        <input
+          value={prefix}
+          onChange={(e) => setPrefix(e.target.value)}
+          placeholder="e.g. multitasker-sync"
+        />
       </label>
       <label className="field">
         <span>Access key ID</span>
@@ -860,21 +1040,28 @@ function S3Form(props: { current: S3Settings | null; onSave: (s: S3Settings, sec
           type="password"
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
-          placeholder={sameKey && current ? 'Saved, leave empty to keep it' : ''}
+          placeholder={
+            sameKey && current ? "Saved, leave empty to keep it" : ""
+          }
           autoComplete="off"
         />
       </label>
       <p className="settings-hint wide">
-        <KeyRound size={13} /> {provider.keys} The secret is kept in Windows Credential Manager, never in MultiTasker's
-        files.
+        <KeyRound size={13} /> {provider.keys} The secret is kept in Windows
+        Credential Manager, never in MultiTasker's files.
       </p>
-      {builtEndpoint && provider.id !== 'custom' && (!provider.param || param.trim()) && region.trim() && (
-        <p className="settings-hint wide endpoint-preview">Endpoint: {builtEndpoint}</p>
-      )}
+      {builtEndpoint &&
+        provider.id !== "custom" &&
+        (!provider.param || param.trim()) &&
+        region.trim() && (
+          <p className="settings-hint wide endpoint-preview">
+            Endpoint: {builtEndpoint}
+          </p>
+        )}
       <div className="wide">
         <button type="submit" className="primary" disabled={!ready || saving}>
           {saving && <LoaderCircle size={14} className="spin" />}
-          {current ? 'Save and reconnect' : 'Connect'}
+          {current ? "Save and reconnect" : "Connect"}
         </button>
       </div>
     </form>
@@ -882,8 +1069,8 @@ function S3Form(props: { current: S3Settings | null; onSave: (s: S3Settings, sec
 }
 
 const SERVICE = {
-  google: { name: 'Google', storage: 'Google Drive', secret: true },
-  microsoft: { name: 'Microsoft', storage: 'OneDrive', secret: false },
+  google: { name: "Google", storage: "Google Drive", secret: true },
+  microsoft: { name: "Microsoft", storage: "OneDrive", secret: false },
 } as const;
 
 function CloudSetup(props: {
@@ -898,8 +1085,8 @@ function CloudSetup(props: {
   const { service, signedInAs, run, onDone, onSignOut, confirm } = props;
   const info = SERVICE[service];
   const [builtIn, setBuiltIn] = useState<boolean | null>(null);
-  const [clientId, setClientId] = useState('');
-  const [clientSecret, setClientSecret] = useState('');
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
   const [waiting, setWaiting] = useState(false);
 
   useEffect(() => {
@@ -912,13 +1099,16 @@ function CloudSetup(props: {
   const signIn = async () => {
     if (!(await confirm())) return;
     setWaiting(true);
-    const ok = await run(() => api.signInCloud(service, clientId.trim(), clientSecret.trim()));
+    const ok = await run(() =>
+      api.signInCloud(service, clientId.trim(), clientSecret.trim()),
+    );
     setWaiting(false);
     if (ok) onDone();
   };
 
   const needsClient = builtIn === false && !signedInAs;
-  const ready = !needsClient || (clientId.trim() && (!info.secret || clientSecret.trim()));
+  const ready =
+    !needsClient || (clientId.trim() && (!info.secret || clientSecret.trim()));
 
   return (
     <div className="cloud-setup">
@@ -938,17 +1128,27 @@ function CloudSetup(props: {
       {needsClient && !waiting && (
         <div className="s3-form">
           <p className="settings-hint wide">
-            This copy of MultiTasker wasn't built with a {info.name} app registration. Paste the client ID
-            {info.secret ? ' and secret' : ''} from your own (see docs/cloud-sign-in.md).
+            This copy of MultiTasker wasn't built with a {info.name} app
+            registration. Paste the client ID
+            {info.secret ? " and secret" : ""} from your own (see
+            docs/cloud-sign-in.md).
           </p>
-          <label className={`field${info.secret ? '' : ' wide'}`}>
+          <label className={`field${info.secret ? "" : " wide"}`}>
             <span>Client ID</span>
-            <input value={clientId} onChange={(e) => setClientId(e.target.value)} spellCheck={false} />
+            <input
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              spellCheck={false}
+            />
           </label>
           {info.secret && (
             <label className="field">
               <span>Client secret</span>
-              <input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
+              <input
+                type="password"
+                value={clientSecret}
+                onChange={(e) => setClientSecret(e.target.value)}
+              />
             </label>
           )}
         </div>
@@ -964,15 +1164,19 @@ function CloudSetup(props: {
         </div>
       ) : (
         !signedInAs && (
-          <button className="primary sign-in" onClick={() => void signIn()} disabled={!ready || builtIn === null}>
+          <button
+            className="primary sign-in"
+            onClick={() => void signIn()}
+            disabled={!ready || builtIn === null}
+          >
             <LogIn size={15} /> Sign in with {info.name}
           </button>
         )
       )}
 
       <p className="settings-hint">
-        MultiTasker only gets access to its own {info.storage} folder, never your other files. The sign-in is kept in
-        Windows Credential Manager.
+        MultiTasker only gets access to its own {info.storage} folder, never
+        your other files. The sign-in is kept in Windows Credential Manager.
       </p>
     </div>
   );
@@ -980,20 +1184,21 @@ function CloudSetup(props: {
 
 function describeTarget(target: SyncTarget): string {
   switch (target.kind) {
-    case 'folder':
-      return 'the shared folder';
-    case 's3':
+    case "folder":
+      return "the shared folder";
+    case "s3":
       return `the ${target.bucket} bucket`;
-    case 'google_drive':
+    case "google_drive":
       return `Google Drive (${target.account})`;
-    case 'one_drive':
+    case "one_drive":
       return `OneDrive (${target.account})`;
     default:
-      return 'the current location';
+      return "the current location";
   }
 }
 
-const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+const capitalize = (text: string) =>
+  text.charAt(0).toUpperCase() + text.slice(1);
 
 function MoveDialog(props: {
   current: string;
@@ -1004,12 +1209,12 @@ function MoveDialog(props: {
   const { current, where, others, onAnswer } = props;
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onAnswer(false);
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onAnswer(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [onAnswer]);
 
-  const names = others.join(', ');
+  const names = others.join(", ");
   return (
     <div className="dialog-scrim" onClick={() => onAnswer(false)}>
       <div
@@ -1019,23 +1224,26 @@ function MoveDialog(props: {
         aria-labelledby="move-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 id="move-title">{where ? `Move sync to ${where}?` : 'Turn off sync?'}</h3>
+        <h3 id="move-title">
+          {where ? `Move sync to ${where}?` : "Turn off sync?"}
+        </h3>
         <p>
           {where
             ? `Your tasks will be copied to ${where}, and this computer will sync there from now on.`
-            : 'This computer will stop syncing. Your tasks stay here.'}{' '}
-          {capitalize(current)} keeps its copy as it is now, but won't get this computer's changes.
+            : "This computer will stop syncing. Your tasks stay here."}{" "}
+          {capitalize(current)} keeps its copy as it is now, but won't get this
+          computer's changes.
         </p>
         {others.length > 0 && (
           <p className="settings-warning">
             <CircleAlert size={15} />
             <span>
               {where
-                ? `${names} ${others.length === 1 ? 'still syncs' : 'still sync'} with ${current}. Move ${
-                    others.length === 1 ? 'it' : 'them'
+                ? `${names} ${others.length === 1 ? "still syncs" : "still sync"} with ${current}. Move ${
+                    others.length === 1 ? "it" : "them"
                   } to ${where} too, or the computers will drift apart.`
                 : `${names} will keep syncing with ${current}, but changes made here won't reach ${
-                    others.length === 1 ? 'it' : 'them'
+                    others.length === 1 ? "it" : "them"
                   }.`}
             </span>
           </p>
@@ -1045,7 +1253,7 @@ function MoveDialog(props: {
             Cancel
           </button>
           <button className="primary" onClick={() => onAnswer(true)} autoFocus>
-            {where ? 'Move sync' : 'Turn off sync'}
+            {where ? "Move sync" : "Turn off sync"}
           </button>
         </div>
       </div>

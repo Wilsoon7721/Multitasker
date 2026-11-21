@@ -1,25 +1,35 @@
-import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
-import { AppWindow, CalendarDays, ChevronDown, Maximize2, Paperclip, Pause, Play, X } from 'lucide-react';
-import { Fragment, useEffect, useRef, useState } from 'react';
-import { api, onWidgetAppearance } from './api';
-import { AppPicker } from './components/AppPicker';
-import { CheckButton } from './components/CheckButton';
-import { WidgetTodo } from './components/WidgetTodo';
-import { dueInfo, elapsed, useNow } from './time';
-import { pathItems, taskZone, useFileDrop } from './useFileDrop';
-import { useActivity } from './useActivity';
-import { useTasks } from './useTasks';
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import {
+  AppWindow,
+  CalendarDays,
+  ChevronDown,
+  Coffee,
+  Maximize2,
+  Paperclip,
+  Pause,
+  Play,
+  X,
+} from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { api, onWidgetAppearance } from "./api";
+import { AppPicker } from "./components/AppPicker";
+import { CheckButton } from "./components/CheckButton";
+import { WidgetTodo } from "./components/WidgetTodo";
+import { dueInfo, elapsed, localDate, localTime, useNow } from "./time";
+import { pathItems, taskZone, useFileDrop } from "./useFileDrop";
+import { useActivity } from "./useActivity";
+import { useTasks } from "./useTasks";
 
 const WIDTH = 320;
 const MAX_HEIGHT = 560;
 /** The card's margin on every side; the window includes it so the shadow isn't clipped. */
 const MARGIN = 8;
-const EXPANDED_KEY = 'widget.expanded';
+const EXPANDED_KEY = "widget.expanded";
 
 /** Whether the to-do list was left open; a per-computer convenience, so local storage is enough. */
 function loadExpanded(): boolean {
   try {
-    return localStorage.getItem(EXPANDED_KEY) === '1';
+    return localStorage.getItem(EXPANDED_KEY) === "1";
   } catch {
     return false;
   }
@@ -31,18 +41,23 @@ export function WidgetView() {
   const now = useNow();
   const card = useRef<HTMLDivElement>(null);
   const active = (tasks ?? []).filter((t) => t.in_progress);
-  const todo = (tasks ?? []).filter((t) => t.status === 'todo' && !t.in_progress);
+  const todo = (tasks ?? []).filter(
+    (t) => t.status === "todo" && !t.in_progress,
+  );
   const [expanded, setExpanded] = useState(loadExpanded);
-  const [dragState, setDragState] = useState<'idle' | 'dragging' | 'over'>('idle');
+  const [dragState, setDragState] = useState<"idle" | "dragging" | "over">(
+    "idle",
+  );
   const activeZone = useRef<HTMLElement>(null);
   const [pickingFor, setPickingFor] = useState<string | null>(null);
   const { snapshot, activeNow } = useActivity();
   const suggestion = snapshot.suggestion;
+  const paused = snapshot.paused;
 
   const toggleExpanded = () =>
     setExpanded((cur) => {
       try {
-        localStorage.setItem(EXPANDED_KEY, cur ? '0' : '1');
+        localStorage.setItem(EXPANDED_KEY, cur ? "0" : "1");
       } catch {
         // Storage unavailable: the choice just won't be remembered.
       }
@@ -50,7 +65,11 @@ export function WidgetView() {
     });
 
   useEffect(() => {
-    const apply = (opacity: number) => document.documentElement.style.setProperty('--widget-alpha', `${opacity}%`);
+    const apply = (opacity: number) =>
+      document.documentElement.style.setProperty(
+        "--widget-alpha",
+        `${opacity}%`,
+      );
     void api.widgetOpacity().then(apply, () => {});
     return onWidgetAppearance(apply);
   }, []);
@@ -61,7 +80,12 @@ export function WidgetView() {
     if (!el) return;
     const win = getCurrentWindow();
     const fit = () =>
-      void win.setSize(new LogicalSize(WIDTH, Math.min(MAX_HEIGHT, Math.ceil(el.offsetHeight) + MARGIN * 2)));
+      void win.setSize(
+        new LogicalSize(
+          WIDTH,
+          Math.min(MAX_HEIGHT, Math.ceil(el.offsetHeight) + MARGIN * 2),
+        ),
+      );
     const observer = new ResizeObserver(fit);
     observer.observe(el);
     return () => observer.disconnect();
@@ -69,9 +93,10 @@ export function WidgetView() {
 
   // Drop a file you're working on onto its task; with only one task going, anywhere on the card will do.
   useFileDrop((paths, zone) => {
-    const target = taskZone(zone) ?? (active.length === 1 ? active[0].id : null);
+    const target =
+      taskZone(zone) ?? (active.length === 1 ? active[0].id : null);
     if (target) void run(() => api.addAttachments(target, pathItems(paths)));
-    else setError('Drop onto the task the files belong to.');
+    else setError("Drop onto the task the files belong to.");
   });
 
   const attach = (id: string) =>
@@ -87,11 +112,11 @@ export function WidgetView() {
           Tasks In Progress <span className="count">{active.length}</span>
         </h1>
         <button
-          className={`icon-btn expand${expanded ? ' on' : ''}`}
+          className={`icon-btn expand${expanded ? " on" : ""}`}
           onClick={toggleExpanded}
           aria-expanded={expanded}
-          aria-label={expanded ? 'Hide to-do list' : 'Show to-do list'}
-          title={expanded ? 'Hide to-do list' : 'Show to-do list'}
+          aria-label={expanded ? "Hide to-do list" : "Show to-do list"}
+          title={expanded ? "Hide to-do list" : "Show to-do list"}
         >
           <ChevronDown size={16} />
         </button>
@@ -124,12 +149,19 @@ export function WidgetView() {
             </span>
             <span className="suggestion-reason">{suggestion.reason}</span>
           </div>
-          <button className="primary small" onClick={() => void run(() => api.setInProgress(suggestion.task_id, true))}>
+          <button
+            className="primary small"
+            onClick={() =>
+              void run(() => api.setInProgress(suggestion.task_id, true))
+            }
+          >
             <Play size={12} /> Start
           </button>
           <button
             className="icon-btn"
-            onClick={() => void run(() => api.dismissSuggestion(suggestion.task_id))}
+            onClick={() =>
+              void run(() => api.dismissSuggestion(suggestion.task_id))
+            }
             aria-label="Not now"
             title="Not now (quiet for 30 minutes)"
           >
@@ -138,16 +170,61 @@ export function WidgetView() {
         </div>
       )}
 
+      {paused.length > 0 && (
+        <div className="suggestion away" role="status">
+          <Coffee size={14} className="away-icon" aria-hidden />
+          <div className="suggestion-text">
+            <span
+              className="suggestion-title"
+              title={paused.map((p) => p.title).join(", ")}
+            >
+              {paused.length === 1
+                ? `Paused “${paused[0].title}”`
+                : `Paused ${paused.length} tasks`}
+            </span>
+            <span className="suggestion-reason">
+              {awayText(paused[0].since)}
+            </span>
+          </div>
+          <button
+            className="primary small"
+            onClick={() =>
+              void run(async () =>
+                Promise.all(
+                  paused.map((p) => api.setInProgress(p.task_id, true)),
+                ),
+              )
+            }
+          >
+            <Play size={12} /> Resume
+          </button>
+          <button
+            className="icon-btn"
+            onClick={() => void run(api.dismissPaused)}
+            aria-label="Keep paused"
+            title="Keep paused"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       <section ref={activeZone} className={`widget-active drag-${dragState}`}>
-        {tasks !== null && active.length === 0 && dragState === 'idle' && (
-          <button className="widget-empty" onClick={expanded ? undefined : toggleExpanded} disabled={expanded}>
+        {tasks !== null && active.length === 0 && dragState === "idle" && (
+          <button
+            className="widget-empty"
+            onClick={expanded ? undefined : toggleExpanded}
+            disabled={expanded}
+          >
             {expanded
-              ? 'Nothing in progress — drag a task up to start it'
-              : 'Nothing in progress — pick a task to start'}
+              ? "Nothing in progress — drag a task up to start it"
+              : "Nothing in progress — pick a task to start"}
           </button>
         )}
 
-        {dragState !== 'idle' && <p className="drop-hint">Drop here to start</p>}
+        {dragState !== "idle" && (
+          <p className="drop-hint">Drop here to start</p>
+        )}
 
         {active.length > 0 && (
           <ul className="widget-list">
@@ -156,27 +233,51 @@ export function WidgetView() {
               const live = activeNow(t.id, now);
               return (
                 <Fragment key={t.id}>
-                  <li className={`widget-item${live ? ' live' : ''}`} data-drop={`task:${t.id}`}>
+                  <li
+                    className={`widget-item${live ? " live" : ""}`}
+                    data-drop={`task:${t.id}`}
+                  >
                     <CheckButton
                       done={false}
                       title={t.title}
-                      onToggle={() => void run(() => api.update(t.id, { status: 'done' }))}
+                      onToggle={() =>
+                        void run(() => api.update(t.id, { status: "done" }))
+                      }
                     />
                     <div className="widget-task">
-                      <span className="widget-title" title={live ? `${t.title} — ${live.reason}` : t.title}>
-                        {live && <span className="live-dot" aria-label={`Active now: ${live.reason}`} />}
+                      <span
+                        className="widget-title"
+                        title={live ? `${t.title} — ${live.reason}` : t.title}
+                      >
+                        {live && (
+                          <span
+                            className="live-dot"
+                            aria-label={`Active now: ${live.reason}`}
+                          />
+                        )}
                         {t.title}
                       </span>
                       <span className="card-meta">
-                        {t.started_at && <span className="meta accent">{elapsed(t.started_at, now)}</span>}
-                        {t.category && <span className="tag">{t.category}</span>}
+                        {t.started_at && (
+                          <span className="meta accent">
+                            {elapsed(t.started_at, now)}
+                          </span>
+                        )}
+                        {t.category && (
+                          <span className="tag">{t.category}</span>
+                        )}
                         {due && (
-                          <span className={`meta${due.late ? ' late' : due.soon ? ' soon' : ''}`}>
+                          <span
+                            className={`meta${due.late ? " late" : due.soon ? " soon" : ""}`}
+                          >
                             <CalendarDays size={11} /> {due.text}
                           </span>
                         )}
                         {t.attachments.length > 0 && (
-                          <span className="meta" title={t.attachments.map((a) => a.name).join('\n')}>
+                          <span
+                            className="meta"
+                            title={t.attachments.map((a) => a.name).join("\n")}
+                          >
                             <Paperclip size={11} /> {t.attachments.length}
                           </span>
                         )}
@@ -192,8 +293,10 @@ export function WidgetView() {
                         <Paperclip size={14} />
                       </button>
                       <button
-                        className={`icon-btn${pickingFor === t.id ? ' on' : ''}`}
-                        onClick={() => setPickingFor((cur) => (cur === t.id ? null : t.id))}
+                        className={`icon-btn${pickingFor === t.id ? " on" : ""}`}
+                        onClick={() =>
+                          setPickingFor((cur) => (cur === t.id ? null : t.id))
+                        }
                         aria-label={`Link an app to "${t.title}"`}
                         title="Link an app — its windows count as working on this"
                       >
@@ -201,7 +304,9 @@ export function WidgetView() {
                       </button>
                       <button
                         className="icon-btn"
-                        onClick={() => void run(() => api.setInProgress(t.id, false))}
+                        onClick={() =>
+                          void run(() => api.setInProgress(t.id, false))
+                        }
                         aria-label={`Pause "${t.title}"`}
                         title="Pause"
                       >
@@ -216,7 +321,13 @@ export function WidgetView() {
                         onPick={(app) => {
                           setPickingFor(null);
                           void run(() =>
-                            api.addAttachments(t.id, [{ type: 'app', path: app.exe_path, name: app.name }]),
+                            api.addAttachments(t.id, [
+                              {
+                                type: "app",
+                                path: app.exe_path,
+                                name: app.name,
+                              },
+                            ]),
                           );
                         }}
                       />
@@ -240,4 +351,13 @@ export function WidgetView() {
       )}
     </div>
   );
+}
+
+/** When the person left, as a time today or a day and time before that. */
+function awayText(since: string): string {
+  const day =
+    localDate(since) === localDate(new Date().toISOString())
+      ? ""
+      : `${new Date(since).toLocaleDateString(undefined, { weekday: "short" })} `;
+  return `You were away from ${day}${localTime(since)}`;
 }
