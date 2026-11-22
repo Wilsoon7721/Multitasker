@@ -845,6 +845,8 @@ html.switcher body {
 }
 
 .widget-card {
+  display: flex;
+  flex-direction: column;
   margin: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -881,7 +883,6 @@ html.switcher body {
 }
 
 .widget-list {
-  max-height: 440px;
   margin: 0;
   padding: 4px;
   list-style: none;
@@ -1265,10 +1266,6 @@ html.switcher body {
   padding: 8px 14px 14px;
   color: var(--text-3);
   font-size: 12.5px;
-}
-
-.widget-todo-list {
-  max-height: 220px;
 }
 
 .todo-item {
@@ -2780,4 +2777,43 @@ button.secondary.small {
 
 .choice-detail.error-text {
   color: var(--danger);
+}
+
+/* ───────────── Widget sizing ───────────── */
+
+/* Below the header, everything scrolls together once the widget reaches the height it was dragged to. */
+.widget-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.resize-edge {
+  position: fixed;
+  z-index: 50;
+}
+
+.resize-west {
+  top: 8px;
+  bottom: 14px;
+  left: 0;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.resize-south {
+  right: 8px;
+  bottom: 0;
+  left: 14px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.resize-southwest {
+  bottom: 0;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nesw-resize;
 }

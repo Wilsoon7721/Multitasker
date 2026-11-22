@@ -1,4 +1,3 @@
-import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import {
   AppWindow,
   ArrowRightLeft,
@@ -25,11 +24,8 @@ import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 import { useActivity } from './useActivity';
 import { hours, spentBetween, startOfDay, useSessions } from './useTimeSpent';
 import { useTasks } from './useTasks';
+import { MARGIN, useWidgetSize, type Edge } from './useWidgetSize';
 
-const WIDTH = 360;
-const MAX_HEIGHT = 560;
-/** The card's margin on every side; the window includes it so the shadow isn't clipped. */
-const MARGIN = 8;
 const EXPANDED_KEY = 'widget.expanded';
 
 /** Whether the to-do list was left open; a per-computer convenience, so local storage is enough. */
@@ -116,17 +112,9 @@ export function WidgetView() {
     return onWidgetAppearance(apply);
   }, []);
 
-  // The window hugs the card, so the transparent area around it never blocks clicks on what's behind.
-  useEffect(() => {
-    const el = card.current;
-    if (!el) return;
-    const win = getCurrentWindow();
-    const fit = () =>
-      void win.setSize(new LogicalSize(WIDTH, Math.min(MAX_HEIGHT, Math.ceil(el.offsetHeight) + MARGIN * 2)));
-    const observer = new ResizeObserver(fit);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  const header = useRef<HTMLElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const { startResize } = useWidgetSize(header, body);
 
   // Drop a file you're working on onto its task; with only one task going, anywhere on the card will do.
   useFileDrop((paths, zone) => {
@@ -142,8 +130,9 @@ export function WidgetView() {
     });
 
   return (
-    <div className="widget-card" ref={card}>
-      <header className="widget-header" data-tauri-drag-region>
+    <div className="widget-card" ref={card} style={{ maxHeight: `calc(100vh - ${MARGIN * 2}px)` }}>
+      <ResizeEdges onStart={startResize} />
+      <header className="widget-header" ref={header} data-tauri-drag-region>
         <h1 data-tauri-drag-region>
           In progress <span className="count">{active.length}</span>
         </h1>
@@ -179,232 +168,236 @@ export function WidgetView() {
         </button>
       </header>
 
-      {error && <p className="widget-error">{error}</p>}
+      <div className="widget-scroll">
+        <div className="widget-body" ref={body}>
+          {error && <p className="widget-error">{error}</p>}
 
-      {suggestion && (
-        <div className="suggestion" role="status">
-          <span className="live-dot" aria-hidden />
-          <div className="suggestion-text">
-            <span className="suggestion-title" title={suggestion.title}>
-              Working on “{suggestion.title}”?
-            </span>
-            <span className="suggestion-reason">{suggestion.reason}</span>
-          </div>
-          <button
-            className="note-action"
-            onClick={() =>
-              void run(() => api.switchTask(suggestion.task_id)).then((ok) => ok && setPickUpId(suggestion.task_id))
-            }
-            aria-label={active.length ? 'Switch to it' : 'Start it'}
-            title={active.length ? 'Switch to it' : 'Start it'}
-          >
-            <Play size={14} />
-          </button>
-          <button
-            className="icon-btn"
-            onClick={() => void run(() => api.dismissSuggestion(suggestion.task_id))}
-            aria-label="Not now"
-            title="Not now (quiet for 30 minutes)"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
+          {suggestion && (
+            <div className="suggestion" role="status">
+              <span className="live-dot" aria-hidden />
+              <div className="suggestion-text">
+                <span className="suggestion-title" title={suggestion.title}>
+                  Working on “{suggestion.title}”?
+                </span>
+                <span className="suggestion-reason">{suggestion.reason}</span>
+              </div>
+              <button
+                className="note-action"
+                onClick={() =>
+                  void run(() => api.switchTask(suggestion.task_id)).then((ok) => ok && setPickUpId(suggestion.task_id))
+                }
+                aria-label={active.length ? 'Switch to it' : 'Start it'}
+                title={active.length ? 'Switch to it' : 'Start it'}
+              >
+                <Play size={14} />
+              </button>
+              <button
+                className="icon-btn"
+                onClick={() => void run(() => api.dismissSuggestion(suggestion.task_id))}
+                aria-label="Not now"
+                title="Not now (quiet for 30 minutes)"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
 
-      {nudge && (
-        <DueNudge
-          key={`due-${nudge.id}`}
-          task={nudge}
-          now={now}
-          somethingInProgress={active.length > 0}
-          run={run}
-          onLater={() => nudgesPutOff((n) => n + 1)}
-        />
-      )}
+          {nudge && (
+            <DueNudge
+              key={`due-${nudge.id}`}
+              task={nudge}
+              now={now}
+              somethingInProgress={active.length > 0}
+              run={run}
+              onLater={() => nudgesPutOff((n) => n + 1)}
+            />
+          )}
 
-      {snapshot.link_offer && <LinkOfferNote offer={snapshot.link_offer} run={run} />}
+          {snapshot.link_offer && <LinkOfferNote offer={snapshot.link_offer} run={run} />}
 
-      {leftOffFor && (
-        <LeftOffPrompt
-          key={`left-off-${leftOffFor.id}`}
-          task={leftOffFor}
-          run={run}
-          onClose={() => setLeftOffFor(null)}
-        />
-      )}
+          {leftOffFor && (
+            <LeftOffPrompt
+              key={`left-off-${leftOffFor.id}`}
+              task={leftOffFor}
+              run={run}
+              onClose={() => setLeftOffFor(null)}
+            />
+          )}
 
-      {pickUp && (
-        <PickUpBar
-          key={`pick-up-${pickUp.id}`}
-          task={pickUp}
-          deviceId={deviceId}
-          noteOnly={!!picking?.noteOnly}
-          run={run}
-          onClose={() => setPickUpId(null)}
-        />
-      )}
+          {pickUp && (
+            <PickUpBar
+              key={`pick-up-${pickUp.id}`}
+              task={pickUp}
+              deviceId={deviceId}
+              noteOnly={!!picking?.noteOnly}
+              run={run}
+              onClose={() => setPickUpId(null)}
+            />
+          )}
 
-      {switched && (
-        <div className="suggestion switched" role="status">
-          <ArrowRightLeft size={14} className="away-icon" aria-hidden />
-          <div className="suggestion-text">
-            <span className="suggestion-title" title={switched.to.title}>
-              Switched to “{switched.to.title}”
-            </span>
-            <span className="suggestion-reason" title={switched.reason}>
-              {switched.from.length ? `Paused ${switched.from.map((t) => `“${t.title}”`).join(', ')} · ` : ''}
-              {switched.reason}
-            </span>
-          </div>
-          <button
-            className="note-action quiet"
-            onClick={() => void run(api.undoSwitch)}
-            aria-label="Undo the switch"
-            title="Undo the switch"
-          >
-            <Undo2 size={14} />
-          </button>
-          <button className="icon-btn" onClick={() => void run(api.dismissSwitch)} aria-label="OK" title="OK">
-            <X size={14} />
-          </button>
-        </div>
-      )}
+          {switched && (
+            <div className="suggestion switched" role="status">
+              <ArrowRightLeft size={14} className="away-icon" aria-hidden />
+              <div className="suggestion-text">
+                <span className="suggestion-title" title={switched.to.title}>
+                  Switched to “{switched.to.title}”
+                </span>
+                <span className="suggestion-reason" title={switched.reason}>
+                  {switched.from.length ? `Paused ${switched.from.map((t) => `“${t.title}”`).join(', ')} · ` : ''}
+                  {switched.reason}
+                </span>
+              </div>
+              <button
+                className="note-action quiet"
+                onClick={() => void run(api.undoSwitch)}
+                aria-label="Undo the switch"
+                title="Undo the switch"
+              >
+                <Undo2 size={14} />
+              </button>
+              <button className="icon-btn" onClick={() => void run(api.dismissSwitch)} aria-label="OK" title="OK">
+                <X size={14} />
+              </button>
+            </div>
+          )}
 
-      {paused.length > 0 && (
-        <div className="suggestion away" role="status">
-          <Coffee size={14} className="away-icon" aria-hidden />
-          <div className="suggestion-text">
-            <span className="suggestion-title" title={paused.map((p) => p.title).join(', ')}>
-              {paused.length === 1 ? `Paused “${paused[0].title}”` : `Paused ${paused.length} tasks`}
-            </span>
-            <span className="suggestion-reason">{awayText(paused[0].since)}</span>
-          </div>
-          <button
-            className="note-action"
-            onClick={() =>
-              void run(async () => Promise.all(paused.map((p) => api.setInProgress(p.task_id, true)))).then(
-                (ok) => ok && setPickUpId(paused[0].task_id),
-              )
-            }
-            aria-label="Resume"
-            title="Resume"
-          >
-            <Play size={14} />
-          </button>
-          <button
-            className="icon-btn"
-            onClick={() => void run(api.dismissPaused)}
-            aria-label="Keep paused"
-            title="Keep paused"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
+          {paused.length > 0 && (
+            <div className="suggestion away" role="status">
+              <Coffee size={14} className="away-icon" aria-hidden />
+              <div className="suggestion-text">
+                <span className="suggestion-title" title={paused.map((p) => p.title).join(', ')}>
+                  {paused.length === 1 ? `Paused “${paused[0].title}”` : `Paused ${paused.length} tasks`}
+                </span>
+                <span className="suggestion-reason">{awayText(paused[0].since)}</span>
+              </div>
+              <button
+                className="note-action"
+                onClick={() =>
+                  void run(async () => Promise.all(paused.map((p) => api.setInProgress(p.task_id, true)))).then(
+                    (ok) => ok && setPickUpId(paused[0].task_id),
+                  )
+                }
+                aria-label="Resume"
+                title="Resume"
+              >
+                <Play size={14} />
+              </button>
+              <button
+                className="icon-btn"
+                onClick={() => void run(api.dismissPaused)}
+                aria-label="Keep paused"
+                title="Keep paused"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
 
-      <section ref={activeZone} className={`widget-active drag-${dragState}`}>
-        {tasks !== null && active.length === 0 && dragState === 'idle' && (
-          <button className="widget-empty" onClick={expanded ? undefined : toggleExpanded} disabled={expanded}>
-            {expanded
-              ? 'Nothing in progress — drag a task up to start it'
-              : 'Nothing in progress — pick a task to start'}
-          </button>
-        )}
+          <section ref={activeZone} className={`widget-active drag-${dragState}`}>
+            {tasks !== null && active.length === 0 && dragState === 'idle' && (
+              <button className="widget-empty" onClick={expanded ? undefined : toggleExpanded} disabled={expanded}>
+                {expanded
+                  ? 'Nothing in progress — drag a task up to start it'
+                  : 'Nothing in progress — pick a task to start'}
+              </button>
+            )}
 
-        {dragState !== 'idle' && <p className="drop-hint">Drop here to start</p>}
+            {dragState !== 'idle' && <p className="drop-hint">Drop here to start</p>}
 
-        {active.length > 0 && (
-          <ul className="widget-list">
-            {active.map((t) => {
-              const due = dueInfo(t, now);
-              const live = activeNow(t.id, now);
-              return (
-                <Fragment key={t.id}>
-                  <li className={`widget-item${live ? ' live' : ''}`} data-drop={`task:${t.id}`}>
-                    <CheckButton
-                      done={false}
-                      title={t.title}
-                      onToggle={() => void run(() => api.update(t.id, { status: 'done' }))}
-                    />
-                    <div className="widget-task">
-                      <span className="widget-title" title={live ? `${t.title} — ${live.reason}` : t.title}>
-                        {live && <span className="live-dot" aria-label={`Active now: ${live.reason}`} />}
-                        {t.title}
-                      </span>
-                      <span className="card-meta">
-                        <span className="meta accent" title="Time spent on it in total">
-                          {workedTime(t, now)}
-                        </span>
-                        {t.category && <span className="tag">{t.category}</span>}
-                        {due && (
-                          <span className={`meta${due.late ? ' late' : due.soon ? ' soon' : ''}`}>
-                            <CalendarDays size={11} /> {due.text}
+            {active.length > 0 && (
+              <ul className="widget-list">
+                {active.map((t) => {
+                  const due = dueInfo(t, now);
+                  const live = activeNow(t.id, now);
+                  return (
+                    <Fragment key={t.id}>
+                      <li className={`widget-item${live ? ' live' : ''}`} data-drop={`task:${t.id}`}>
+                        <CheckButton
+                          done={false}
+                          title={t.title}
+                          onToggle={() => void run(() => api.update(t.id, { status: 'done' }))}
+                        />
+                        <div className="widget-task">
+                          <span className="widget-title" title={live ? `${t.title} — ${live.reason}` : t.title}>
+                            {live && <span className="live-dot" aria-label={`Active now: ${live.reason}`} />}
+                            {t.title}
                           </span>
-                        )}
-                        {t.attachments.length > 0 && (
-                          <span className="meta" title={t.attachments.map((a) => a.name).join('\n')}>
-                            <Paperclip size={11} /> {t.attachments.length}
+                          <span className="card-meta">
+                            <span className="meta accent" title="Time spent on it in total">
+                              {workedTime(t, now)}
+                            </span>
+                            {t.category && <span className="tag">{t.category}</span>}
+                            {due && (
+                              <span className={`meta${due.late ? ' late' : due.soon ? ' soon' : ''}`}>
+                                <CalendarDays size={11} /> {due.text}
+                              </span>
+                            )}
+                            {t.attachments.length > 0 && (
+                              <span className="meta" title={t.attachments.map((a) => a.name).join('\n')}>
+                                <Paperclip size={11} /> {t.attachments.length}
+                              </span>
+                            )}
                           </span>
-                        )}
-                      </span>
-                    </div>
-                    <div className="widget-actions">
-                      <button
-                        className="icon-btn"
-                        onClick={() => attach(t.id)}
-                        aria-label={`Attach files to "${t.title}"`}
-                        title="Attach files"
-                      >
-                        <Paperclip size={14} />
-                      </button>
-                      <button
-                        className={`icon-btn${pickingFor === t.id ? ' on' : ''}`}
-                        onClick={() => setPickingFor((cur) => (cur === t.id ? null : t.id))}
-                        aria-label={`Link an app to "${t.title}"`}
-                        title="Link an app — its windows count as working on this"
-                      >
-                        <AppWindow size={14} />
-                      </button>
-                      <button
-                        className="icon-btn"
-                        onClick={() => pause(t)}
-                        aria-label={`Pause "${t.title}"`}
-                        title="Pause"
-                      >
-                        <Pause size={14} />
-                      </button>
-                    </div>
-                  </li>
-                  {pickingFor === t.id && (
-                    <li className="widget-picker">
-                      <AppPicker
-                        onClose={() => setPickingFor(null)}
-                        onPick={(app) => {
-                          setPickingFor(null);
-                          void run(() =>
-                            api.addAttachments(t.id, [{ type: 'app', path: app.exe_path, name: app.name }]),
-                          );
-                        }}
-                      />
-                    </li>
-                  )}
-                </Fragment>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+                        </div>
+                        <div className="widget-actions">
+                          <button
+                            className="icon-btn"
+                            onClick={() => attach(t.id)}
+                            aria-label={`Attach files to "${t.title}"`}
+                            title="Attach files"
+                          >
+                            <Paperclip size={14} />
+                          </button>
+                          <button
+                            className={`icon-btn${pickingFor === t.id ? ' on' : ''}`}
+                            onClick={() => setPickingFor((cur) => (cur === t.id ? null : t.id))}
+                            aria-label={`Link an app to "${t.title}"`}
+                            title="Link an app — its windows count as working on this"
+                          >
+                            <AppWindow size={14} />
+                          </button>
+                          <button
+                            className="icon-btn"
+                            onClick={() => pause(t)}
+                            aria-label={`Pause "${t.title}"`}
+                            title="Pause"
+                          >
+                            <Pause size={14} />
+                          </button>
+                        </div>
+                      </li>
+                      {pickingFor === t.id && (
+                        <li className="widget-picker">
+                          <AppPicker
+                            onClose={() => setPickingFor(null)}
+                            onPick={(app) => {
+                              setPickingFor(null);
+                              void run(() =>
+                                api.addAttachments(t.id, [{ type: 'app', path: app.exe_path, name: app.name }]),
+                              );
+                            }}
+                          />
+                        </li>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
 
-      {expanded && tasks !== null && (
-        <WidgetTodo
-          tasks={todo}
-          run={run}
-          onStarted={(t) => setPickUpId(t.id)}
-          target={activeZone}
-          onDragChange={setDragState}
-          onCollapse={toggleExpanded}
-        />
-      )}
+          {expanded && tasks !== null && (
+            <WidgetTodo
+              tasks={todo}
+              run={run}
+              onStarted={(t) => setPickUpId(t.id)}
+              target={activeZone}
+              onDragChange={setDragState}
+              onCollapse={toggleExpanded}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -416,4 +409,27 @@ function awayText(since: string): string {
       ? ''
       : `${new Date(since).toLocaleDateString(undefined, { weekday: 'short' })} `;
   return `You were away from ${day}${localTime(since)}`;
+}
+
+/** Grips on the widget's left and bottom edges; it's pinned top-right, so those are the ones that move. */
+function ResizeEdges({ onStart }: { onStart: (edge: Edge) => void }) {
+  const grip = (edge: Edge, label: string) => (
+    <div
+      className={`resize-edge resize-${edge.toLowerCase()}`}
+      onMouseDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        onStart(edge);
+      }}
+      aria-hidden
+      title={label}
+    />
+  );
+  return (
+    <>
+      {grip('West', 'Drag to make it wider or narrower')}
+      {grip('South', 'Drag to set how tall it can grow')}
+      {grip('SouthWest', 'Drag to resize')}
+    </>
+  );
 }
