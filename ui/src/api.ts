@@ -405,6 +405,7 @@ export const api = {
   workSessions: (from: string, to: string) => invoke<WorkSession[]>('work_sessions', { from, to }),
   hideSwitcher: () => invoke('hide_switcher'),
   switcherShortcut: () => invoke<string | null>('switcher_shortcut'),
+  switcherProblem: () => invoke<string | null>('switcher_problem'),
   setSwitcherShortcut: (shortcut: string | null) => invoke('set_switcher_shortcut', { shortcut }),
   checkForUpdates: () => invoke<boolean>('check_for_updates'),
   installUpdate: () => invoke('install_update'),

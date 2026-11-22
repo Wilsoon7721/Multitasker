@@ -636,12 +636,14 @@ function AppSection({ run }: { run: Run }) {
   const [checking, setChecking] = useState(false);
   const [upToDate, setUpToDate] = useState(false);
   const [shortcut, setShortcut] = useState<string | null | undefined>(undefined);
+  const [shortcutProblem, setShortcutProblem] = useState<string | null>(null);
 
   useEffect(() => {
     const load = () => void api.updateInfo().then(setInfo, () => {});
     load();
     void api.startWithWindows().then(setStartup, () => {});
     void api.switcherShortcut().then(setShortcut, () => {});
+    void api.switcherProblem().then(setShortcutProblem, () => {});
     return onUpdateReady(load);
   }, []);
 
@@ -687,6 +689,7 @@ function AppSection({ run }: { run: Run }) {
           <span className="choice-detail">
             A hotkey that works anywhere: find a task to switch to, start alongside or pause, or add a new one.
           </span>
+          {shortcutProblem && <span className="choice-detail error-text">{shortcutProblem}</span>}
         </span>
         <select
           className="inline-select"
@@ -696,7 +699,10 @@ function AppSection({ run }: { run: Run }) {
             const next = e.target.value || null;
             const before = shortcut;
             setShortcut(next);
-            void run(() => api.setSwitcherShortcut(next)).then((ok) => !ok && setShortcut(before));
+            void run(() => api.setSwitcherShortcut(next)).then((ok) => {
+              if (!ok) setShortcut(before);
+              else setShortcutProblem(null);
+            });
           }}
         >
           {SHORTCUTS.map((s) => (

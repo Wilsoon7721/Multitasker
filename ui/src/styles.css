@@ -2727,3 +2727,7 @@ button.secondary.small {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.choice-detail.error-text {
+  color: var(--danger);
+}

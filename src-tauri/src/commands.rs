@@ -924,6 +924,12 @@ pub fn hide_switcher(app: AppHandle) {
     crate::switcher::hide(&app);
 }
 
+/// Why the switcher's hotkey isn't working, if it isn't.
+#[tauri::command]
+pub fn switcher_problem() -> Option<String> {
+    crate::switcher::problem()
+}
+
 #[tauri::command]
 pub fn switcher_shortcut(state: State<'_, AppState>) -> Option<String> {
     settings::load(&state.data_dir).switcher_shortcut

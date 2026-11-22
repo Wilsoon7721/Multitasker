@@ -149,8 +149,8 @@ pub fn run() {
                 eprintln!("couldn't set starting with Windows: {e}");
             }
             updates::start(app.handle());
-            if let Err(e) = switcher::set_shortcut(app.handle(), prefs.switcher_shortcut.as_deref()) {
-                eprintln!("{e}");
+            if let Some(free) = switcher::start(app.handle(), prefs.switcher_shortcut.as_deref()) {
+                let _ = settings::update(&app.state::<AppState>().data_dir, |s| s.switcher_shortcut = Some(free));
             }
             // Started by Windows at sign-in, it opens quietly to the tray and widget.
             if !updates::started_at_sign_in() {
@@ -209,6 +209,7 @@ pub fn run() {
             commands::hide_switcher,
             commands::switcher_shortcut,
             commands::set_switcher_shortcut,
+            commands::switcher_problem,
             commands::update_info,
             commands::check_for_updates,
             commands::install_update,

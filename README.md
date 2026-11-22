@@ -47,7 +47,7 @@ Early development. What works today:
   the widget with a button to start it; overdue ones show for two days.
 - **Where time went**: the Time view shows today, or any day or week, as a total, a bar per day and each task's and
   category's share; the widget shows today's total. Every stretch of work is kept for this, whichever task list is used.
-- **Quick switcher**: Ctrl+Alt+Space anywhere opens a search of your open tasks. Enter switches to one (pausing what
+- **Quick switcher**: Ctrl+Alt+Space (or the next free choice, if another program has it) opens a search of your open tasks. Enter switches to one (pausing what
   you were on), Shift+Enter starts it alongside, Ctrl+Enter pauses it, and typing something new adds it. The hotkey
   can be changed or turned off in Settings.
 - **Getting back into a task**: when a task pauses or you switch away, the widget asks where you left off, and the

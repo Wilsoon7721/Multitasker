@@ -653,6 +653,9 @@ mockIPC(
       case 'hide_switcher':
         return null;
 
+      case 'switcher_problem':
+        return null;
+
       case 'switcher_shortcut':
         return switcherShortcut;
 
