@@ -1,4 +1,20 @@
-import { ChartColumn, CircleCheckBig, Hash, Inbox, ListTodo, Settings, Sun, Timer, X } from 'lucide-react';
+import {
+  ChartColumn,
+  Check,
+  CircleCheckBig,
+  Hash,
+  Inbox,
+  ListTodo,
+  Package,
+  PanelRight,
+  Pause,
+  Play,
+  Settings,
+  Sun,
+  Timer,
+  Undo2,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, type NewAttachment, type TaskView } from './api';
 import { Composer } from './components/Composer';
@@ -14,7 +30,9 @@ import { useActivity } from './useActivity';
 import { useDevices } from './useDevices';
 import { useTasks } from './useTasks';
 import { ErrorNote } from './components/ErrorNote';
-import { OPEN_VIEW_KEY, usePlan } from './usePlan';
+import { WindhawkNote } from './components/WindhawkNote';
+import { useContextMenu, type MenuEntry } from './components/ContextMenu';
+import { OPEN_TASK_KEY, OPEN_VIEW_KEY, usePlan } from './usePlan';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 
 type View = 'today' | 'open' | 'active' | 'todo' | 'done' | 'time' | 'settings';
@@ -66,6 +84,10 @@ export function App() {
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === OPEN_VIEW_KEY && e.newValue) setView(e.newValue.split(':')[0] as View);
+      if (e.key === OPEN_TASK_KEY && e.newValue) {
+        setView('open');
+        setSelectedId(e.newValue.split('|')[0]);
+      }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -118,6 +140,45 @@ export function App() {
     if (handInCandidates(task, deviceId).length > 0) setHandingIn({ task });
   };
 
+  const menu = useContextMenu();
+
+  /** Everything that can be done to a task, on right-click. */
+  const cardMenu = (t: TaskView): MenuEntry[] => {
+    const done = t.status === 'done';
+    return [
+      { label: 'Open details', icon: <PanelRight size={15} />, onSelect: () => setSelectedId(t.id) },
+      null,
+      ...(done
+        ? []
+        : [
+            {
+              label: t.in_progress ? 'Pause' : 'Start',
+              icon: t.in_progress ? <Pause size={15} /> : <Play size={15} />,
+              onSelect: () => void run(() => api.setInProgress(t.id, !t.in_progress)),
+            },
+          ]),
+      {
+        label: done ? 'Mark not done' : 'Mark done',
+        icon: done ? <Undo2 size={15} /> : <Check size={15} />,
+        onSelect: () =>
+          void run(() => api.update(t.id, { status: done ? 'todo' : 'done' })).then(
+            (ok) => ok && !done && offerHandIn(t),
+          ),
+      },
+      { label: 'Hand in…', icon: <Package size={15} />, onSelect: () => setHandingIn({ task: t }) },
+      ...(done
+        ? []
+        : [
+            null,
+            {
+              label: plan.planned.has(t.id) ? "Take off today's plan" : 'Plan for today',
+              icon: <Sun size={15} />,
+              onSelect: () => plan.toggle(t.id),
+            },
+          ]),
+    ];
+  };
+
   const card = (t: TaskView) => (
     <TaskCard
       key={t.id}
@@ -130,12 +191,14 @@ export function App() {
       onDone={offerHandIn}
       planned={plan.planned.has(t.id)}
       onTogglePlan={() => plan.toggle(t.id)}
+      onMenu={(e) => menu.show(e, cardMenu(t))}
     />
   );
 
   return (
     <div className="shell">
       <TitleBar onError={setError} />
+      {menu.menu}
 
       <div className="body">
         <nav className="sidebar" aria-label="Views">
@@ -192,6 +255,8 @@ export function App() {
                 </button>
               )}
             </header>
+
+            <WindhawkNote />
 
             {error && (
               <ErrorNote

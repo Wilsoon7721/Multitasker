@@ -73,6 +73,17 @@ export function usePlan() {
   return { planned: new Set(plan.tasks), order: plan.tasks, isSkipped: plan.skipped, toggle, skip };
 }
 
+/** Asks the main window to show a task's details. */
+export const OPEN_TASK_KEY = 'open-task';
+
+export function requestTask(id: string) {
+  try {
+    localStorage.setItem(OPEN_TASK_KEY, `${id}|${Date.now()}`);
+  } catch {
+    // Without storage the main window opens where it was.
+  }
+}
+
 /** Asks the main window to open a view, then brings it up. */
 export function requestView(view: string) {
   try {

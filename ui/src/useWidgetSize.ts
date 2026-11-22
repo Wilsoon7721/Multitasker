@@ -50,6 +50,8 @@ export function useWidgetSize(header: RefObject<HTMLElement | null>, body: RefOb
   sizeRef.current = size;
   const drag = useRef<Drag | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Room a menu needs below the window's top while it's open, which can be more than the card itself.
+  const room = useRef(0);
 
   /** Sizes the window to the card, keeping its right edge where it is, since the widget is pinned top-right. */
   const fit = async () => {
@@ -58,7 +60,7 @@ export function useWidgetSize(header: RefObject<HTMLElement | null>, body: RefOb
     const natural = header.current.offsetHeight + body.current.offsetHeight + 2 + MARGIN * 2;
     const { width, maxHeight } = sizeRef.current;
     const w = width + MARGIN * 2;
-    const h = Math.min(maxHeight + MARGIN * 2, natural);
+    const h = Math.max(Math.min(maxHeight + MARGIN * 2, natural), room.current);
     const scale = await win.scaleFactor();
     const [pos, outer] = await Promise.all([win.outerPosition(), win.outerSize()]);
     const right = (pos.x + outer.width) / scale;
@@ -128,5 +130,11 @@ export function useWidgetSize(header: RefObject<HTMLElement | null>, body: RefOb
     setDragging(false);
   };
 
-  return { size, dragging, grip: { start, move, end } };
+  /** Makes room for a menu reaching `height` pixels down the window, or gives it back with `null`. */
+  const reserve = (height: number | null) => {
+    room.current = height ?? 0;
+    void fit();
+  };
+
+  return { size, dragging, grip: { start, move, end }, reserve };
 }

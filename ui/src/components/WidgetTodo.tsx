@@ -26,8 +26,10 @@ export function WidgetTodo(props: {
   onStarted?: (task: TaskView) => void;
   /** Today's plan, shown first. */
   planned?: Set<string>;
+  /** Right-clicking a task opens its menu. */
+  onMenu?: (e: React.MouseEvent, task: TaskView) => void;
 }) {
-  const { tasks, run, target, onDragChange, onCollapse, onStarted, planned } = props;
+  const { tasks, run, target, onDragChange, onCollapse, onStarted, planned, onMenu } = props;
   const [drag, setDrag] = useState<Drag | null>(null);
   const origin = useRef({ x: 0, y: 0 });
   const now = useNow();
@@ -90,6 +92,7 @@ export function WidgetTodo(props: {
                   onPointerMove={onPointerMove}
                   onPointerUp={() => finish(true)}
                   onPointerCancel={() => finish(false)}
+                  onContextMenu={(e) => onMenu?.(e, t)}
                 >
                   <GripVertical size={14} className="grip" />
                   <div className="widget-task">

@@ -2,12 +2,14 @@ import {
   AppWindow,
   ArrowRightLeft,
   CalendarDays,
+  Check,
   ChevronDown,
   Coffee,
   Hourglass,
   ListChecks,
   Maximize2,
   MonitorDown,
+  MoreHorizontal,
   Paperclip,
   Pause,
   Play,
@@ -17,7 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { api, onWidgetAppearance } from './api';
+import { api, onWidgetAppearance, type TaskView } from './api';
 import { AppPicker } from './components/AppPicker';
 import { CheckButton } from './components/CheckButton';
 import { DueNudge, nudgeFor } from './components/DueNudge';
@@ -33,8 +35,9 @@ import { useTasks } from './useTasks';
 import { ErrorNote } from './components/ErrorNote';
 import { JobNotes, useJobs } from './components/Jobs';
 import { WaitPicker } from './components/WaitPicker';
+import { useContextMenu, type MenuEntry } from './components/ContextMenu';
 import { useWidgetSize, type Edge } from './useWidgetSize';
-import { requestView, usePlan } from './usePlan';
+import { requestTask, requestView, usePlan } from './usePlan';
 
 const EXPANDED_KEY = 'widget.expanded';
 
@@ -145,7 +148,78 @@ export function WidgetView() {
 
   const header = useRef<HTMLElement>(null);
   const body = useRef<HTMLDivElement>(null);
-  const { size, dragging, grip } = useWidgetSize(header, body);
+  const { size, dragging, grip, reserve } = useWidgetSize(header, body);
+  const menu = useContextMenu(reserve);
+
+  const openInApp = (t: TaskView) => {
+    requestTask(t.id);
+    void run(api.openMain);
+  };
+
+  /** Everything that can be done to a task in progress, for its right-click menu and its "more" button. */
+  const activeMenu = (t: TaskView): MenuEntry[] => [
+    { label: 'Pause', icon: <Pause size={15} />, onSelect: () => pause(t) },
+    {
+      label: 'Mark done',
+      icon: <Check size={15} />,
+      onSelect: () => void run(() => api.update(t.id, { status: 'done' })),
+    },
+    null,
+    {
+      label: 'Wait for something to finish…',
+      icon: <Hourglass size={15} />,
+      onSelect: () => {
+        setPickingFor(null);
+        setWaitingFor(t.id);
+      },
+    },
+    { label: 'Attach files…', icon: <Paperclip size={15} />, onSelect: () => attach(t.id) },
+    {
+      label: 'Link an app…',
+      icon: <AppWindow size={15} />,
+      onSelect: () => {
+        setWaitingFor(null);
+        setPickingFor(t.id);
+      },
+    },
+    ...(deviceId && !t.in_progress_on.includes(deviceId)
+      ? [
+          {
+            label: 'Continue on this computer',
+            icon: <MonitorDown size={15} />,
+            onSelect: () => void run(() => api.setInProgress(t.id, true)),
+          },
+        ]
+      : []),
+    null,
+    {
+      label: plan.planned.has(t.id) ? "Take off today's plan" : 'Plan for today',
+      icon: <Sun size={15} />,
+      onSelect: () => plan.toggle(t.id),
+    },
+    { label: 'Open in MultiTasker', icon: <Maximize2 size={15} />, onSelect: () => openInApp(t) },
+  ];
+
+  /** The same for a task waiting in the to-do list. */
+  const todoMenu = (t: TaskView): MenuEntry[] => [
+    {
+      label: 'Start',
+      icon: <Play size={15} />,
+      onSelect: () => void run(() => api.setInProgress(t.id, true)).then((ok) => ok && setPickUpId(t.id)),
+    },
+    {
+      label: 'Mark done',
+      icon: <Check size={15} />,
+      onSelect: () => void run(() => api.update(t.id, { status: 'done' })),
+    },
+    null,
+    {
+      label: plan.planned.has(t.id) ? "Take off today's plan" : 'Plan for today',
+      icon: <Sun size={15} />,
+      onSelect: () => plan.toggle(t.id),
+    },
+    { label: 'Open in MultiTasker', icon: <Maximize2 size={15} />, onSelect: () => openInApp(t) },
+  ];
 
   // Drop a file you're working on onto its task; with only one task going, anywhere on the card will do.
   useFileDrop((paths, zone) => {
@@ -393,7 +467,11 @@ export function WidgetView() {
                   const live = activeNow(t.id, now);
                   return (
                     <Fragment key={t.id}>
-                      <li className={`widget-item${live ? ' live' : ''}`} data-drop={`task:${t.id}`}>
+                      <li
+                        className={`widget-item${live ? ' live' : ''}`}
+                        data-drop={`task:${t.id}`}
+                        onContextMenu={(e) => menu.show(e, activeMenu(t))}
+                      >
                         <CheckButton
                           done={false}
                           title={t.title}
@@ -441,42 +519,14 @@ export function WidgetView() {
                         </div>
                         <div className="widget-actions">
                           <button
-                            className="icon-btn"
-                            onClick={() => attach(t.id)}
-                            aria-label={`Attach files to "${t.title}"`}
-                            title="Attach files"
+                            className={`icon-btn${pickingFor === t.id || waitingFor === t.id ? ' on' : ''}`}
+                            onClick={(e) => menu.showFor(e.currentTarget, activeMenu(t))}
+                            aria-label={`More for "${t.title}"`}
+                            aria-haspopup="menu"
+                            title="More (or right-click the task)"
                           >
-                            <Paperclip size={14} />
+                            <MoreHorizontal size={14} />
                           </button>
-                          <button
-                            className={`icon-btn${waitingFor === t.id ? ' on' : ''}`}
-                            onClick={() => {
-                              setPickingFor(null);
-                              setWaitingFor((cur) => (cur === t.id ? null : t.id));
-                            }}
-                            aria-label={`Wait for something to finish for "${t.title}"`}
-                            title="Wait for something to finish — pauses this and tells you when it's done"
-                          >
-                            <Hourglass size={14} />
-                          </button>
-                          <button
-                            className={`icon-btn${pickingFor === t.id ? ' on' : ''}`}
-                            onClick={() => setPickingFor((cur) => (cur === t.id ? null : t.id))}
-                            aria-label={`Link an app to "${t.title}"`}
-                            title="Link an app — its windows count as working on this"
-                          >
-                            <AppWindow size={14} />
-                          </button>
-                          {deviceId && !t.in_progress_on.includes(deviceId) && (
-                            <button
-                              className="icon-btn"
-                              onClick={() => void run(() => api.setInProgress(t.id, true))}
-                              aria-label={`Continue "${t.title}" on this computer`}
-                              title="Continue on this computer: start it here too and open its files and pages"
-                            >
-                              <MonitorDown size={14} />
-                            </button>
-                          )}
                           <button
                             className="icon-btn"
                             onClick={() => pause(t)}
@@ -526,6 +576,7 @@ export function WidgetView() {
               tasks={todo}
               run={run}
               onStarted={(t) => setPickUpId(t.id)}
+              onMenu={(e, t) => menu.show(e, todoMenu(t))}
               planned={plan.planned}
               target={activeZone}
               onDragChange={setDragState}
@@ -534,6 +585,7 @@ export function WidgetView() {
           )}
         </div>
       </div>
+      {menu.menu}
     </div>
   );
 }

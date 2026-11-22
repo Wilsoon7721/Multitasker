@@ -17,8 +17,10 @@ export function TaskCard(props: {
   /** Whether it's on today's plan, and how to change that. */
   planned?: boolean;
   onTogglePlan?: () => void;
+  /** Right-clicking opens the task's menu. */
+  onMenu?: (e: React.MouseEvent) => void;
 }) {
-  const { task, run, now, selected, live, onOpen, onDone, planned, onTogglePlan } = props;
+  const { task, run, now, selected, live, onOpen, onDone, planned, onTogglePlan, onMenu } = props;
   const done = task.status === 'done';
   const due = done ? null : dueInfo(task, now);
   const worked = workedTime(task, now);
@@ -28,6 +30,7 @@ export function TaskCard(props: {
       className={`card${done ? ' done' : ''}${task.in_progress ? ' active' : ''}${selected ? ' selected' : ''}`}
       data-drop={`task:${task.id}`}
       onClick={onOpen}
+      onContextMenu={onMenu}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && onOpen()}
       tabIndex={0}
       aria-label={`${task.title}, open details`}
