@@ -1,3 +1,5 @@
+import { setUp, turnOff, turnOn } from './replies.js';
+
 // Talks to MultiTasker through the relay it registers with the browser, and tells it which tab is in front.
 const HOST = 'dev.wilsoon.multitasker';
 
@@ -145,13 +147,17 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   if (tab.active && (change.url || change.status === 'complete')) void report();
 });
 
-// AI chats say when they start and finish a reply, so MultiTasker can say when one is ready.
-chrome.runtime.onMessage.addListener((message, sender) => {
-  const tabId = sender.tab?.id;
-  if (!message?.ai || tabId === undefined) return false;
-  if (message.ai === 'started') void ask({ type: 'ai_started', tab_id: tabId, site: String(message.site ?? 'AI') });
-  if (message.ai === 'done') void looking(tabId).then((now) => ask({ type: 'ai_done', tab_id: tabId, looking: now }));
-  return false;
+setUp(ask, looking);
+
+// The popup turns reply notices on (after the browser grants their permissions) and off.
+chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+  if (message?.to !== 'replies') return false;
+  const done = message.on ? turnOn(ask, looking) : turnOff();
+  void done.then(
+    () => respond({ ok: true }),
+    (e) => respond({ error: String(e) }),
+  );
+  return true;
 });
 
 // The popup's requests go through here, so there's only one connection to MultiTasker.

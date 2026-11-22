@@ -1,51 +1,73 @@
-// Tells MultiTasker when an AI chat starts and finishes writing a reply, so it can say when one is ready.
+// Tells the extension whether an AI chat looks busy writing a reply, from what the page itself shows.
 (() => {
-  const SITES = {
-    'claude.ai': 'Claude',
-    'chatgpt.com': 'ChatGPT',
-    'chat.openai.com': 'ChatGPT',
-    'gemini.google.com': 'Gemini',
-    'aistudio.google.com': 'AI Studio',
-    'www.perplexity.ai': 'Perplexity',
-    'perplexity.ai': 'Perplexity',
-    'copilot.microsoft.com': 'Copilot',
-    'chat.deepseek.com': 'DeepSeek',
-    'grok.com': 'Grok',
-  };
-  const site = SITES[location.hostname] ?? location.hostname;
+  // Turning reply notices on injects this into chats already open, which may also have it from loading.
+  if (window.__multitaskerReplies) return;
+  window.__multitaskerReplies = true;
 
-  // Every one of these chats shows a Stop button for as long as a reply is being written.
+  // Most chats show a Stop button for as long as a reply is being written.
   const STOP = [
     'button[data-testid="stop-button"]',
     'button[aria-label^="stop" i]',
     'button[title^="stop" i]',
     'button[data-testid*="stop" i]',
   ].join(',');
+  const stopShown = () => [...document.querySelectorAll(STOP)].some((el) => el.offsetParent !== null);
 
-  const writing = () => [...document.querySelectorAll(STOP)].some((el) => el.offsetParent !== null);
+  // Any chat, in any language, grows its conversation in small bursts while a reply streams in.
+  const TICK = 500;
+  const STREAMING_AFTER = 4;
+  const STILL_AFTER = 6;
+  let grew = false;
+  const typedIn = (node) => {
+    const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    return !!el?.closest('[contenteditable=""], [contenteditable="true"], textarea, input');
+  };
+  new MutationObserver((records) => {
+    if (grew) return;
+    for (const r of records) {
+      if (typedIn(r.target)) continue;
+      const added =
+        r.type === 'characterData' || [...r.addedNodes].some((n) => !typedIn(n) && (n.textContent ?? '').trim());
+      if (added) {
+        grew = true;
+        return;
+      }
+    }
+  }).observe(document.body, { subtree: true, childList: true, characterData: true });
 
+  let growing = 0;
+  let still = 0;
+  let streaming = false;
   let busy = false;
-  // The button can blink out between parts of a reply, so it has to stay gone for two looks in a row.
-  let gone = 0;
+  let stopGone = 2;
 
-  const tell = (ai) => {
+  const tell = (message) => {
     try {
-      void chrome.runtime.sendMessage({ ai, site }).catch(() => {});
+      void chrome.runtime.sendMessage({ replies: true, ...message }).catch(() => {});
     } catch {
-      // The extension was updated or removed; this page's copy of the script no longer has anyone to tell.
+      // The extension was updated or removed; this copy of the script has no one left to tell.
     }
   };
+  tell({ seen: true });
 
   setInterval(() => {
-    if (writing()) {
-      gone = 0;
-      if (!busy) {
-        busy = true;
-        tell('started');
-      }
-    } else if (busy && ++gone >= 2) {
-      busy = false;
-      tell('done');
+    if (grew) {
+      growing += 1;
+      still = 0;
+    } else {
+      still += 1;
+      growing = 0;
     }
-  }, 800);
+    grew = false;
+    if (!streaming && growing >= STREAMING_AFTER) streaming = true;
+    if (streaming && still >= STILL_AFTER) streaming = false;
+
+    // The button can blink out between parts of a reply, so it has to stay gone for two looks in a row.
+    stopGone = stopShown() ? 0 : stopGone + 1;
+    const now = stopGone < 2 || streaming;
+    if (now !== busy) {
+      busy = now;
+      tell({ busy });
+    }
+  }, TICK);
 })();

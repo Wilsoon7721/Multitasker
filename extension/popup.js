@@ -1,3 +1,5 @@
+import { PERMISSIONS, SILENT_AFTER, SITES, health, isOn } from './replies.js';
+
 const $ = (id) => document.getElementById(id);
 
 /** Asks MultiTasker something, through the extension's background worker. */
@@ -215,4 +217,41 @@ $('show-app').addEventListener('click', async () => {
   else window.close();
 });
 
+const DAY = 86_400_000;
+
+/** Whether reply notices are on, and any chat in use where no reply has been noticed for days. */
+async function showReplies() {
+  const on = await isOn();
+  $('replies-on').checked = on;
+  const now = Date.now();
+  const silent = Object.entries(on ? await health() : {})
+    .filter(([, s]) => s.visited && now - s.visited < 2 * DAY && now - (s.replied ?? s.first) > SILENT_AFTER)
+    .map(([host]) => SITES[host] ?? host);
+  const names = [...new Set(silent)];
+  const note = $('replies-note');
+  note.classList.toggle('warn', names.length > 0);
+  note.textContent = !on
+    ? "When Claude, ChatGPT or another AI chat finishes a reply while you're elsewhere, MultiTasker says so. The browser asks first."
+    : names.length
+      ? `No replies noticed on ${names.join(' or ')} for a few days, though you've used it. It may have changed in a way MultiTasker can't follow yet.`
+      : "On: MultiTasker says when an AI chat finishes a reply while you're elsewhere.";
+}
+
+$('replies-on').addEventListener('change', async (e) => {
+  const box = e.currentTarget;
+  if (box.checked) {
+    // The browser only asks while the click is still being handled, so this comes first.
+    const granted = await chrome.permissions.request(PERMISSIONS).catch(() => false);
+    if (!granted) {
+      box.checked = false;
+      return;
+    }
+    await chrome.runtime.sendMessage({ to: 'replies', on: true });
+  } else {
+    await chrome.runtime.sendMessage({ to: 'replies', on: false });
+  }
+  void showReplies();
+});
+
+void showReplies();
 await load();
