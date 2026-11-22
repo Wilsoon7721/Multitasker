@@ -89,7 +89,13 @@ impl Inner {
                 }
                 (_, None) => self.agent.post(url).header("authorization", &auth).send_empty(),
             };
-            let mut response = response.map_err(|e| Error::Storage(format!("Couldn't reach JavaDashboard: {e}")))?;
+            let mut response = match response {
+                Ok(r) => r,
+                // A connection left over from before the computer slept fails once, then a fresh one works. A change
+                // that timed out may have arrived anyway, so only reads are tried again after a timeout.
+                Err(e) if attempt == 0 && (method == "GET" || !matches!(e, ureq::Error::Timeout(_))) => continue,
+                Err(e) => return Err(Error::Storage(format!("Couldn't reach JavaDashboard: {e}"))),
+            };
             let status = response.status().as_u16();
             if status == 401 && attempt == 0 {
                 self.bearer.invalidate();

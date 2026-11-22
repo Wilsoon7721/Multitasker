@@ -13,6 +13,7 @@ import { useNow } from './time';
 import { useActivity } from './useActivity';
 import { useDevices } from './useDevices';
 import { useTasks } from './useTasks';
+import { ErrorNote } from './components/ErrorNote';
 import { OPEN_VIEW_KEY, usePlan } from './usePlan';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 
@@ -49,7 +50,7 @@ const inView = (t: TaskView, view: TaskViewId, planned: Set<string>) =>
           : t.status === 'done';
 
 export function App() {
-  const { tasks, error, setError, clearError, run } = useTasks();
+  const { tasks, error, setError, clearError, run, retry, retrying, unsaved } = useTasks();
   const plan = usePlan();
   const [view, setView] = useState<View>('open');
   const [category, setCategory] = useState<string | null>(null);
@@ -193,12 +194,14 @@ export function App() {
             </header>
 
             {error && (
-              <div className="banner" role="alert">
-                <span>{error}</span>
-                <button className="icon-btn" onClick={clearError} aria-label="Dismiss">
-                  <X size={15} />
-                </button>
-              </div>
+              <ErrorNote
+                className="banner"
+                error={error}
+                unsaved={unsaved}
+                retrying={retrying}
+                onRetry={() => void retry()}
+                onDismiss={clearError}
+              />
             )}
 
             {view === 'settings' && <SettingsPage run={run} />}

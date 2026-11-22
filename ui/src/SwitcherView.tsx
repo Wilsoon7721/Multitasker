@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, onSwitcherOpened, type TaskView } from './api';
 import { dueInfo, useNow, workedTime } from './time';
 import { useTasks } from './useTasks';
+import { ErrorNote } from './components/ErrorNote';
 
 type Item = { kind: 'task'; task: TaskView } | { kind: 'add'; title: string };
 
@@ -15,7 +16,7 @@ function order(a: TaskView, b: TaskView): number {
 
 /** Opened by the hotkey from anywhere: find a task and switch to it, start it alongside, pause it, or add one. */
 export function SwitcherView() {
-  const { tasks, error, setError, run } = useTasks();
+  const { tasks, error, setError, run, retry, retrying, unsaved } = useTasks();
   const now = useNow();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
@@ -95,7 +96,15 @@ export function SwitcherView() {
           aria-controls="switcher-list"
         />
       </label>
-      {error && <p className="switcher-error">{error}</p>}
+      {error && (
+        <ErrorNote
+          className="switcher-error"
+          error={error}
+          unsaved={unsaved}
+          retrying={retrying}
+          onRetry={() => void retry()}
+        />
+      )}
       <ul className="switcher-list" id="switcher-list" role="listbox" ref={list}>
         {items.map((item, i) => {
           const due = item.kind === 'task' ? dueInfo(item.task, now) : null;
