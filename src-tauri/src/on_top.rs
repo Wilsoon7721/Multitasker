@@ -44,7 +44,10 @@ pub fn start(app: &AppHandle) {
                 // Clicking MultiTasker's own windows leaves things as they were.
                 if front.as_ref().is_none_or(|w| w.pid != me) {
                     let exe = front.as_ref().map(|w| w.exe.as_str());
-                    let on_top = wanted(&prefs(), exe, front.is_some() && foreground_is_fullscreen());
+                    let fullscreen = front.is_some() && foreground_is_fullscreen();
+                    // A full-screen game or film gets its keys back: the switcher's hotkey lets go until it ends.
+                    crate::switcher::hold_hotkey(&app, !fullscreen);
+                    let on_top = wanted(&prefs(), exe, fullscreen);
                     if applied != Some(on_top) {
                         if let Some(widget) = app.get_webview_window(WIDGET) {
                             if widget.set_always_on_top(on_top).is_ok() {
