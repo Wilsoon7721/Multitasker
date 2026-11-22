@@ -21,10 +21,12 @@ export function Checklist({ task, run }: { task: TaskView; run: Run }) {
   const add = async () => {
     const step = text.trim();
     if (!step || busy) return;
+    // The box stays usable while a step saves, so the next one can be typed straight away.
     setBusy(true);
+    setText('');
     const ok = await run(() => api.addCheck(task.id, step));
     setBusy(false);
-    if (ok) setText('');
+    if (!ok) setText(step);
   };
 
   return (
@@ -71,7 +73,6 @@ export function Checklist({ task, run }: { task: TaskView; run: Run }) {
           placeholder={task.checklist.length ? 'Add a step' : 'Break it into steps'}
           aria-label="New step"
           maxLength={300}
-          disabled={busy}
         />
       </form>
     </section>
