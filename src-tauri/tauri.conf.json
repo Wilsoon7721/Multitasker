@@ -27,7 +27,7 @@
         "label": "widget",
         "title": "MultiTasker widget",
         "url": "widget.html",
-        "width": 320,
+        "width": 360,
         "height": 120,
         "decorations": false,
         "transparent": true,

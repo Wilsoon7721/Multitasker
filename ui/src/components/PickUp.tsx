@@ -94,7 +94,7 @@ export function PickUpBar(props: {
       </div>
       {count > 0 && (
         <button
-          className="primary small"
+          className="note-action"
           onClick={() => {
             onClose();
             void run(async () => {
@@ -102,9 +102,10 @@ export function PickUpBar(props: {
               if (r.skipped.length) throw r.skipped.join(' ');
             });
           }}
-          title="Open its linked pages, files, folders and apps"
+          aria-label={`Open its ${count} linked ${count === 1 ? 'item' : 'items'}`}
+          title={`Open its ${count} linked ${count === 1 ? 'item' : 'items'}`}
         >
-          <FolderOpen size={12} /> Open {count}
+          <FolderOpen size={14} />
         </button>
       )}
       <button className="icon-btn" onClick={onClose} aria-label="Close" title="Close">
@@ -129,8 +130,13 @@ export function LinkOfferNote(props: { offer: NonNullable<ActivitySnapshot['link
           To “{offer.task_title}”, so it counts as working on it
         </span>
       </div>
-      <button className="primary small" onClick={() => void run(api.acceptLinkOffer)}>
-        Link
+      <button
+        className="note-action"
+        onClick={() => void run(api.acceptLinkOffer)}
+        aria-label="Link this page"
+        title="Link this page"
+      >
+        <Link2 size={14} />
       </button>
       <button
         className="icon-btn"

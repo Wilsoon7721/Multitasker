@@ -37,7 +37,7 @@
 }
 
 body {
-  width: 340px;
+  width: 380px;
   margin: 0;
   background: var(--bg);
   color: var(--text);
@@ -134,7 +134,7 @@ input:focus {
 }
 
 .tasks {
-  max-height: 300px;
+  max-height: 360px;
   margin: 8px 0;
   padding: 0;
   overflow-y: auto;
@@ -144,9 +144,28 @@ input:focus {
 .task {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 6px;
+  gap: 6px;
+  padding: 6px 6px 6px 8px;
   border-radius: 8px;
+}
+
+.icon-action,
+.icon-slot {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+}
+
+.icon-action {
+  padding: 0;
+  border-radius: 7px;
+}
+
+.icon-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .task.fresh {
@@ -163,9 +182,11 @@ input:focus {
 }
 
 .task-title {
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .task-meta {

@@ -30,3 +30,4 @@ Thumbs.db
 # The browser extension's private key (publishing only; its public half is in extension/manifest.json)
 /.secrets/
 /dist-extension/
+/.impeccable/

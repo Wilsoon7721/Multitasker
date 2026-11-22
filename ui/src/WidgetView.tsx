@@ -9,6 +9,7 @@ import {
   Paperclip,
   Pause,
   Play,
+  Timer,
   Undo2,
   X,
 } from 'lucide-react';
@@ -25,7 +26,7 @@ import { useActivity } from './useActivity';
 import { hours, spentBetween, startOfDay, useSessions } from './useTimeSpent';
 import { useTasks } from './useTasks';
 
-const WIDTH = 320;
+const WIDTH = 360;
 const MAX_HEIGHT = 560;
 /** The card's margin on every side; the window includes it so the shadow isn't clipped. */
 const MARGIN = 8;
@@ -144,11 +145,11 @@ export function WidgetView() {
     <div className="widget-card" ref={card}>
       <header className="widget-header" data-tauri-drag-region>
         <h1 data-tauri-drag-region>
-          Tasks In Progress <span className="count">{active.length}</span>
+          In progress <span className="count">{active.length}</span>
         </h1>
         {today > 0 && (
           <span className="widget-today" title="Time spent on tasks today" data-tauri-drag-region>
-            {hours(today)} today
+            <Timer size={12} aria-hidden /> {hours(today)}
           </span>
         )}
         <button
@@ -190,12 +191,14 @@ export function WidgetView() {
             <span className="suggestion-reason">{suggestion.reason}</span>
           </div>
           <button
-            className="primary small"
+            className="note-action"
             onClick={() =>
               void run(() => api.switchTask(suggestion.task_id)).then((ok) => ok && setPickUpId(suggestion.task_id))
             }
+            aria-label={active.length ? 'Switch to it' : 'Start it'}
+            title={active.length ? 'Switch to it' : 'Start it'}
           >
-            <Play size={12} /> {active.length ? 'Switch' : 'Start'}
+            <Play size={14} />
           </button>
           <button
             className="icon-btn"
@@ -253,8 +256,13 @@ export function WidgetView() {
               {switched.reason}
             </span>
           </div>
-          <button className="secondary small" onClick={() => void run(api.undoSwitch)}>
-            <Undo2 size={12} /> Undo
+          <button
+            className="note-action quiet"
+            onClick={() => void run(api.undoSwitch)}
+            aria-label="Undo the switch"
+            title="Undo the switch"
+          >
+            <Undo2 size={14} />
           </button>
           <button className="icon-btn" onClick={() => void run(api.dismissSwitch)} aria-label="OK" title="OK">
             <X size={14} />
@@ -272,14 +280,16 @@ export function WidgetView() {
             <span className="suggestion-reason">{awayText(paused[0].since)}</span>
           </div>
           <button
-            className="primary small"
+            className="note-action"
             onClick={() =>
               void run(async () => Promise.all(paused.map((p) => api.setInProgress(p.task_id, true)))).then(
                 (ok) => ok && setPickUpId(paused[0].task_id),
               )
             }
+            aria-label="Resume"
+            title="Resume"
           >
-            <Play size={12} /> Resume
+            <Play size={14} />
           </button>
           <button
             className="icon-btn"

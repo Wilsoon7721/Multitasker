@@ -47,15 +47,45 @@ async function load() {
   render();
 }
 
-function button(label, className, onClick, disabled = false) {
+// Drawn like the app's own icons (Lucide, 24px grid, 2px stroke), so the two look like one product.
+const ICONS = {
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+};
+
+function icon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  for (const [k, v] of Object.entries({
+    viewBox: '0 0 24 24',
+    width: 16,
+    height: 16,
+    fill: 'none',
+    stroke: 'currentColor',
+    'stroke-width': 2,
+    'stroke-linecap': 'round',
+    'stroke-linejoin': 'round',
+    'aria-hidden': 'true',
+  }))
+    svg.setAttribute(k, String(v));
+  svg.innerHTML = ICONS[name];
+  return svg;
+}
+
+function iconButton(name, label, className, onClick, disabled = false) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.textContent = label;
-  if (className) b.className = className;
+  b.className = `icon-action ${className}`.trim();
+  b.title = label;
+  b.setAttribute('aria-label', label);
+  b.append(icon(name));
   b.disabled = disabled;
   b.addEventListener('click', onClick);
   return b;
 }
+
+/** Keeps a row's buttons in line when it has no button for that spot. */
+const slot = () => Object.assign(document.createElement('span'), { className: 'icon-slot' });
 
 /** Shows a change straight away, then checks it with MultiTasker. */
 async function run(request, change) {
@@ -97,7 +127,11 @@ function render() {
       title.className = 'task-title';
       title.textContent = t.title;
       text.append(title);
-      const meta = [t.pending ? 'Adding…' : fresh ? 'Just added' : null, t.in_progress ? 'In progress' : null, t.category];
+      const meta = [
+        t.pending ? 'Adding…' : fresh ? 'Just added' : null,
+        t.in_progress ? 'In progress' : null,
+        t.category,
+      ];
       if (meta.some(Boolean)) {
         const el = document.createElement('div');
         el.className = 'task-meta';
@@ -107,22 +141,31 @@ function render() {
 
       li.append(dot, text);
       if (t.pending) return li;
-      if (!t.in_progress) li.append(button('Start', '', () => run({ type: 'start', task_id: t.id }, update(t.id, { in_progress: true }))));
+      li.append(
+        t.in_progress
+          ? slot()
+          : iconButton('play', `Start “${t.title}”`, '', () =>
+              run({ type: 'start', task_id: t.id }, update(t.id, { in_progress: true })),
+            ),
+      );
       if (t.linked) {
-        const b = button(
-          'Linked',
-          'linked',
-          () => run({ type: 'unlink', attachment_id: t.linked }, update(t.id, { linked: null })),
-          t.linked === 'pending',
+        li.append(
+          iconButton(
+            'check',
+            `Linked to “${t.title}”; click to unlink`,
+            'linked',
+            () => run({ type: 'unlink', attachment_id: t.linked }, update(t.id, { linked: null })),
+            t.linked === 'pending',
+          ),
         );
-        b.title = 'Linked to this page; click to unlink';
-        li.append(b);
       } else if (url) {
         li.append(
-          button('Link', 'primary', () =>
+          iconButton('link', `Link this page to “${t.title}”`, 'primary', () =>
             run({ type: 'link', task_id: t.id, url, title: pageTitle }, update(t.id, { linked: 'pending' })),
           ),
         );
+      } else {
+        li.append(slot());
       }
       return li;
     }),
@@ -141,8 +184,18 @@ $('create').addEventListener('submit', async (e) => {
   add.textContent = 'Adding…';
   $('filter').value = '';
   const link = url && $('link-new').checked ? url : null;
-  const placeholder = { id: `pending-${Date.now()}`, title, category: null, in_progress: false, linked: null, pending: true };
-  const reply = await run({ type: 'create', title, url: link, page_title: pageTitle }, () => (tasks = [placeholder, ...tasks]));
+  const placeholder = {
+    id: `pending-${Date.now()}`,
+    title,
+    category: null,
+    in_progress: false,
+    linked: null,
+    pending: true,
+  };
+  const reply = await run(
+    { type: 'create', title, url: link, page_title: pageTitle },
+    () => (tasks = [placeholder, ...tasks]),
+  );
   add.disabled = false;
   add.textContent = 'Add';
   if (!reply) return;

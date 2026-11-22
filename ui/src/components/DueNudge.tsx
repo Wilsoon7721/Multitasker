@@ -80,8 +80,13 @@ export function DueNudge(props: {
         </span>
         <span className="suggestion-reason">{when(task, now)} and not started yet</span>
       </div>
-      <button className="primary small" onClick={() => void run(() => api.switchTask(task.id))}>
-        <Play size={12} /> {somethingInProgress ? 'Switch' : 'Start'}
+      <button
+        className="note-action"
+        onClick={() => void run(() => api.switchTask(task.id))}
+        aria-label={somethingInProgress ? 'Switch to it' : 'Start it'}
+        title={somethingInProgress ? 'Switch to it' : 'Start it'}
+      >
+        <Play size={14} />
       </button>
       <button className="icon-btn" onClick={later} aria-label="Not now" title="Not now (until its due date changes)">
         <X size={14} />
