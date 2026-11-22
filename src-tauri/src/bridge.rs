@@ -187,7 +187,9 @@ pub fn focus_tab(tab_id: i64) -> bool {
     unsafe {
         windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(windows_sys::Win32::UI::WindowsAndMessaging::ASFW_ANY);
     }
-    push(json!({ "push": "focus_tab", "tab_id": tab_id }).to_string())
+    let sent = push(json!({ "push": "focus_tab", "tab_id": tab_id }).to_string());
+    eprintln!("asked the browser to show tab {tab_id}: {}", if sent { "sent" } else { "no browser connected" });
+    sent
 }
 
 fn push(message: String) -> bool {
@@ -237,6 +239,7 @@ pub fn serve(app: &AppHandle) {
                     // Only a relay that says it passes on messages sent unasked gets them; an older one would take one
                     // for the answer to its next question.
                     if line.trim() == RELAY_HELLO {
+                        eprintln!("browser relay connected");
                         EXTENSIONS.lock().unwrap_or_else(|e| e.into_inner()).push(tx.clone());
                         continue;
                     }
@@ -244,6 +247,9 @@ pub fn serve(app: &AppHandle) {
                         break;
                     }
                 }
+                // The relay is gone; a message sent to it now would vanish without a word.
+                EXTENSIONS.lock().unwrap_or_else(|e| e.into_inner()).retain(|s| !s.same_channel(&tx));
+                eprintln!("browser relay disconnected");
             });
         }
     });
@@ -273,9 +279,22 @@ pub fn relay() {
 }
 
 #[cfg(windows)]
-async fn relay_messages() {
-    use tokio::net::windows::named_pipe::NamedPipeClient;
+type PipeWriter = tokio::io::WriteHalf<tokio::net::windows::named_pipe::NamedPipeClient>;
 
+/// The relay's way to the app: the pipe's writing end, and which connection it is, so a reader that ends only clears
+/// its own.
+#[cfg(windows)]
+#[derive(Default)]
+struct Link {
+    writer: Option<PipeWriter>,
+    generation: u64,
+}
+
+#[cfg(windows)]
+type SharedLink = Arc<tokio::sync::Mutex<Link>>;
+
+#[cfg(windows)]
+async fn relay_messages() {
     // Chrome's messages arrive on stdin, read on a plain thread and handed over one at a time.
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
     std::thread::spawn(move || {
@@ -293,11 +312,27 @@ async fn relay_messages() {
     });
 
     let stdout = Arc::new(Mutex::new(std::io::stdout()));
-    let mut pipe: Option<tokio::io::WriteHalf<NamedPipeClient>> = None;
+    let link: SharedLink = Arc::default();
+
+    // Stays connected whenever the app runs, so what the app sends unasked (going back to a tab) always gets through,
+    // even when the app has restarted and the browser hasn't said anything since.
+    {
+        let (link, stdout) = (link.clone(), stdout.clone());
+        tokio::spawn(async move {
+            loop {
+                if link.lock().await.writer.is_none() {
+                    if let Ok(client) = open_pipe().await {
+                        let _ = attach(&link, &stdout, client).await;
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        });
+    }
+
     while let Some(message) = rx.recv().await {
         let parsed: Value = serde_json::from_slice(&message).unwrap_or(Value::Null);
-        if let Err(error) = send(&mut pipe, &stdout, &message, starts_app(&parsed)).await {
-            pipe = None;
+        if let Err(error) = send(&link, &stdout, &message, starts_app(&parsed)).await {
             let reply = json!({ "id": parsed.get("id"), "error": error, "offline": true }).to_string();
             if !to_browser(&stdout, &reply) {
                 return;
@@ -309,25 +344,24 @@ async fn relay_messages() {
 #[cfg(not(windows))]
 async fn relay_messages() {}
 
-/// Sends one message to the app, connecting first if needed; whatever comes back is passed on as it arrives.
+/// Takes a new connection to the app: says hello, passes on whatever comes back, and forgets it when it ends.
 #[cfg(windows)]
-async fn send(
-    pipe: &mut Option<tokio::io::WriteHalf<tokio::net::windows::named_pipe::NamedPipeClient>>,
+async fn attach(
+    link: &SharedLink,
     stdout: &Arc<Mutex<std::io::Stdout>>,
-    message: &[u8],
-    start: bool,
+    client: tokio::net::windows::named_pipe::NamedPipeClient,
 ) -> Result<(), String> {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, BufReader};
 
-    if let Some(write) = pipe.as_mut() {
-        if write_line(write, message).await.is_ok() {
-            return Ok(());
-        }
-    }
-    // Not connected yet, or the app restarted since the last message.
-    let (read, mut write) = tokio::io::split(connect(start).await?);
-    write.write_all(format!("{RELAY_HELLO}\n").as_bytes()).await.map_err(|e| e.to_string())?;
-    let stdout = stdout.clone();
+    let (read, mut write) = tokio::io::split(client);
+    write_line(&mut write, RELAY_HELLO.as_bytes()).await.map_err(|e| e.to_string())?;
+    let generation = {
+        let mut held = link.lock().await;
+        held.generation += 1;
+        held.writer = Some(write);
+        held.generation
+    };
+    let (link, stdout) = (link.clone(), stdout.clone());
     tokio::spawn(async move {
         let mut lines = BufReader::new(read).lines();
         while let Ok(Some(line)) = lines.next_line().await {
@@ -338,13 +372,34 @@ async fn send(
                 line
             };
             if !to_browser(&stdout, &line) {
-                return;
+                std::process::exit(0);
             }
         }
+        let mut held = link.lock().await;
+        if held.generation == generation {
+            held.writer = None;
+        }
     });
-    write_line(&mut write, message).await.map_err(|e| e.to_string())?;
-    *pipe = Some(write);
     Ok(())
+}
+
+/// Sends one message to the app, connecting first if needed; whatever comes back is passed on as it arrives.
+#[cfg(windows)]
+async fn send(link: &SharedLink, stdout: &Arc<Mutex<std::io::Stdout>>, message: &[u8], start: bool) -> Result<(), String> {
+    {
+        let mut held = link.lock().await;
+        if let Some(writer) = held.writer.as_mut() {
+            if write_line(writer, message).await.is_ok() {
+                return Ok(());
+            }
+            held.writer = None;
+        }
+    }
+    // Not connected yet, or the app restarted since the last message.
+    attach(link, stdout, connect(start).await?).await?;
+    let mut held = link.lock().await;
+    let writer = held.writer.as_mut().ok_or("MultiTasker closed the connection.")?;
+    write_line(writer, message).await.map_err(|e| e.to_string())
 }
 
 #[cfg(windows)]
