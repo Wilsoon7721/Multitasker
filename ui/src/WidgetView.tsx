@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Coffee,
   Maximize2,
+  MonitorDown,
   Paperclip,
   Pause,
   Play,
@@ -373,6 +374,16 @@ export function WidgetView() {
                           >
                             <AppWindow size={14} />
                           </button>
+                          {deviceId && !t.in_progress_on.includes(deviceId) && (
+                            <button
+                              className="icon-btn"
+                              onClick={() => void run(() => api.setInProgress(t.id, true))}
+                              aria-label={`Continue "${t.title}" on this computer`}
+                              title="Continue on this computer: start it here too and open its files and pages"
+                            >
+                              <MonitorDown size={14} />
+                            </button>
+                          )}
                           <button
                             className="icon-btn"
                             onClick={() => pause(t)}

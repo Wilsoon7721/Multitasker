@@ -5,6 +5,7 @@ mod cloud;
 mod commands;
 mod detection;
 mod device;
+mod here;
 mod on_top;
 mod projects;
 mod reminders;
@@ -203,6 +204,7 @@ pub fn run() {
             commands::set_detection,
             commands::detection_enabled,
             commands::dismiss_paused,
+            commands::task_openable,
             commands::project_commands,
             commands::project_runs,
             commands::run_project_command,

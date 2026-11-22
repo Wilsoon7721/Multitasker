@@ -50,6 +50,9 @@ Early development. What works today:
 - **Quick switcher**: Ctrl+Alt+Space (or the next free choice, if another program has it) opens a search of your open tasks. Enter switches to one (pausing what
   you were on), Shift+Enter starts it alongside, Ctrl+Enter pauses it, and typing something new adds it. The hotkey
   can be changed or turned off in Settings.
+- **Continue on this computer**: a task in progress on your other computer has a button in the widget that starts it
+  here too and opens its files and pages. A file is found at the same path, or at the same place under this
+  computer's user or OneDrive folder, and only offered when a program here opens that kind of file.
 - **Getting back into a task**: when a task pauses or you switch away, the widget asks where you left off, and the
   note shows on the task until you replace it. Going back to a task shows that note and opens its linked pages, files
   and folders in one click ("Open all" in its details does the same).

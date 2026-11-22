@@ -353,6 +353,14 @@ pub struct Reopened {
     pub skipped: Vec<String>,
 }
 
+/// What starting a task here can open: files and folders found on this computer with a program for them, and pages.
+#[tauri::command]
+pub async fn task_openable(state: State<'_, AppState>, task_id: TaskId) -> CmdResult<crate::here::Openable> {
+    let task = task_views(&state).await?.into_iter().find(|t| t.task.id == task_id);
+    let attachments = task.map(|t| t.attachments).unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || crate::here::openable(&attachments).0).await.map_err(err)
+}
+
 /// Opens a task's pages, and its files and folders that are on this computer, to pick it up again.
 #[tauri::command]
 pub async fn open_task_things(app: AppHandle, state: State<'_, AppState>, task_id: TaskId) -> CmdResult<Reopened> {
@@ -361,24 +369,24 @@ pub async fn open_task_things(app: AppHandle, state: State<'_, AppState>, task_i
         .into_iter()
         .find(|t| t.task.id == task_id)
         .ok_or_else(|| format!("task {task_id} was not found"))?;
-    let mut report = Reopened { opened: 0, skipped: Vec::new() };
+    let (found, paths) = crate::here::openable(&task.attachments);
+    let mut report = Reopened { opened: 0, skipped: found.unavailable };
     // With the extension connected, the browser switches to pages already open and opens the rest beside them.
     let urls: Vec<String> = task.attachments.iter().filter(|a| a.kind == AttachmentKind::Link).map(|a| a.target.clone()).collect();
-    let by_extension = !urls.is_empty() && crate::bridge::open_tabs(&urls);
-    if by_extension {
+    if !urls.is_empty() && crate::bridge::open_tabs(&urls) {
         report.opened += urls.len();
+    } else {
+        for url in &urls {
+            match app.opener().open_url(url, None::<&str>) {
+                Ok(()) => report.opened += 1,
+                Err(e) => report.skipped.push(e.to_string()),
+            }
+        }
     }
-    for a in &task.attachments {
-        let opened = match a.kind {
-            AttachmentKind::Link if by_extension => continue,
-            AttachmentKind::Link => app.opener().open_url(&a.target, None::<&str>).map_err(err),
-            // A program started without its file or arguments rarely puts you back where you were.
-            AttachmentKind::App => continue,
-            _ => existing_path(&state, a).and_then(|p| app.opener().open_path(p.to_string_lossy(), None::<&str>).map_err(err)),
-        };
-        match opened {
+    for path in paths {
+        match app.opener().open_path(path.to_string_lossy(), None::<&str>) {
             Ok(()) => report.opened += 1,
-            Err(e) => report.skipped.push(e),
+            Err(e) => report.skipped.push(e.to_string()),
         }
     }
     Ok(report)

@@ -420,6 +420,8 @@ export const api = {
   acceptLinkOffer: () => invoke('accept_link_offer'),
   refuseLinkOffer: () => invoke('refuse_link_offer'),
   setLeftOff: (taskId: string, text: string) => invoke('set_left_off', { taskId, text }),
+  taskOpenable: (taskId: string) =>
+    invoke<{ files: number; pages: number; unavailable: string[] }>('task_openable', { taskId }),
   openTaskThings: (taskId: string) => invoke<{ opened: number; skipped: string[] }>('open_task_things', { taskId }),
   switchTask: (taskId: string) => invoke('switch_task', { taskId }),
   undoSwitch: () => invoke('undo_switch'),

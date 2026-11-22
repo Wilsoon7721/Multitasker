@@ -563,6 +563,13 @@ mockIPC(
         return null;
       }
 
+      case 'task_openable': {
+        const t = find(a.taskId as string);
+        const pages = t.attachments.filter((x) => x.kind === 'link').length;
+        const files = t.attachments.filter((x) => x.kind !== 'link' && x.kind !== 'app').length;
+        return { files, pages, unavailable: [] };
+      }
+
       case 'open_task_things':
         return { opened: find(a.taskId as string).attachments.length, skipped: [] };
 

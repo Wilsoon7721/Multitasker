@@ -88,7 +88,13 @@ export function PickUpBar(props: {
   const { task, deviceId, noteOnly, run, onClose } = props;
   const [hovered, setHovered] = useState(false);
   useHideWhenIgnored(onClose, hovered);
-  const things = openable(task, deviceId);
+  // What this computer can really open, found by MultiTasker; a guess from the attachments stands in until it answers.
+  const [found, setFound] = useState<{ files: number; pages: number; unavailable: string[] } | null>(null);
+  useEffect(() => {
+    if (noteOnly) return;
+    void api.taskOpenable(task.id).then(setFound, () => {});
+  }, [task.id, noteOnly]);
+  const things = found ?? { ...openable(task, deviceId), unavailable: [] };
   const count = noteOnly ? 0 : things.files + things.pages;
   const note = task.left_off?.text;
   if (!note && !count) return null;
@@ -105,8 +111,9 @@ export function PickUpBar(props: {
         <span className="suggestion-title" title={task.title}>
           {count ? `Open ${whatItOpens(things)}?` : `Back to “${task.title}”`}
         </span>
-        <span className="suggestion-reason" title={note}>
+        <span className="suggestion-reason" title={[note, ...things.unavailable].filter(Boolean).join(' ')}>
           {note ? `Left off: ${note}` : `For “${task.title}”`}
+          {!noteOnly && things.unavailable.length > 0 && ` · ${things.unavailable.length} not on this computer`}
         </span>
       </div>
       {count > 0 && (
