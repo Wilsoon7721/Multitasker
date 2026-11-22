@@ -278,6 +278,19 @@ pub fn relay() {
     runtime.block_on(relay_messages());
 }
 
+/// The relay's own log, beside it, since the browser swallows what it prints.
+fn relay_log(event: &str) {
+    let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) else { return };
+    let path = dir.join("relay.log");
+    // Kept small: started afresh once it passes 64 KB.
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() > 64 * 1024) {
+        let _ = std::fs::remove_file(&path);
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{} [{}] {event}", chrono::Local::now().format("%H:%M:%S%.3f"), std::process::id());
+    }
+}
+
 #[cfg(windows)]
 type PipeWriter = tokio::io::WriteHalf<tokio::net::windows::named_pipe::NamedPipeClient>;
 
@@ -311,8 +324,10 @@ async fn relay_messages() {
         }
     });
 
+    relay_log("started");
     let stdout = Arc::new(Mutex::new(std::io::stdout()));
     let link: SharedLink = Arc::default();
+    status(&stdout, false);
 
     // Stays connected whenever the app runs, so what the app sends unasked (going back to a tab) always gets through,
     // even when the app has restarted and the browser hasn't said anything since.
@@ -321,8 +336,12 @@ async fn relay_messages() {
         tokio::spawn(async move {
             loop {
                 if link.lock().await.writer.is_none() {
-                    if let Ok(client) = open_pipe().await {
-                        let _ = attach(&link, &stdout, client).await;
+                    match open_pipe().await {
+                        Ok(client) => {
+                            let attached = attach(&link, &stdout, client).await;
+                            relay_log(&format!("connected on its own: {attached:?}"));
+                        }
+                        Err(_) => {}
                     }
                 }
                 tokio::time::sleep(Duration::from_secs(2)).await;
@@ -344,6 +363,12 @@ async fn relay_messages() {
 #[cfg(not(windows))]
 async fn relay_messages() {}
 
+/// Tells the extension whether the relay can reach MultiTasker, for the popup's status line.
+#[cfg(windows)]
+fn status(stdout: &Mutex<std::io::Stdout>, connected: bool) {
+    let _ = to_browser(stdout, &json!({ "relay": if connected { "connected" } else { "disconnected" } }).to_string());
+}
+
 /// Takes a new connection to the app: says hello, passes on whatever comes back, and forgets it when it ends.
 #[cfg(windows)]
 async fn attach(
@@ -361,6 +386,7 @@ async fn attach(
         held.writer = Some(write);
         held.generation
     };
+    status(stdout, true);
     let (link, stdout) = (link.clone(), stdout.clone());
     tokio::spawn(async move {
         let mut lines = BufReader::new(read).lines();
@@ -371,13 +397,19 @@ async fn attach(
             } else {
                 line
             };
+            if line.contains("\"push\"") {
+                relay_log(&format!("passing on {line}"));
+            }
             if !to_browser(&stdout, &line) {
+                relay_log("the browser is gone");
                 std::process::exit(0);
             }
         }
+        relay_log("the app closed the connection");
         let mut held = link.lock().await;
         if held.generation == generation {
             held.writer = None;
+            status(&stdout, false);
         }
     });
     Ok(())

@@ -5,6 +5,13 @@ const HOST = 'dev.wilsoon.multitasker';
 
 let port = null;
 let nextId = 1;
+/** What the relay last said about reaching MultiTasker: "connected", "disconnected", or "unknown" if it never said. */
+let relay = 'unknown';
+
+function setRelay(state) {
+  relay = state;
+  void chrome.runtime.sendMessage({ relayStatus: state }).catch(() => {});
+}
 const waiting = new Map();
 
 /** Turns the browser's connection errors into something a person can act on. */
@@ -16,8 +23,10 @@ function friendly(message) {
 }
 
 function connect() {
+  relay = 'unknown';
   port = chrome.runtime.connectNative(HOST);
   port.onMessage.addListener((reply) => {
+    if (reply?.relay) return setRelay(reply.relay);
     if (reply?.push === 'open_tabs') return void openTabs(reply.urls ?? []);
     if (reply?.push === 'focus_tab') return void focusTab(reply.tab_id);
     const resolve = waiting.get(reply?.id);
@@ -29,6 +38,7 @@ function connect() {
   port.onDisconnect.addListener(() => {
     const error = friendly(chrome.runtime.lastError?.message ?? '');
     port = null;
+    setRelay('stopped');
     for (const resolve of waiting.values()) resolve({ error, offline: true });
     waiting.clear();
   });
@@ -159,6 +169,14 @@ chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     (e) => respond({ error: String(e) }),
   );
   return true;
+});
+
+// The popup shows whether the relay can reach MultiTasker.
+chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+  if (message?.to !== 'status') return false;
+  if (!port) connect();
+  respond({ relay });
+  return false;
 });
 
 // The popup's requests go through here, so there's only one connection to MultiTasker.

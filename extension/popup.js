@@ -217,6 +217,30 @@ $('show-app').addEventListener('click', async () => {
   else window.close();
 });
 
+/** The relay between the browser and MultiTasker, and whether it can reach the app. */
+const RELAY = {
+  connected: ['ok', 'Relay connected'],
+  disconnected: ['error', "Relay disconnected: MultiTasker isn't running"],
+  stopped: ['error', 'Relay stopped; it starts again with your next click'],
+  unknown: ['warn', 'Relay not reporting: an older relay may be running. Restart the browser to replace it.'],
+};
+
+function showRelay(state) {
+  const [kind, text] = RELAY[state] ?? RELAY.unknown;
+  const el = $('relay');
+  el.className = `relay ${kind}`;
+  el.textContent = text;
+  el.hidden = false;
+}
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.relayStatus) showRelay(message.relayStatus);
+});
+void chrome.runtime.sendMessage({ to: 'status' }).then(
+  (r) => r && showRelay(r.relay),
+  () => {},
+);
+
 const DAY = 86_400_000;
 
 /** Whether reply notices are on, and any chat in use where no reply has been noticed for days. */
