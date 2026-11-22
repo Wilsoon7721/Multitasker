@@ -122,7 +122,10 @@ export function setUp(ask, looking) {
     clearTimeout(tabs.get(tabId)?.settle);
     tabs.delete(tabId);
   });
-  chrome.permissions.onAdded.addListener(() => listen(ask, looking));
+  // Chrome closes the popup when it shows the permission prompt, so turning on happens here once they're granted,
+  // and again whenever the worker starts in case it was missed.
+  chrome.permissions.onAdded.addListener(() => void isOn().then((on) => on && turnOn(ask, looking)));
+  void isOn().then((on) => on && turnOn(ask, looking));
 
   chrome.runtime.onMessage.addListener((message, sender) => {
     if (!message?.replies) return false;
@@ -145,15 +148,22 @@ export function setUp(ask, looking) {
 /** Turns reply notices on once the browser has given the permissions: watch chats from now on, and those open now. */
 export async function turnOn(ask, looking) {
   const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [SCRIPT_ID] });
-  if (!registered.length) {
-    await chrome.scripting.registerContentScripts([
+  listen(ask, looking);
+  if (registered.length) return;
+  // The popup and the permission event can both get here at once; the second finds it registered.
+  const added = await chrome.scripting
+    .registerContentScripts([
       { id: SCRIPT_ID, matches: ORIGINS, js: ['ai.js'], runAt: 'document_idle', persistAcrossSessions: true },
-    ]);
-  }
+    ])
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!added) return;
+  // Chats already open get it now; the ones opened later get it as they load.
   for (const tab of await chrome.tabs.query({ url: ORIGINS })) {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['ai.js'] }).catch(() => {});
   }
-  listen(ask, looking);
 }
 
 /** Turns them off and hands the permissions back. */
