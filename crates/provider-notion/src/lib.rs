@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use chrono::{DateTime, Local, NaiveDate, SecondsFormat, Utc};
 use multitasker_core::{
-    check_category, check_title, clean, content_type, multipart_file, Attachment, AttachmentKind, DeviceId, Error, LeftOff,
+    check_category, check_title, clean, content_type, multipart_file, Attachment, AttachmentKind, CheckItem, DeviceId, Error, LeftOff,
     ExtrasStore, HandedInFile, NewTask, Result, Task, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus, WorkStore,
 };
 use serde_json::{json, Map, Value};
@@ -56,7 +56,8 @@ struct Inner {
     columns: Mutex<Option<Columns>>,
     cache: Mutex<Option<(Instant, Vec<Page>)>>,
     /// Each page's handed-in files, with the page's edit time and when they were read.
-    work: Mutex<HashMap<String, (DateTime<Utc>, Instant, Vec<HandedInFile>)>>,
+    /// What's on each page, read when it last changed: handed-in files and checklist to-dos.
+    work: Mutex<HashMap<String, PageScan>>,
 }
 
 /// Which of the database's properties hold what.
@@ -498,6 +499,7 @@ impl Columns {
             attachments,
             worked_secs,
             left_off,
+            checklist: Vec::new(),
         }
     }
 
@@ -734,11 +736,23 @@ impl ExtrasStore for Notion {
     async fn extras(&self) -> Result<HashMap<TaskId, TaskExtras>> {
         self.call(|inner| {
             let columns = inner.columns()?;
-            Ok(inner
-                .pages()?
+            let pages = inner.pages()?;
+            inner.rescan(&pages, |p| columns.group(p) == Group::Doing)?;
+            let work = inner.work.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            Ok(pages
                 .iter()
-                .map(|p| (p.id.clone(), columns.extras(p)))
-                .filter(|(_, e)| e.started_at.is_some() || !e.attachments.is_empty() || e.worked_secs > 0 || e.left_off.is_some())
+                .map(|p| {
+                    let mut extras = columns.extras(p);
+                    extras.checklist = work.get(&p.id).map(|scan| scan.checks.clone()).unwrap_or_default();
+                    (p.id.clone(), extras)
+                })
+                .filter(|(_, e)| {
+                    e.started_at.is_some()
+                        || !e.attachments.is_empty()
+                        || e.worked_secs > 0
+                        || e.left_off.is_some()
+                        || !e.checklist.is_empty()
+                })
                 .collect())
         })
         .await
@@ -779,6 +793,44 @@ impl ExtrasStore for Notion {
             }
             columns.clear_start(&mut properties);
             inner.set(&id, properties).map(|_| ())
+        })
+        .await
+    }
+
+    async fn add_check(&self, task_id: &TaskId, text: &str) -> Result<CheckItem> {
+        let (task_id, text) = (task_id.clone(), text.to_owned());
+        self.call(move |inner| {
+            let block = json!({ "object": "block", "type": "to_do", "to_do": { "rich_text": rich(&text), "checked": false } });
+            let result = inner.send("PATCH", &format!("/blocks/{task_id}/children"), Some(&json!({ "children": [block] })))?;
+            inner.forget_page(&task_id);
+            inner.forget_cache();
+            result
+                .get("results")
+                .and_then(|r| r.as_array())
+                .and_then(|r| r.iter().rev().find_map(check_block))
+                .ok_or_else(|| Error::Storage("Notion didn't send the new to-do back.".into()))
+        })
+        .await
+    }
+
+    async fn set_check(&self, task_id: &TaskId, id: &str, done: bool) -> Result<()> {
+        let (task_id, id) = (task_id.clone(), id.to_owned());
+        self.call(move |inner| {
+            inner.send("PATCH", &format!("/blocks/{id}"), Some(&json!({ "to_do": { "checked": done } })))?;
+            inner.forget_page(&task_id);
+            inner.forget_cache();
+            Ok(())
+        })
+        .await
+    }
+
+    async fn remove_check(&self, task_id: &TaskId, id: &str) -> Result<()> {
+        let (task_id, id) = (task_id.clone(), id.to_owned());
+        self.call(move |inner| {
+            inner.send("DELETE", &format!("/blocks/{id}"), None)?;
+            inner.forget_page(&task_id);
+            inner.forget_cache();
+            Ok(())
         })
         .await
     }
@@ -898,10 +950,38 @@ fn handed_in_block(task_id: &str, block: &Value) -> Option<HandedInFile> {
     })
 }
 
+/// A page's blocks as last read, and when, so it's only read again once it changes.
+#[derive(Debug, Clone)]
+struct PageScan {
+    edited: DateTime<Utc>,
+    read: Instant,
+    files: Vec<HandedInFile>,
+    checks: Vec<CheckItem>,
+}
+
+/// A to-do block as a checklist step.
+fn check_block(block: &Value) -> Option<CheckItem> {
+    if block.get("type")?.as_str()? != "to_do" {
+        return None;
+    }
+    let todo = block.get("to_do")?;
+    Some(CheckItem {
+        id: block.get("id")?.as_str()?.to_owned(),
+        text: plain(todo.get("rich_text")),
+        done: todo.get("checked").and_then(|c| c.as_bool()).unwrap_or(false),
+        added_at: block
+            .get("created_time")
+            .and_then(|t| t.as_str())
+            .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+            .map(|t| t.with_timezone(&Utc))
+            .unwrap_or_else(Utc::now),
+    })
+}
+
 impl Inner {
-    /// The files MultiTasker handed in on one page, read fresh.
-    fn page_work(&self, page: &str) -> Result<Vec<HandedInFile>> {
-        let mut out = Vec::new();
+    /// What's on one page, read fresh: the files MultiTasker handed in, and its to-dos.
+    fn page_blocks(&self, page: &str) -> Result<(Vec<HandedInFile>, Vec<CheckItem>)> {
+        let (mut files, mut checks) = (Vec::new(), Vec::new());
         let mut cursor: Option<String> = None;
         for _ in 0..10 {
             let mut path = format!("/blocks/{page}/children?page_size=100");
@@ -909,17 +989,45 @@ impl Inner {
                 path.push_str(&format!("&start_cursor={c}"));
             }
             let result = self.send("GET", &path, None)?;
-            out.extend(result.get("results").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|b| handed_in_block(page, b)));
+            for block in result.get("results").and_then(|v| v.as_array()).into_iter().flatten() {
+                files.extend(handed_in_block(page, block));
+                checks.extend(check_block(block));
+            }
             cursor = result.get("next_cursor").and_then(|v| v.as_str()).map(str::to_owned);
             if cursor.is_none() {
                 break;
             }
         }
-        Ok(out)
+        Ok((files, checks))
     }
 
-    fn remember_work(&self, page: &str, edited: DateTime<Utc>, files: Vec<HandedInFile>) {
-        self.work.lock().unwrap_or_else(|e| e.into_inner()).insert(page.to_owned(), (edited, Instant::now(), files));
+    fn remember(&self, page: &str, edited: DateTime<Utc>, files: Vec<HandedInFile>, checks: Vec<CheckItem>) {
+        let scan = PageScan { edited, read: Instant::now(), files, checks };
+        self.work.lock().unwrap_or_else(|e| e.into_inner()).insert(page.to_owned(), scan);
+    }
+
+    /// Reads again the pages that changed since they were last read, a few per call so a big database fills in
+    /// gradually; pages in progress come first.
+    fn rescan(&self, pages: &[Page], first: impl Fn(&Page) -> bool) -> Result<()> {
+        let mut order: Vec<&Page> = pages.iter().collect();
+        order.sort_by_key(|p| (!first(p), std::cmp::Reverse(p.edited)));
+        let mut scanned = 0;
+        for page in order {
+            let stale = match self.work.lock().unwrap_or_else(|e| e.into_inner()).get(&page.id) {
+                Some(scan) => scan.edited != page.edited || scan.read.elapsed() > RESCAN_AFTER,
+                None => true,
+            };
+            if stale && scanned < SCANS_PER_CHECK {
+                scanned += 1;
+                let (files, checks) = self.page_blocks(&page.id)?;
+                self.remember(&page.id, page.edited, files, checks);
+            }
+        }
+        Ok(())
+    }
+
+    fn forget_page(&self, page: &str) {
+        self.work.lock().unwrap_or_else(|e| e.into_inner()).remove(page);
     }
 
     /// The largest file this workspace takes, as Notion reports it.
@@ -963,9 +1071,9 @@ impl WorkStore for Notion {
     async fn handed_in(&self, task_id: &TaskId) -> Result<Vec<HandedInFile>> {
         let task_id = task_id.clone();
         self.call(move |inner| {
-            let files = inner.page_work(&task_id)?;
+            let (files, checks) = inner.page_blocks(&task_id)?;
             if let Ok(page) = inner.page(&task_id) {
-                inner.remember_work(&task_id, page.edited, files.clone());
+                inner.remember(&task_id, page.edited, files.clone(), checks);
             }
             Ok(files)
         })
@@ -975,21 +1083,10 @@ impl WorkStore for Notion {
     async fn all_handed_in(&self) -> Result<Vec<HandedInFile>> {
         self.call(|inner| {
             let pages = inner.pages()?;
-            let mut scanned = 0;
-            for page in &pages {
-                let stale = match inner.work.lock().unwrap_or_else(|e| e.into_inner()).get(&page.id) {
-                    Some((edited, read, _)) => *edited != page.edited || read.elapsed() > RESCAN_AFTER,
-                    None => true,
-                };
-                if stale && scanned < SCANS_PER_CHECK {
-                    scanned += 1;
-                    let files = inner.page_work(&page.id)?;
-                    inner.remember_work(&page.id, page.edited, files);
-                }
-            }
+            inner.rescan(&pages, |_| false)?;
             let ids: std::collections::HashSet<&str> = pages.iter().map(|p| p.id.as_str()).collect();
             let work = inner.work.lock().unwrap_or_else(|e| e.into_inner());
-            Ok(work.iter().filter(|(id, _)| ids.contains(id.as_str())).flat_map(|(_, (_, _, files))| files.clone()).collect())
+            Ok(work.iter().filter(|(id, _)| ids.contains(id.as_str())).flat_map(|(_, scan)| scan.files.clone()).collect())
         })
         .await
     }
@@ -1022,7 +1119,7 @@ impl WorkStore for Notion {
     async fn remove_handed_in(&self, id: &str) -> Result<()> {
         let id = id.to_owned();
         self.call(move |inner| {
-            inner.work.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, (_, _, files)| !files.iter().any(|f| f.id == id));
+            inner.work.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, scan| !scan.files.iter().any(|f| f.id == id));
             match inner.send("DELETE", &format!("/blocks/{id}"), None) {
                 Ok(_) | Err(Error::NotFound(_)) => Ok(()),
                 Err(e) => Err(e),
@@ -1230,6 +1327,18 @@ mod tests {
         assert_eq!(extras.worked_secs, 120);
         assert_eq!(extras.left_off.map(|n| n.text), Some("Halfway through part 2".into()));
         notion.set_left_off(&task.id, None).await.unwrap();
+
+        // Checklist steps live in the list's own sub-tasks or to-dos, ticked off and removed there too.
+        let outline = notion.add_check(&task.id, "Outline").await.unwrap();
+        notion.add_check(&task.id, "Draft").await.unwrap();
+        notion.set_check(&task.id, &outline.id, true).await.unwrap();
+        let steps = ExtrasStore::extras(&notion).await.unwrap().remove(&task.id).unwrap().checklist;
+        let shown: Vec<(String, bool)> = steps.iter().map(|c| (c.text.clone(), c.done)).collect();
+        assert_eq!(shown, [("Outline".to_owned(), true), ("Draft".to_owned(), false)]);
+        assert!(notion.list().await.unwrap().iter().all(|t| t.title != "Outline"), "steps aren't tasks of their own");
+        notion.remove_check(&task.id, &outline.id).await.unwrap();
+        let left = ExtrasStore::extras(&notion).await.unwrap().remove(&task.id).unwrap().checklist;
+        assert_eq!(left.len(), 1);
         let cleared = ExtrasStore::extras(&notion).await.unwrap().remove(&task.id).and_then(|e| e.left_off);
         assert_eq!(cleared, None);
 

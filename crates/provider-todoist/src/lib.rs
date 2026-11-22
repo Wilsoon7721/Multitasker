@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, SecondsFormat, TimeZone, Utc};
 use multitasker_core::{
-    check_category, check_title, LeftOff, clean, content_type, multipart_file, Attachment, AttachmentKind, DeviceId, Error,
+    check_category, check_title, CheckItem, LeftOff, clean, content_type, multipart_file, Attachment, AttachmentKind, DeviceId, Error,
     ExtrasStore, HandedInFile, NewTask, Result, Task, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus, WorkStore,
 };
 use serde::Deserialize;
@@ -69,6 +69,9 @@ struct Item {
     updated_at: Option<DateTime<Utc>>,
     #[serde(default)]
     completed_at: Option<DateTime<Utc>>,
+    /// Set on a sub-task, which MultiTasker shows as a checklist step of its parent rather than a task of its own.
+    #[serde(default)]
+    parent_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -491,6 +494,20 @@ fn parse_note(note: &Note) -> Option<Mark> {
     }))
 }
 
+/// A task's sub-tasks as its checklist, oldest first; finished ones stay as long as Todoist lists them as done.
+fn checklist_of(task_id: &str, s: &Snapshot) -> Vec<CheckItem> {
+    let mut steps: Vec<CheckItem> = s
+        .active
+        .iter()
+        .chain(&s.done)
+        .filter(|i| i.parent_id.as_deref() == Some(task_id) && !i.is_deleted)
+        .map(|i| CheckItem { id: i.id.clone(), text: i.content.clone(), done: i.checked || i.completed_at.is_some(), added_at: i.added_at })
+        .collect();
+    steps.sort_by_key(|c| c.added_at);
+    steps.dedup_by(|a, b| a.id == b.id);
+    steps
+}
+
 fn extras_of(item: &Item, notes: &[Note]) -> TaskExtras {
     let mut started: Option<(&Note, Option<String>, Option<String>)> = None;
     let mut attachments = Vec::new();
@@ -523,7 +540,7 @@ fn extras_of(item: &Item, notes: &[Note]) -> TaskExtras {
         Some((note, device, name)) => (note.posted_at, device, name),
         None => (item.updated_at.unwrap_or(item.added_at), None, None),
     };
-    TaskExtras { started_at: Some(started_at), started_on, started_on_name, attachments, worked_secs, left_off }
+    TaskExtras { started_at: Some(started_at), started_on, started_on_name, attachments, worked_secs, left_off, checklist: Vec::new() }
 }
 
 #[async_trait]
@@ -547,7 +564,7 @@ impl TaskProvider for Todoist {
     async fn list(&self) -> Result<Vec<Task>> {
         self.call(|inner| {
             let s = inner.snapshot()?;
-            Ok(s.active.iter().chain(&s.done).map(|i| task_of(i, &s.projects)).collect())
+            Ok(s.active.iter().chain(&s.done).filter(|i| i.parent_id.is_none()).map(|i| task_of(i, &s.projects)).collect())
         })
         .await
     }
@@ -637,8 +654,19 @@ impl ExtrasStore for Todoist {
             Ok(s
                 .active
                 .iter()
-                .map(|i| (i.id.clone(), extras_of(i, &s.notes)))
-                .filter(|(_, e)| e.started_at.is_some() || !e.attachments.is_empty() || e.worked_secs > 0 || e.left_off.is_some())
+                .filter(|i| i.parent_id.is_none())
+                .map(|i| {
+                    let mut extras = extras_of(i, &s.notes);
+                    extras.checklist = checklist_of(&i.id, &s);
+                    (i.id.clone(), extras)
+                })
+                .filter(|(_, e)| {
+                    e.started_at.is_some()
+                        || !e.attachments.is_empty()
+                        || e.worked_secs > 0
+                        || e.left_off.is_some()
+                        || !e.checklist.is_empty()
+                })
                 .collect())
         })
         .await
@@ -717,6 +745,37 @@ impl ExtrasStore for Todoist {
                 }
                 None => inner.send("POST", "/comments", Some(&json!({ "task_id": id, "content": time_note(secs) })))?,
             };
+            inner.forget_cache();
+            Ok(())
+        })
+        .await
+    }
+
+    async fn add_check(&self, task_id: &TaskId, text: &str) -> Result<CheckItem> {
+        let body = json!({ "content": text, "parent_id": task_id });
+        self.call(move |inner| {
+            let created = inner.send("POST", "/tasks", Some(&body))?;
+            inner.forget_cache();
+            let item: Item = serde_json::from_value(created).map_err(|e| Error::Storage(e.to_string()))?;
+            Ok(CheckItem { id: item.id, text: item.content, done: false, added_at: item.added_at })
+        })
+        .await
+    }
+
+    async fn set_check(&self, _task_id: &TaskId, id: &str, done: bool) -> Result<()> {
+        let path = format!("/tasks/{id}/{}", if done { "close" } else { "reopen" });
+        self.call(move |inner| {
+            inner.send("POST", &path, None)?;
+            inner.forget_cache();
+            Ok(())
+        })
+        .await
+    }
+
+    async fn remove_check(&self, _task_id: &TaskId, id: &str) -> Result<()> {
+        let path = format!("/tasks/{id}");
+        self.call(move |inner| {
+            inner.send("DELETE", &path, None)?;
             inner.forget_cache();
             Ok(())
         })
@@ -950,6 +1009,7 @@ mod tests {
             added_at: Utc::now(),
             updated_at: None,
             completed_at: None,
+            parent_id: None,
         };
         let notes = [note(&started_note(&"pc-1".to_owned(), "LAPTOP"))];
         let on = extras_of(&item(&["in-progress"]), &notes);
@@ -1040,6 +1100,18 @@ mod tests {
         assert_eq!(extras.worked_secs, 120);
         assert_eq!(extras.left_off.map(|n| n.text), Some("Halfway through part 2".into()));
         todoist.set_left_off(&task.id, None).await.unwrap();
+
+        // Checklist steps live in the list's own sub-tasks or to-dos, ticked off and removed there too.
+        let outline = todoist.add_check(&task.id, "Outline").await.unwrap();
+        todoist.add_check(&task.id, "Draft").await.unwrap();
+        todoist.set_check(&task.id, &outline.id, true).await.unwrap();
+        let steps = ExtrasStore::extras(&todoist).await.unwrap().remove(&task.id).unwrap().checklist;
+        let shown: Vec<(String, bool)> = steps.iter().map(|c| (c.text.clone(), c.done)).collect();
+        assert_eq!(shown, [("Outline".to_owned(), true), ("Draft".to_owned(), false)]);
+        assert!(todoist.list().await.unwrap().iter().all(|t| t.title != "Outline"), "steps aren't tasks of their own");
+        todoist.remove_check(&task.id, &outline.id).await.unwrap();
+        let left = ExtrasStore::extras(&todoist).await.unwrap().remove(&task.id).unwrap().checklist;
+        assert_eq!(left.len(), 1);
         let cleared = ExtrasStore::extras(&todoist).await.unwrap().remove(&task.id).and_then(|e| e.left_off);
         assert_eq!(cleared, None);
 

@@ -44,6 +44,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
     let mut handed_in = state.deliverables.counts(key).map_err(err)?;
     let mut worked = state.state.worked(key).await.map_err(err)?;
     let mut left_off = state.state.left_off(key).await.map_err(err)?;
+    let mut checklists = state.state.checklists(key).await.map_err(err)?;
 
     if let Some(store) = provider.extras() {
         let mut extras = store.extras().await.map_err(err)?;
@@ -64,6 +65,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
                     // Time the list couldn't take, such as before a dashboard kept time, was kept here instead.
                     worked_secs: e.worked_secs + worked.remove(&task.id).unwrap_or(0),
                     left_off: e.left_off.or_else(|| left_off.remove(&task.id)),
+                    checklist: e.checklist,
                     task,
                 }
             })
@@ -93,6 +95,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
             let deliverables = handed_in.remove(&task.id).unwrap_or(0);
             let worked_secs = worked.remove(&task.id).unwrap_or(0);
             let left_off = left_off.remove(&task.id);
+            let checklist = checklists.remove(&task.id).unwrap_or_default();
             TaskView {
                 task,
                 in_progress: started_at.is_some(),
@@ -103,6 +106,7 @@ pub async fn task_views(state: &AppState) -> CmdResult<Vec<TaskView>> {
                 deliverables,
                 worked_secs,
                 left_off,
+                checklist,
             }
         })
         .collect())
@@ -351,6 +355,48 @@ pub struct Reopened {
     pub opened: usize,
     /// Things that couldn't be opened here, with why.
     pub skipped: Vec<String>,
+}
+
+/// Adds a step to a task's checklist, in the task list when it keeps them.
+#[tauri::command]
+pub async fn add_check(app: AppHandle, state: State<'_, AppState>, task_id: TaskId, text: String) -> CmdResult<()> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("A step needs some words.".into());
+    }
+    let text: String = text.chars().take(300).collect();
+    let provider = state.provider();
+    match provider.extras() {
+        Some(store) => {
+            store.add_check(&task_id, &text).await.map_err(err)?;
+        }
+        None => {
+            let item = multitasker_core::CheckItem { id: uuid::Uuid::new_v4().to_string(), text, done: false, added_at: Utc::now() };
+            state.state.add_check(provider.key(), &task_id, item).await.map_err(err)?;
+        }
+    }
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_check(app: AppHandle, state: State<'_, AppState>, task_id: TaskId, id: String, done: bool) -> CmdResult<()> {
+    match state.provider().extras() {
+        Some(store) => store.set_check(&task_id, &id, done).await.map_err(err)?,
+        None => state.state.set_check(&id, done).await.map_err(err)?,
+    }
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_check(app: AppHandle, state: State<'_, AppState>, task_id: TaskId, id: String) -> CmdResult<()> {
+    match state.provider().extras() {
+        Some(store) => store.remove_check(&task_id, &id).await.map_err(err)?,
+        None => state.state.remove_check(&id).await.map_err(err)?,
+    }
+    changed(&app);
+    Ok(())
 }
 
 /// What starting a task here can open: files and folders found on this computer with a program for them, and pages.

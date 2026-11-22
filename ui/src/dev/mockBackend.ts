@@ -78,6 +78,7 @@ function task(title: string, extra: Partial<TaskView> = {}): TaskView {
     deliverables: 0,
     worked_secs: 0,
     left_off: null,
+    checklist: [],
     ...extra,
   };
 }
@@ -559,6 +560,30 @@ mockIPC(
         const t = find(a.taskId as string);
         const text = String(a.text).trim();
         t.left_off = text ? { text, at: new Date().toISOString(), device: DEVICE.id } : null;
+        changed();
+        return null;
+      }
+
+      case 'add_check': {
+        const t = find(a.taskId as string);
+        t.checklist = [
+          ...t.checklist,
+          { id: crypto.randomUUID(), text: String(a.text), done: false, added_at: new Date().toISOString() },
+        ];
+        changed();
+        return null;
+      }
+
+      case 'set_check': {
+        const t = find(a.taskId as string);
+        t.checklist = t.checklist.map((c) => (c.id === a.id ? { ...c, done: !!a.done } : c));
+        changed();
+        return null;
+      }
+
+      case 'remove_check': {
+        const t = find(a.taskId as string);
+        t.checklist = t.checklist.filter((c) => c.id !== a.id);
         changed();
         return null;
       }

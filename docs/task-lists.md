@@ -32,6 +32,7 @@ How tasks map:
 | Handed-in work | A "📦 Handed in" comment with the file attached (Todoist's file size limit applies) |
 | Time spent | One "⏱ Time spent" comment, updated each time the task is paused or finished |
 | Where you left off | A "📝 Left off" comment, replaced when you write a new note |
+| Checklist | The task's own sub-tasks; ticking one off in Todoist ticks it off here |
 
 Adding or removing the `in-progress` label in Todoist itself starts or stops the task in MultiTasker too. Tasks
 finished in the last two weeks show as done.
@@ -65,6 +66,7 @@ How tasks map, using the database's own columns where it has them:
 | Handed-in work | A file in the task's page, captioned "Handed in from (computer)"; the workspace's upload limit applies (5 MB on the free plan) |
 | Time spent | A Minutes spent number column, added on connecting |
 | Where you left off | A Left off text column, added on connecting |
+| Checklist | To-do blocks on the task's page |
 
 Moving a task to In progress in Notion itself starts it in MultiTasker too. Files you upload to Notion show up as
 links. Deleting a task moves its page to Notion's trash.

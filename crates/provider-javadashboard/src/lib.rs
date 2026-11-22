@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use multitasker_core::{
     check_category, check_title, clean, Attachment, AttachmentKind, DeviceId, Error, ExtrasStore, NewTask, Result, Task,
-    LeftOff, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus,
+    CheckItem, LeftOff, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -60,6 +60,10 @@ impl Inner {
 
     fn links_url(&self) -> String {
         format!("{}/api/calendar/tasks/links", self.base)
+    }
+
+    fn checklist_url(&self) -> String {
+        format!("{}/api/calendar/tasks/checklist", self.base)
     }
 
     fn send(&self, method: &str, url: &str, body: Option<&Value>) -> Result<Value> {
@@ -191,6 +195,8 @@ struct RemoteTask {
     worked_seconds: Option<i64>,
     #[serde(default)]
     left_off: Option<RemoteLeftOff>,
+    #[serde(default)]
+    checklist: Vec<CheckItem>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -214,6 +220,7 @@ impl RemoteTask {
                 at: n.at,
                 device: n.device.clone().unwrap_or_default(),
             }),
+            checklist: self.checklist.clone(),
         }
     }
 }
@@ -313,7 +320,11 @@ impl ExtrasStore for JavaDashboard {
                 .remote()?
                 .iter()
                 .filter(|t| {
-                    t.started_at.is_some() || !t.links.is_empty() || t.worked_seconds.unwrap_or(0) > 0 || t.left_off.is_some()
+                    t.started_at.is_some()
+                        || !t.links.is_empty()
+                        || t.worked_seconds.unwrap_or(0) > 0
+                        || t.left_off.is_some()
+                        || !t.checklist.is_empty()
                 })
                 .map(|t| (t.id.clone(), t.extras()))
                 .collect())
@@ -378,6 +389,34 @@ impl ExtrasStore for JavaDashboard {
             let response = inner.send("PATCH", &inner.url(), Some(&body))?;
             inner.forget_cache();
             kept_by_dashboard(&response, "left_off")
+        })
+        .await
+    }
+
+    async fn add_check(&self, task_id: &TaskId, text: &str) -> Result<CheckItem> {
+        let body = json!({ "task_id": task_id, "text": text });
+        let response = self.checklist("POST", String::new(), Some(body)).await?;
+        serde_json::from_value(response.get("item").cloned().unwrap_or_default())
+            .map_err(|_| Error::Storage("JavaDashboard sent back a step MultiTasker can't read.".into()))
+    }
+
+    async fn set_check(&self, _task_id: &TaskId, id: &str, done: bool) -> Result<()> {
+        self.checklist("PATCH", String::new(), Some(json!({ "id": id, "done": done }))).await.map(|_| ())
+    }
+
+    async fn remove_check(&self, _task_id: &TaskId, id: &str) -> Result<()> {
+        self.checklist("DELETE", format!("?id={id}"), None).await.map(|_| ())
+    }
+}
+
+impl JavaDashboard {
+    /// Sends one checklist change; a dashboard without checklists yet answers 404 for the address.
+    async fn checklist(&self, method: &'static str, query: String, body: Option<Value>) -> Result<Value> {
+        self.call(move |inner| {
+            let url = format!("{}{query}", inner.checklist_url());
+            let response = inner.send(method, &url, body.as_ref());
+            inner.forget_cache();
+            response
         })
         .await
     }

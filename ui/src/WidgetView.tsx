@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ChevronDown,
   Coffee,
+  ListChecks,
   Maximize2,
   MonitorDown,
   Paperclip,
@@ -18,6 +19,7 @@ import { api, onWidgetAppearance } from './api';
 import { AppPicker } from './components/AppPicker';
 import { CheckButton } from './components/CheckButton';
 import { DueNudge, nudgeFor } from './components/DueNudge';
+import { checkCount, nextStep } from './components/Checklist';
 import { StillOnNote, stillOnFor, stillOnHours, useLastActive } from './components/StillOn';
 import { LeftOffPrompt, LinkOfferNote, PickUpBar } from './components/PickUp';
 import { WidgetTodo } from './components/WidgetTodo';
@@ -359,6 +361,11 @@ export function WidgetView() {
                             <span className="meta accent" title="Time spent on it in total">
                               {workedTime(t, now)}
                             </span>
+                            {checkCount(t) && (
+                              <span className="meta" title="Checklist steps done">
+                                <ListChecks size={11} /> {checkCount(t)}
+                              </span>
+                            )}
                             {t.category && <span className="tag">{t.category}</span>}
                             {due && (
                               <span className={`meta${due.late ? ' late' : due.soon ? ' soon' : ''}`}>
@@ -371,6 +378,19 @@ export function WidgetView() {
                               </span>
                             )}
                           </span>
+                          {nextStep(t) && (
+                            <span className="widget-next">
+                              <button
+                                className="check-box small"
+                                onClick={() => void run(() => api.setCheck(t.id, nextStep(t)!.id, true))}
+                                aria-label={`Mark “${nextStep(t)!.text}” done`}
+                                title="Done with this step"
+                              />
+                              <span className="widget-next-text" title={nextStep(t)!.text}>
+                                {nextStep(t)!.text}
+                              </span>
+                            </span>
+                          )}
                         </div>
                         <div className="widget-actions">
                           <button

@@ -608,6 +608,7 @@ mod tests {
             deliverables: 0,
             worked_secs: 0,
             left_off: None,
+            checklist: Vec::new(),
             attachments: attachments
                 .into_iter()
                 .map(|(kind, name, target)| Attachment {

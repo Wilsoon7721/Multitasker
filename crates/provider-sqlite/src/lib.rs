@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use multitasker_core::{
     check_category, check_title, clean, Attachment, AttachmentKind, Change, Error, FocusEntry, NewTask, Result, StateStore,
-    Task, TaskChanges, TaskFields, TaskId, TaskProvider, TaskStatus, WorkSession, LeftOff,
+    Task, TaskChanges, TaskFields, TaskId, TaskProvider, TaskStatus, WorkSession, LeftOff, CheckItem,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
@@ -90,6 +90,16 @@ const MIGRATIONS: &[&str] = &[r#"
 "#, r#"
     ALTER TABLE work_sessions ADD COLUMN in_list INTEGER NOT NULL DEFAULT 0;
     CREATE INDEX work_sessions_when ON work_sessions (provider, ended_at);
+"#, r#"
+    CREATE TABLE checklist (
+        id        TEXT PRIMARY KEY,
+        provider  TEXT NOT NULL,
+        task_id   TEXT NOT NULL,
+        text      TEXT NOT NULL,
+        done      INTEGER NOT NULL DEFAULT 0,
+        added_at  TEXT NOT NULL
+    );
+    CREATE INDEX checklist_task ON checklist (provider, task_id);
 "#];
 
 /// Tasks and MultiTasker's own state in one local file, on separate tables so either can be paired with others.
@@ -448,11 +458,57 @@ impl StateStore for SqliteDb {
         rows.collect::<rusqlite::Result<_>>().map_err(storage)
     }
 
+    async fn checklists(&self, provider: &str) -> Result<HashMap<TaskId, Vec<CheckItem>>> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare("SELECT task_id, id, text, done, added_at FROM checklist WHERE provider = ?1 ORDER BY added_at, id")
+            .map_err(storage)?;
+        let rows = stmt
+            .query_map([provider], |r| {
+                Ok((r.get::<_, TaskId>(0)?, CheckItem { id: r.get(1)?, text: r.get(2)?, done: r.get(3)?, added_at: r.get(4)? }))
+            })
+            .map_err(storage)?;
+        let mut out: HashMap<TaskId, Vec<CheckItem>> = HashMap::new();
+        for row in rows {
+            let (task, item) = row.map_err(storage)?;
+            out.entry(task).or_default().push(item);
+        }
+        Ok(out)
+    }
+
+    async fn add_check(&self, provider: &str, task_id: &TaskId, item: CheckItem) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        if sync::insert_check(&tx, provider, task_id, &item)? {
+            sync::record(&tx, Change::CheckAdded { provider: provider.to_owned(), task_id: task_id.clone(), item })?;
+        }
+        tx.commit().map_err(storage)
+    }
+
+    async fn set_check(&self, id: &str, done: bool) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        let changed = tx.execute("UPDATE checklist SET done = ?2 WHERE id = ?1", params![id, done]).map_err(storage)?;
+        if changed == 0 {
+            return Err(Error::NotFound(id.to_owned()));
+        }
+        sync::record(&tx, Change::CheckSet { id: id.to_owned(), done })?;
+        tx.commit().map_err(storage)
+    }
+
+    async fn remove_check(&self, id: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        tx.execute("DELETE FROM checklist WHERE id = ?1", [id]).map_err(storage)?;
+        sync::record(&tx, Change::CheckRemoved { id: id.to_owned() })?;
+        tx.commit().map_err(storage)
+    }
+
     async fn forget(&self, provider: &str, task_id: &TaskId) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction().map_err(storage)?;
         sync::stop_focus(&tx, provider, task_id)?;
-        for table in ["work_sessions", "work_open", "left_off"] {
+        for table in ["work_sessions", "work_open", "left_off", "checklist"] {
             tx.execute(&format!("DELETE FROM {table} WHERE provider = ?1 AND task_id = ?2"), params![provider, task_id])
                 .map_err(storage)?;
         }

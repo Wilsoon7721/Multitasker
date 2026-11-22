@@ -142,6 +142,9 @@ fn mark(conn: &Connection, change: &Change, stamp: &Stamp) -> Result<()> {
         }
         Change::AttachmentAdded { .. } | Change::WorkLogged { .. } => {}
         Change::LeftOff { provider, task_id, .. } => set_clock(conn, "left_off", &left_off_key(provider, task_id), "", stamp)?,
+        Change::CheckAdded { .. } => {}
+        Change::CheckSet { id, .. } => set_clock(conn, "check", id, "done", stamp)?,
+        Change::CheckRemoved { id } => set_tombstone(conn, "check", id, stamp)?,
         Change::AttachmentRemoved { id } => set_tombstone(conn, "attachment", id, stamp)?,
     }
     Ok(())
@@ -190,7 +193,7 @@ fn apply(conn: &Connection, op: &Op) -> Result<bool> {
         Change::TaskDeleted { id } => {
             set_tombstone(conn, "task", id, stamp)?;
             let removed = conn.execute("DELETE FROM tasks WHERE id = ?1", [id]).map_err(storage)?;
-            for table in ["focus", "attachments", "work_sessions", "left_off"] {
+            for table in ["focus", "attachments", "work_sessions", "left_off", "checklist"] {
                 conn.execute(&format!("DELETE FROM {table} WHERE provider = ?1 AND task_id = ?2"), params![PROVIDER_KEY, id])
                     .map_err(storage)?;
             }
@@ -234,6 +237,23 @@ fn apply(conn: &Connection, op: &Op) -> Result<bool> {
             store_left_off(conn, provider, task_id, note.as_ref())?;
             Ok(true)
         }
+        Change::CheckAdded { provider, task_id, item } => {
+            if is_tombstoned(conn, "check", &item.id)? {
+                return Ok(false);
+            }
+            insert_check(conn, provider, task_id, item)
+        }
+        Change::CheckSet { id, done } => {
+            if clock(conn, "check", id, "done")?.is_some_and(|c| &c >= stamp) {
+                return Ok(false);
+            }
+            set_clock(conn, "check", id, "done", stamp)?;
+            Ok(conn.execute("UPDATE checklist SET done = ?2 WHERE id = ?1", params![id, done]).map_err(storage)? > 0)
+        }
+        Change::CheckRemoved { id } => {
+            set_tombstone(conn, "check", id, stamp)?;
+            Ok(conn.execute("DELETE FROM checklist WHERE id = ?1", [id]).map_err(storage)? > 0)
+        }
         Change::WorkLogged { session } => {
             if session.provider == PROVIDER_KEY && is_tombstoned(conn, "task", &session.task_id)? {
                 return Ok(false);
@@ -257,6 +277,17 @@ pub(crate) fn store_left_off(conn: &Connection, provider: &str, task_id: &str, n
     }
     .map_err(storage)?;
     Ok(())
+}
+
+/// Stores a checklist step unless it's already here; returns whether it was new.
+pub(crate) fn insert_check(conn: &Connection, provider: &str, task_id: &str, item: &multitasker_core::CheckItem) -> Result<bool> {
+    let added = conn
+        .execute(
+            "INSERT OR IGNORE INTO checklist (id, provider, task_id, text, done, added_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![item.id, provider, task_id, item.text, item.done, item.added_at],
+        )
+        .map_err(storage)?;
+    Ok(added > 0)
 }
 
 /// Stores a stretch of work unless it's already here; returns whether it was new.
@@ -611,6 +642,27 @@ mod tests {
         let ids: Vec<String> = db.sessions("todoist", at(20), at(210)).await.unwrap().into_iter().map(|s| s.id).collect();
         assert_eq!(ids, ["a", "b", "c"], "every stretch overlapping the range, in order");
         assert!(db.sessions("notion", at(0), at(300)).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn checklists_follow_the_task_between_computers() {
+        let (a, b) = pair().await;
+        let task = a.create(new("Essay")).await.unwrap();
+        let item = |id: &str, text: &str| multitasker_core::CheckItem { id: id.into(), text: text.into(), done: false, added_at: Utc::now() };
+        a.add_check(PROVIDER_KEY, &task.id, item("c1", "Outline")).await.unwrap();
+        a.add_check(PROVIDER_KEY, &task.id, item("c2", "Draft")).await.unwrap();
+        ship(&a, "pc-a", &b);
+        drain(&a);
+        b.set_check("c1", true).await.unwrap();
+        ship(&b, "pc-b", &a);
+        drain(&b);
+        let steps = a.checklists(PROVIDER_KEY).await.unwrap().remove(&task.id).unwrap();
+        assert_eq!(steps.iter().map(|s| (s.text.as_str(), s.done)).collect::<Vec<_>>(), [("Outline", true), ("Draft", false)]);
+
+        a.remove_check("c2").await.unwrap();
+        ship(&a, "pc-a", &b);
+        let left = b.checklists(PROVIDER_KEY).await.unwrap().remove(&task.id).unwrap();
+        assert_eq!(left.len(), 1, "a removed step stays removed");
     }
 
     #[tokio::test]

@@ -30,6 +30,16 @@ pub struct WorkSession {
     pub in_list: bool,
 }
 
+/// One step in a task's checklist.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CheckItem {
+    /// The task list's own id for it, or MultiTasker's for its own tasks.
+    pub id: String,
+    pub text: String,
+    pub done: bool,
+    pub added_at: DateTime<Utc>,
+}
+
 /// A note on where work on a task stopped, to pick it up again quickly.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LeftOff {
@@ -79,6 +89,15 @@ pub trait StateStore: Send + Sync {
 
     /// Every task's where-I-left-off note.
     async fn left_off(&self, provider: &str) -> Result<std::collections::HashMap<TaskId, LeftOff>>;
+
+    /// Every task's checklist, steps in the order they were added.
+    async fn checklists(&self, provider: &str) -> Result<std::collections::HashMap<TaskId, Vec<CheckItem>>>;
+
+    async fn add_check(&self, provider: &str, task_id: &TaskId, item: CheckItem) -> Result<()>;
+
+    async fn set_check(&self, id: &str, done: bool) -> Result<()>;
+
+    async fn remove_check(&self, id: &str) -> Result<()>;
 
     /// Drops everything kept about a task, for when the task itself is deleted.
     async fn forget(&self, provider: &str, task_id: &TaskId) -> Result<()>;

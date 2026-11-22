@@ -50,6 +50,9 @@ Early development. What works today:
 - **Quick switcher**: Ctrl+Alt+Space (or the next free choice, if another program has it) opens a search of your open tasks. Enter switches to one (pausing what
   you were on), Shift+Enter starts it alongside, Ctrl+Enter pauses it, and typing something new adds it. The hotkey
   can be changed or turned off in Settings.
+- **Checklists**: break a task into steps in its details; cards show how many are done and the widget shows the next
+  one with a box to tick it off. With Todoist they're the task's sub-tasks, with Notion to-dos on its page, and with
+  JavaDashboard its own steps (after `deploy/task-checklist.sql`).
 - **Still on this?**: when a task has been in progress for two hours (adjustable, or off) with none of its files,
   pages or apps in front, the widget asks whether to keep it going or pause it.
 - **Continue on this computer**: a task in progress on your other computer has a button in the widget that starts it

@@ -1,6 +1,7 @@
-import { CalendarDays, NotebookPen, PackageCheck, Paperclip, Pause, Play, Timer } from 'lucide-react';
+import { CalendarDays, ListChecks, NotebookPen, PackageCheck, Paperclip, Pause, Play, Timer } from 'lucide-react';
 import { api, type Activity, type TaskView } from '../api';
 import { dueInfo, workedTime } from '../time';
+import { checkCount } from './Checklist';
 import type { Run } from '../useTasks';
 import { CheckButton } from './CheckButton';
 
@@ -50,6 +51,11 @@ export function TaskCard(props: {
           </span>
         )}
         <span className="card-meta">
+          {checkCount(task) && (
+            <span className="meta" title="Checklist steps done">
+              <ListChecks size={12} /> {checkCount(task)}
+            </span>
+          )}
           {worked && (
             <span className={`meta${task.in_progress ? ' accent' : ''}`} title="Time spent on it in total">
               <Timer size={12} /> {worked}

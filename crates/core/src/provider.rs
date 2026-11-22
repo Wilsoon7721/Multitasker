@@ -49,6 +49,7 @@ pub struct TaskExtras {
     /// Seconds worked on it before the stretch in progress now, across computers.
     pub worked_secs: i64,
     pub left_off: Option<crate::LeftOff>,
+    pub checklist: Vec<crate::CheckItem>,
 }
 
 /// A task list that holds in-progress marks and attachments itself, so they need no separate sync.
@@ -72,6 +73,13 @@ pub trait ExtrasStore: Send + Sync {
 
     /// Sets or clears the task's where-I-left-off note.
     async fn set_left_off(&self, id: &TaskId, note: Option<crate::LeftOff>) -> Result<()>;
+
+    /// Adds a step to the task's checklist, returning it as stored (with the list's own id).
+    async fn add_check(&self, task_id: &TaskId, text: &str) -> Result<crate::CheckItem>;
+
+    async fn set_check(&self, task_id: &TaskId, id: &str, done: bool) -> Result<()>;
+
+    async fn remove_check(&self, task_id: &TaskId, id: &str) -> Result<()>;
 }
 
 /// A copy of handed-in work, as a task list that keeps it reports it.

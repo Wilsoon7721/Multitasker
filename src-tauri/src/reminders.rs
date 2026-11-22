@@ -101,6 +101,7 @@ mod tests {
             deliverables: 0,
             worked_secs: 0,
             left_off: None,
+            checklist: Vec::new(),
         }
     }
 

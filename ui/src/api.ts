@@ -30,6 +30,8 @@ export interface TaskView {
   worked_secs: number;
   /** Where work on it stopped, as noted when it was paused. */
   left_off: { text: string; at: string; device: string } | null;
+  /** Steps toward finishing it, in order. */
+  checklist: CheckItem[];
 }
 
 /** A copy of handed-in work, kept as it was each time it was handed in. */
@@ -124,6 +126,14 @@ export interface RunView {
   output: string[];
   started_at: string;
   exit: number | null;
+}
+
+/** One step of a task's checklist. */
+export interface CheckItem {
+  id: string;
+  text: string;
+  done: boolean;
+  added_at: string;
 }
 
 /** A finished stretch of work on a task. */
@@ -420,6 +430,17 @@ export const api = {
   acceptLinkOffer: () => invoke('accept_link_offer'),
   refuseLinkOffer: () => invoke('refuse_link_offer'),
   setLeftOff: (taskId: string, text: string) => invoke('set_left_off', { taskId, text }),
+  addCheck: (taskId: string, text: string) => invoke('add_check', { taskId, text }),
+  setCheck: (taskId: string, id: string, done: boolean) =>
+    optimistic(
+      editTask(taskId, (t) => ({ ...t, checklist: t.checklist.map((c) => (c.id === id ? { ...c, done } : c)) })),
+      () => invoke('set_check', { taskId, id, done }),
+    ),
+  removeCheck: (taskId: string, id: string) =>
+    optimistic(
+      editTask(taskId, (t) => ({ ...t, checklist: t.checklist.filter((c) => c.id !== id) })),
+      () => invoke('remove_check', { taskId, id }),
+    ),
   taskOpenable: (taskId: string) =>
     invoke<{ files: number; pages: number; unavailable: string[] }>('task_openable', { taskId }),
   openTaskThings: (taskId: string) => invoke<{ opened: number; skipped: string[] }>('open_task_things', { taskId }),

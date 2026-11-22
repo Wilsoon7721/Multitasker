@@ -98,6 +98,8 @@ pub struct TaskView {
     pub worked_secs: i64,
     /// Where work on it stopped, as noted when it was paused.
     pub left_off: Option<crate::LeftOff>,
+    /// Steps toward finishing it, in order.
+    pub checklist: Vec<crate::CheckItem>,
 }
 
 /// Trims text and turns blank into `None`.

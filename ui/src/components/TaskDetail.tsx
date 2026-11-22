@@ -9,6 +9,7 @@ import { useTaskSource } from '../useTaskSource';
 import { CheckButton } from './CheckButton';
 import { DeliverableList } from './Deliverables';
 import { reopenable } from './PickUp';
+import { Checklist } from './Checklist';
 import { ProjectSection } from './ProjectSection';
 
 /** The side panel for one task. Fields save as you leave them. */
@@ -166,6 +167,8 @@ export function TaskDetail(props: {
             />
           </label>
         )}
+
+        <Checklist task={task} run={run} />
 
         {!done && reopenable(task, deviceId) > 1 && (
           <button

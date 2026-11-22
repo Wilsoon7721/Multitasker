@@ -75,6 +75,10 @@ pub enum Change {
     WorkLogged { session: crate::WorkSession },
     /// A task's where-I-left-off note was set or cleared (`None`).
     LeftOff { provider: String, task_id: TaskId, note: Option<crate::LeftOff> },
+    CheckAdded { provider: String, task_id: TaskId, item: crate::CheckItem },
+    /// A checklist step ticked off or back on.
+    CheckSet { id: String, done: bool },
+    CheckRemoved { id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
