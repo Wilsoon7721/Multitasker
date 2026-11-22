@@ -146,6 +146,9 @@ async fn answer(app: &AppHandle, line: &str) -> String {
     reply.to_string()
 }
 
+/// What a relay says first, so the app knows it can be sent messages unasked.
+const RELAY_HELLO: &str = r#"{"relay":2}"#;
+
 /// Each connected extension's outgoing line queue, so MultiTasker can tell it things unasked.
 static EXTENSIONS: Mutex<Vec<tokio::sync::mpsc::UnboundedSender<String>>> = Mutex::new(Vec::new());
 
@@ -186,7 +189,6 @@ pub fn serve(app: &AppHandle) {
                 let (read, mut write) = tokio::io::split(server);
                 // Replies and messages sent unasked share one queue, so their lines never interleave.
                 let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-                EXTENSIONS.lock().unwrap_or_else(|e| e.into_inner()).push(tx.clone());
                 tauri::async_runtime::spawn(async move {
                     while let Some(line) = rx.recv().await {
                         if write.write_all(format!("{line}\n").as_bytes()).await.is_err() {
@@ -196,6 +198,12 @@ pub fn serve(app: &AppHandle) {
                 });
                 let mut lines = BufReader::new(read).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
+                    // Only a relay that says it passes on messages sent unasked gets them; an older one would take one
+                    // for the answer to its next question.
+                    if line.trim() == RELAY_HELLO {
+                        EXTENSIONS.lock().unwrap_or_else(|e| e.into_inner()).push(tx.clone());
+                        continue;
+                    }
                     if tx.send(answer(&app, &line).await).is_err() {
                         break;
                     }
@@ -256,6 +264,8 @@ fn send(pipe: &mut Option<std::fs::File>, stdout: &Arc<Mutex<std::io::Stdout>>, 
     }
     // Not connected yet, or the app restarted since the last message.
     let (mut file, reader) = connect(start)?;
+    file.write_all(format!("{RELAY_HELLO}
+").as_bytes()).map_err(|e| e.to_string())?;
     let stdout = stdout.clone();
     std::thread::spawn(move || {
         for line in reader.lines().map_while(Result::ok) {
