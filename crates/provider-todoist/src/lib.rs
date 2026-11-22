@@ -36,6 +36,8 @@ struct Inner {
     token: String,
     agent: ureq::Agent,
     cache: Mutex<Option<(Instant, Snapshot)>>,
+    /// Counts changes, so a read that began before one doesn't put the older list back in the cache.
+    changes: std::sync::atomic::AtomicU64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -115,7 +117,7 @@ impl Todoist {
             .timeout_global(Some(Duration::from_secs(30)))
             .build()
             .into();
-        Self { inner: Arc::new(Inner { token: token.into().trim().to_owned(), agent, cache: Mutex::new(None) }) }
+        Self { inner: Arc::new(Inner { token: token.into().trim().to_owned(), agent, cache: Mutex::new(None), changes: Default::default() }) }
     }
 
     /// Checks the token with Todoist, returning the account's name for Settings.
@@ -217,7 +219,9 @@ impl Inner {
     }
 
     fn forget_cache(&self) {
-        *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        self.changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        *cache = None;
     }
 
     fn snapshot(&self) -> Result<Snapshot> {
@@ -226,6 +230,7 @@ impl Inner {
                 return Ok(snapshot.clone());
             }
         }
+        let before = self.changes.load(std::sync::atomic::Ordering::SeqCst);
         let body = self.sync(&["items", "notes", "projects"])?;
         let list = |key: &str| body.get(key).and_then(|v| v.as_array()).cloned().unwrap_or_default();
         let parse = |key: &str| -> Vec<Value> { list(key) };
@@ -268,7 +273,10 @@ impl Inner {
                 .filter(|p| !p.is_deleted)
                 .collect(),
         };
-        *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), snapshot.clone()));
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        if self.changes.load(std::sync::atomic::Ordering::SeqCst) == before {
+            *cache = Some((Instant::now(), snapshot.clone()));
+        }
         Ok(snapshot)
     }
 

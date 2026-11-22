@@ -55,6 +55,8 @@ struct Inner {
     agent: ureq::Agent,
     columns: Mutex<Option<Columns>>,
     cache: Mutex<Option<(Instant, Vec<Page>)>>,
+    /// Counts changes, so a read that began before one doesn't put the older list back in the cache.
+    changes: std::sync::atomic::AtomicU64,
     /// Each page's handed-in files, with the page's edit time and when they were read.
     /// What's on each page, read when it last changed: handed-in files and checklist to-dos.
     work: Mutex<HashMap<String, PageScan>>,
@@ -126,6 +128,7 @@ impl Notion {
                 agent: new_agent(),
                 columns: Mutex::new(None),
                 cache: Mutex::new(None),
+                changes: Default::default(),
                 work: Mutex::new(HashMap::new()),
             }),
         }
@@ -245,7 +248,9 @@ impl Inner {
     }
 
     fn forget_cache(&self) {
-        *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        self.changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        *cache = None;
     }
 
     fn pages(&self) -> Result<Vec<Page>> {
@@ -254,6 +259,7 @@ impl Inner {
                 return Ok(pages.clone());
             }
         }
+        let before = self.changes.load(std::sync::atomic::Ordering::SeqCst);
         let mut pages = Vec::new();
         let mut cursor: Option<String> = None;
         for _ in 0..10 {
@@ -270,7 +276,10 @@ impl Inner {
                 break;
             }
         }
-        *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), pages.clone()));
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        if self.changes.load(std::sync::atomic::Ordering::SeqCst) == before {
+            *cache = Some((Instant::now(), pages.clone()));
+        }
         Ok(pages)
     }
 

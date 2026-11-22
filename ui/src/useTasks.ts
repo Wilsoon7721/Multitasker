@@ -23,15 +23,22 @@ export function useTasks() {
   const [readFailed, setReadFailed] = useState(false);
   const attempts = useRef(0);
 
+  const latest = useRef(0);
+
   const refresh = useCallback(async () => {
     // Changes the backend has finished are in this fetch, so their stand-ins can go once it lands.
     const done = pendingChanges().filter((p) => p.settled);
+    // Two quick changes (added, then started) start two reads; the first can answer last, with the older list.
+    const mine = ++latest.current;
     try {
-      setTasks(await api.list());
+      const list = await api.list();
+      if (mine !== latest.current) return;
+      setTasks(list);
       setReadFailed(false);
       attempts.current = 0;
       if (!failed.current.length) setError(null);
     } catch (e) {
+      if (mine !== latest.current) return;
       setError(String(e));
       setReadFailed(true);
     }

@@ -33,6 +33,8 @@ struct Inner {
     bearer: Arc<dyn Bearer>,
     agent: ureq::Agent,
     cache: Mutex<Option<(Instant, Vec<RemoteTask>)>>,
+    /// Counts changes, so a list read that began before one doesn't put the older list back in the cache.
+    changes: std::sync::atomic::AtomicU64,
 }
 
 impl JavaDashboard {
@@ -43,7 +45,7 @@ impl JavaDashboard {
             .build()
             .into();
         let base = base.into().trim_end_matches('/').to_owned();
-        Self { inner: Arc::new(Inner { base, bearer, agent, cache: Mutex::new(None) }) }
+        Self { inner: Arc::new(Inner { base, bearer, agent, cache: Mutex::new(None), changes: Default::default() }) }
     }
 
     /// Runs a blocking API call off the async runtime's worker threads.
@@ -119,7 +121,9 @@ impl Inner {
     }
 
     fn forget_cache(&self) {
-        *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        self.changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        *cache = None;
     }
 
     /// Every task as JavaDashboard returns it, extras included; one request serves both the tasks and the extras.
@@ -129,6 +133,7 @@ impl Inner {
                 return Ok(tasks.clone());
             }
         }
+        let before = self.changes.load(std::sync::atomic::Ordering::SeqCst);
         let body = self.send("GET", &self.url(), None)?;
         let tasks: Vec<RemoteTask> = body
             .get("tasks")
@@ -137,7 +142,10 @@ impl Inner {
             .flatten()
             .filter_map(|v| serde_json::from_value::<RemoteTask>(v.clone()).ok())
             .collect();
-        *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), tasks.clone()));
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        if self.changes.load(std::sync::atomic::Ordering::SeqCst) == before {
+            *cache = Some((Instant::now(), tasks.clone()));
+        }
         Ok(tasks)
     }
 
