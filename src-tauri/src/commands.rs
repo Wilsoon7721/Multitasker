@@ -1372,3 +1372,14 @@ pub async fn back_to_job(app: AppHandle, state: State<'_, AppState>, id: String)
     }
     Ok(())
 }
+
+/// Whether Windhawk is on this computer: its mods load into every program unless told not to, and that can keep the
+/// browser's relay from starting.
+#[tauri::command]
+pub fn windhawk_present() -> bool {
+    let installed = ["ProgramFiles", "ProgramFiles(x86)"]
+        .iter()
+        .filter_map(|var| std::env::var_os(var))
+        .any(|dir| std::path::Path::new(&dir).join("Windhawk").join("windhawk.exe").is_file());
+    installed || multitasker_activity::is_process_running("windhawk.exe").unwrap_or(false)
+}

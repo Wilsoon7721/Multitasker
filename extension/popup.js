@@ -222,7 +222,10 @@ const RELAY = {
   connected: ['ok', 'Relay connected'],
   disconnected: ['error', "Relay disconnected: MultiTasker isn't running"],
   stopped: ['error', 'Relay stopped; it starts again with your next click'],
-  unknown: ['warn', 'Relay not reporting: an older relay may be running. Restart the browser to replace it.'],
+  unknown: [
+    'warn',
+    'Relay not reporting. With Windhawk installed, add multitasker.exe and multitasker-host.exe to its process exclusion list; otherwise restart the browser.',
+  ],
 };
 
 function showRelay(state) {

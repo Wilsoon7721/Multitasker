@@ -544,6 +544,8 @@ export const api = {
     const picked = await open({ multiple: false, title });
     return typeof picked === 'string' ? picked : null;
   },
+  /** Whether Windhawk is installed or running here, which can stop the browser extension's relay. */
+  windhawkPresent: () => invoke<boolean>('windhawk_present'),
   openMain: () => invoke('open_main'),
   widgetVisible: () => invoke<boolean>('widget_visible'),
   /** Returns whether the widget is now visible. */

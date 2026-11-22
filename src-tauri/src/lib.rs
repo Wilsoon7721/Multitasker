@@ -269,6 +269,7 @@ pub fn run() {
             commands::wait_for,
             commands::forget_job,
             commands::back_to_job,
+            commands::windhawk_present,
             commands::sign_in_wilsoon,
             commands::use_local_tasks,
             commands::connect_todoist,
