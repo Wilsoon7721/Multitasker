@@ -17,6 +17,7 @@ function connect() {
   port = chrome.runtime.connectNative(HOST);
   port.onMessage.addListener((reply) => {
     if (reply?.push === 'open_tabs') return void openTabs(reply.urls ?? []);
+    if (reply?.push === 'focus_tab') return void focusTab(reply.tab_id);
     const resolve = waiting.get(reply?.id);
     if (resolve) {
       waiting.delete(reply.id);
@@ -99,6 +100,20 @@ async function openTabs(urls) {
   }
 }
 
+/** Brings a tab and its window to the front. */
+async function focusTab(tabId) {
+  const tab = await chrome.tabs.update(tabId, { active: true }).catch(() => null);
+  if (tab) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+}
+
+/** Whether a tab is the one in front of a browser window that has focus. */
+async function looking(tabId) {
+  const win = await chrome.windows.getLastFocused().catch(() => null);
+  if (!win?.focused) return false;
+  const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
+  return tab?.id === tabId;
+}
+
 function showLinked(tabId, linked) {
   const names = linked.map((l) => l.title).join(', ');
   void chrome.action.setBadgeText({ tabId, text: linked.length ? '✓' : '' });
@@ -128,6 +143,15 @@ chrome.tabs.onActivated.addListener(() => void report());
 chrome.windows.onFocusChanged.addListener(() => void report());
 chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   if (tab.active && (change.url || change.status === 'complete')) void report();
+});
+
+// AI chats say when they start and finish a reply, so MultiTasker can say when one is ready.
+chrome.runtime.onMessage.addListener((message, sender) => {
+  const tabId = sender.tab?.id;
+  if (!message?.ai || tabId === undefined) return false;
+  if (message.ai === 'started') void ask({ type: 'ai_started', tab_id: tabId, site: String(message.site ?? 'AI') });
+  if (message.ai === 'done') void looking(tabId).then((now) => ask({ type: 'ai_done', tab_id: tabId, looking: now }));
+  return false;
 });
 
 // The popup's requests go through here, so there's only one connection to MultiTasker.

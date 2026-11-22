@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ChevronDown,
   Coffee,
+  Hourglass,
   ListChecks,
   Maximize2,
   MonitorDown,
@@ -29,6 +30,9 @@ import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 import { useActivity } from './useActivity';
 import { hours, spentBetween, startOfDay, useSessions } from './useTimeSpent';
 import { useTasks } from './useTasks';
+import { ErrorNote } from './components/ErrorNote';
+import { JobNotes, useJobs } from './components/Jobs';
+import { WaitPicker } from './components/WaitPicker';
 import { useWidgetSize, type Edge } from './useWidgetSize';
 import { requestView, usePlan } from './usePlan';
 
@@ -45,7 +49,7 @@ function loadExpanded(): boolean {
 
 /** The always-on-top card: the tasks in progress, so none of them get forgotten. */
 export function WidgetView() {
-  const { tasks, error, setError, run } = useTasks();
+  const { tasks, error, setError, clearError, run, retry, retrying, unsaved } = useTasks();
   const now = useNow();
   const card = useRef<HTMLDivElement>(null);
   const active = (tasks ?? []).filter((t) => t.in_progress);
@@ -54,6 +58,8 @@ export function WidgetView() {
   const [dragState, setDragState] = useState<'idle' | 'dragging' | 'over'>('idle');
   const activeZone = useRef<HTMLElement>(null);
   const [pickingFor, setPickingFor] = useState<string | null>(null);
+  const [waitingFor, setWaitingFor] = useState<string | null>(null);
+  const jobs = useJobs();
   const { snapshot, activeNow } = useActivity();
   const suggestion = snapshot.suggestion;
   const paused = snapshot.paused;
@@ -201,7 +207,16 @@ export function WidgetView() {
 
       <div className="widget-scroll">
         <div className="widget-body" ref={body}>
-          {error && <p className="widget-error">{error}</p>}
+          {error && (
+            <ErrorNote
+              className="widget-error"
+              error={error}
+              unsaved={unsaved}
+              retrying={retrying}
+              onRetry={() => void retry()}
+              onDismiss={clearError}
+            />
+          )}
 
           {suggestion && (
             <div className="suggestion" role="status">
@@ -326,6 +341,8 @@ export function WidgetView() {
             </div>
           )}
 
+          <JobNotes jobs={jobs} now={now} run={run} />
+
           {paused.length > 0 && (
             <div className="suggestion away" role="status">
               <Coffee size={14} className="away-icon" aria-hidden />
@@ -432,6 +449,17 @@ export function WidgetView() {
                             <Paperclip size={14} />
                           </button>
                           <button
+                            className={`icon-btn${waitingFor === t.id ? ' on' : ''}`}
+                            onClick={() => {
+                              setPickingFor(null);
+                              setWaitingFor((cur) => (cur === t.id ? null : t.id));
+                            }}
+                            aria-label={`Wait for something to finish for "${t.title}"`}
+                            title="Wait for something to finish — pauses this and tells you when it's done"
+                          >
+                            <Hourglass size={14} />
+                          </button>
+                          <button
                             className={`icon-btn${pickingFor === t.id ? ' on' : ''}`}
                             onClick={() => setPickingFor((cur) => (cur === t.id ? null : t.id))}
                             aria-label={`Link an app to "${t.title}"`}
@@ -459,6 +487,20 @@ export function WidgetView() {
                           </button>
                         </div>
                       </li>
+                      {waitingFor === t.id && (
+                        <li className="widget-picker">
+                          <WaitPicker
+                            onClose={() => setWaitingFor(null)}
+                            onPick={(label, what) => {
+                              setWaitingFor(null);
+                              void run(async () => {
+                                await api.waitFor(t.id, t.title, label, what);
+                                await api.setInProgress(t.id, false);
+                              });
+                            }}
+                          />
+                        </li>
+                      )}
                       {pickingFor === t.id && (
                         <li className="widget-picker">
                           <AppPicker

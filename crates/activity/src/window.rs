@@ -1,5 +1,8 @@
 #[cfg(windows)]
-pub use imp::{app_windows, foreground_is_fullscreen, foreground_window, idle_time, is_process_running};
+pub use imp::{
+    app_windows, foreground_is_fullscreen, foreground_window, idle_time, is_process_running, process_alive,
+    process_windows, tree_cpu_time,
+};
 
 /// The window in front and the program that owns it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +23,30 @@ pub struct AppWindow {
     pub name: String,
     /// One of its window titles, to help tell programs apart.
     pub title: String,
+}
+
+/// One window and the process behind it, as offered when choosing something to wait for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessWindow {
+    pub pid: u32,
+    pub exe: String,
+    pub name: String,
+    pub title: String,
+}
+
+#[cfg(not(windows))]
+pub fn process_windows() -> Vec<ProcessWindow> {
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+pub fn process_alive(_pid: u32) -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+pub fn tree_cpu_time(_pid: u32) -> Option<std::time::Duration> {
+    None
 }
 
 #[cfg(not(windows))]
@@ -61,15 +88,17 @@ mod imp {
     };
     use windows_sys::Win32::System::SystemInformation::GetTickCount;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
+    use windows_sys::Win32::Foundation::{FILETIME, STILL_ACTIVE};
     use windows_sys::Win32::System::Threading::{
-        GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+        GetCurrentProcessId, GetExitCodeProcess, GetProcessTimes, OpenProcess, QueryFullProcessImageNameW,
+        PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumChildWindows, EnumWindows, GetForegroundWindow, GetWindow, GetWindowLongPtrW, GetWindowTextLengthW,
         GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW,
     };
 
-    use super::{AppWindow, ForegroundWindow};
+    use super::{AppWindow, ForegroundWindow, ProcessWindow};
 
     /// Hosts the windows of Store apps; the real app is a child window's process.
     const FRAME_HOST: &str = "ApplicationFrameHost.exe";
@@ -190,6 +219,102 @@ mod imp {
         }
         apps.sort_by_key(|a| a.name.to_lowercase());
         apps
+    }
+
+    /// Every normal window, one per process, so two terminal windows can be told apart.
+    pub fn process_windows() -> Vec<ProcessWindow> {
+        let mut windows: Vec<HWND> = Vec::new();
+        unsafe { EnumWindows(Some(collect), &mut windows as *mut Vec<HWND> as LPARAM) };
+
+        let me = unsafe { GetCurrentProcessId() };
+        let mut found: Vec<ProcessWindow> = Vec::new();
+        for hwnd in windows {
+            if !is_app_window(hwnd) {
+                continue;
+            }
+            let mut pid = window_pid(hwnd);
+            let Some(mut exe_path) = process_path(pid) else { continue };
+            if file_name(&exe_path).eq_ignore_ascii_case(FRAME_HOST) {
+                let Some(child) = store_app_pid(hwnd, pid) else { continue };
+                pid = child;
+                let Some(path) = process_path(pid) else { continue };
+                exe_path = path;
+            }
+            if pid == me || found.iter().any(|w| w.pid == pid) {
+                continue;
+            }
+            found.push(ProcessWindow {
+                pid,
+                name: describe(&exe_path),
+                exe: file_name(&exe_path).to_owned(),
+                title: window_title(hwnd),
+            });
+        }
+        found.sort_by_key(|w| (w.name.to_lowercase(), w.title.to_lowercase()));
+        found
+    }
+
+    /// Whether a process is still running.
+    pub fn process_alive(pid: u32) -> bool {
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                return false;
+            }
+            let mut code = 0u32;
+            let ok = GetExitCodeProcess(handle, &mut code);
+            CloseHandle(handle);
+            ok != 0 && code == STILL_ACTIVE as u32
+        }
+    }
+
+    /// The processor time a process and everything it started have used, for telling when they've gone quiet.
+    pub fn tree_cpu_time(pid: u32) -> Option<std::time::Duration> {
+        if !process_alive(pid) {
+            return None;
+        }
+        let mut parents: Vec<(u32, u32)> = Vec::new();
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot.is_null() || snapshot as isize == -1 {
+                return None;
+            }
+            let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+            let mut more = Process32FirstW(snapshot, &mut entry) != 0;
+            while more {
+                parents.push((entry.th32ProcessID, entry.th32ParentProcessID));
+                more = Process32NextW(snapshot, &mut entry) != 0;
+            }
+            CloseHandle(snapshot);
+        }
+        let mut tree = vec![pid];
+        let mut i = 0;
+        while i < tree.len() {
+            let parent = tree[i];
+            for &(child, of) in &parents {
+                if of == parent && child != parent && !tree.contains(&child) {
+                    tree.push(child);
+                }
+            }
+            i += 1;
+        }
+        Some(tree.into_iter().filter_map(cpu_time).sum())
+    }
+
+    fn cpu_time(pid: u32) -> Option<std::time::Duration> {
+        let ticks = |t: FILETIME| ((t.dwHighDateTime as u64) << 32) | t.dwLowDateTime as u64;
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                return None;
+            }
+            let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+            let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+            let ok = GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user);
+            CloseHandle(handle);
+            // Process times count in 100-nanosecond steps.
+            (ok != 0).then(|| std::time::Duration::from_nanos((ticks(kernel) + ticks(user)) * 100))
+        }
     }
 
     unsafe extern "system" fn collect(hwnd: HWND, list: LPARAM) -> BOOL {
@@ -333,6 +458,23 @@ mod imp {
             let me = std::env::current_exe().unwrap();
             assert_eq!(is_process_running(me.file_name().unwrap().to_str().unwrap()), Some(true));
             assert_eq!(is_process_running("definitely-not-running-4242.exe"), Some(false));
+        }
+
+        #[test]
+        fn follows_a_process_and_its_processor_time() {
+            let me = std::process::id();
+            assert!(process_alive(me));
+            let before = tree_cpu_time(me).unwrap();
+            let mut x = 0u64;
+            for i in 0..50_000_000u64 {
+                x = x.wrapping_add(i * i);
+            }
+            assert!(x > 0);
+            assert!(tree_cpu_time(me).unwrap() > before);
+            assert!(!process_alive(u32::MAX - 3));
+            for w in process_windows() {
+                assert!(w.pid != 0 && !w.exe.is_empty());
+            }
         }
     }
 }

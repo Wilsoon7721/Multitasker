@@ -364,6 +364,30 @@ export interface DayPlan {
   skipped: boolean;
 }
 
+/** A window that can be waited on, with the process behind it. */
+export interface JobWindow {
+  pid: number;
+  exe: string;
+  name: string;
+  title: string;
+}
+
+export type JobWhat =
+  { kind: 'program'; pid: number } | { kind: 'file'; path: string } | { kind: 'tab'; tab_id: number };
+
+/** Something a task is waiting on: a build, a render, an export, a download. */
+export interface Job {
+  id: string;
+  task_id: string;
+  task_title: string;
+  label: string;
+  what: JobWhat;
+  started_at: string;
+  finished_at: string | null;
+  /** How it was seen to finish, e.g. "closed" or "went quiet". */
+  how: string | null;
+}
+
 export const api = {
   list: () => invoke<TaskView[]>('list_tasks'),
   create: (task: NewTask) => invoke<{ id: string }>('create_task', { task }),
@@ -508,6 +532,18 @@ export const api = {
   settingsSync: () => invoke<SettingsSync | null>('settings_sync'),
   dayPlan: () => invoke<DayPlan | null>('day_plan'),
   setDayPlan: (plan: DayPlan) => invoke('set_day_plan', { plan }),
+  jobWindows: () => invoke<JobWindow[]>('job_windows'),
+  jobs: () => invoke<Job[]>('jobs'),
+  waitFor: (taskId: string, taskTitle: string, label: string, what: JobWhat) =>
+    invoke<Job>('wait_for', { taskId, taskTitle, label, what }),
+  forgetJob: (id: string) => invoke('forget_job', { id }),
+  /** Goes back to a finished job's task, bringing up its browser tab if it has one. */
+  backToJob: (id: string) => invoke('back_to_job', { id }),
+  /** Asks for one file with the system picker; null if cancelled. */
+  pickFile: async (title: string): Promise<string | null> => {
+    const picked = await open({ multiple: false, title });
+    return typeof picked === 'string' ? picked : null;
+  },
   openMain: () => invoke('open_main'),
   widgetVisible: () => invoke<boolean>('widget_visible'),
   /** Returns whether the widget is now visible. */
@@ -531,6 +567,9 @@ export const onSettingsSynced = (handler: (keys: string[]) => void) => subscribe
 
 /** Fires when the day's plan changes, here or on another computer. */
 export const onPlanChanged = (handler: () => void) => subscribe('plan-changed', handler);
+
+/** Fires when something a task waits on starts, finishes or is let go. */
+export const onJobsChanged = (handler: () => void) => subscribe('jobs-changed', handler);
 
 export const onSyncStatus = (handler: (status: SyncStatus) => void) => subscribe('sync-status', handler);
 

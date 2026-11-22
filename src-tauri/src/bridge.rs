@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -52,6 +52,10 @@ enum Request {
         title: Option<String>,
     },
     ShowApp,
+    /// An AI chat in a tab started writing a reply.
+    AiStarted { tab_id: i64, site: String },
+    /// It finished; `looking` says whether its tab was in front at the time.
+    AiDone { tab_id: i64, looking: bool },
 }
 
 #[derive(Debug, Serialize)]
@@ -121,6 +125,23 @@ async fn handle(app: &AppHandle, request: Request) -> Result<Value, String> {
                 .collect();
             Ok(json!({ "linked": linked }))
         }
+        Request::AiStarted { tab_id, site } => {
+            // The reply belongs with what was being worked on here when it was asked for.
+            let device = state.device.id.clone();
+            let task = commands::task_views(&state)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|t| t.in_progress && t.in_progress_on.contains(&device))
+                .max_by_key(|t| t.started_at);
+            let (task_id, title) = task.map(|t| (t.task.id, t.task.title)).unwrap_or_default();
+            crate::jobs::add(app, task_id, title, site, crate::jobs::What::Tab { tab_id });
+            Ok(json!({}))
+        }
+        Request::AiDone { tab_id, looking } => {
+            crate::jobs::tab_done(app, tab_id, looking);
+            Ok(json!({}))
+        }
         Request::ShowApp => {
             crate::windows::show_main(app).map_err(|e| e.to_string())?;
             Ok(json!({}))
@@ -154,7 +175,15 @@ static EXTENSIONS: Mutex<Vec<tokio::sync::mpsc::UnboundedSender<String>>> = Mute
 
 /// Asks the browser to bring these pages up: switching to tabs already open and opening the rest beside them.
 pub fn open_tabs(urls: &[String]) -> bool {
-    let message = json!({ "push": "open_tabs", "urls": urls }).to_string();
+    push(json!({ "push": "open_tabs", "urls": urls }).to_string())
+}
+
+/// Brings a tab to the front in the browser it's in.
+pub fn focus_tab(tab_id: i64) -> bool {
+    push(json!({ "push": "focus_tab", "tab_id": tab_id }).to_string())
+}
+
+fn push(message: String) -> bool {
     let mut senders = EXTENSIONS.lock().unwrap_or_else(|e| e.into_inner());
     senders.retain(|s| !s.is_closed());
     // One browser is enough; the most recently connected is likely the one in use.
@@ -218,7 +247,7 @@ pub fn serve(_app: &AppHandle) {}
 
 /// Requests that are worth starting MultiTasker for; a tab switch alone isn't.
 fn starts_app(message: &Value) -> bool {
-    message.get("type").and_then(|t| t.as_str()) != Some("active_tab")
+    !matches!(message.get("type").and_then(|t| t.as_str()), Some("active_tab" | "ai_started" | "ai_done"))
 }
 
 /// Writes one message to Chrome, length first, from whichever thread has one.
@@ -229,22 +258,38 @@ fn to_browser(stdout: &Mutex<std::io::Stdout>, text: &str) -> bool {
 }
 
 /// The relay: passes Chrome's length-prefixed messages to the running app, and everything the app sends back, replies
-/// and messages sent unasked alike, to Chrome.
+/// and messages sent unasked alike, to Chrome. The pipe is read and written at the same time, which needs asynchronous
+/// I/O: a plain file handle to a pipe does one thing at a time, so a pending read would hold up the next message.
 pub fn relay() {
-    let mut stdin = std::io::stdin().lock();
+    let Ok(runtime) = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build() else { return };
+    runtime.block_on(relay_messages());
+}
+
+#[cfg(windows)]
+async fn relay_messages() {
+    use tokio::net::windows::named_pipe::NamedPipeClient;
+
+    // Chrome's messages arrive on stdin, read on a plain thread and handed over one at a time.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    std::thread::spawn(move || {
+        let mut stdin = std::io::stdin().lock();
+        loop {
+            let mut len = [0u8; 4];
+            if stdin.read_exact(&mut len).is_err() {
+                return;
+            }
+            let mut message = vec![0u8; u32::from_le_bytes(len) as usize];
+            if stdin.read_exact(&mut message).is_err() || tx.send(message).is_err() {
+                return;
+            }
+        }
+    });
+
     let stdout = Arc::new(Mutex::new(std::io::stdout()));
-    let mut pipe: Option<std::fs::File> = None;
-    loop {
-        let mut len = [0u8; 4];
-        if stdin.read_exact(&mut len).is_err() {
-            return;
-        }
-        let mut message = vec![0u8; u32::from_le_bytes(len) as usize];
-        if stdin.read_exact(&mut message).is_err() {
-            return;
-        }
+    let mut pipe: Option<tokio::io::WriteHalf<NamedPipeClient>> = None;
+    while let Some(message) = rx.recv().await {
         let parsed: Value = serde_json::from_slice(&message).unwrap_or(Value::Null);
-        if let Err(error) = send(&mut pipe, &stdout, &message, starts_app(&parsed)) {
+        if let Err(error) = send(&mut pipe, &stdout, &message, starts_app(&parsed)).await {
             pipe = None;
             let reply = json!({ "id": parsed.get("id"), "error": error, "offline": true }).to_string();
             if !to_browser(&stdout, &reply) {
@@ -254,21 +299,31 @@ pub fn relay() {
     }
 }
 
-/// Sends one message to the app, connecting first if needed; whatever comes back is passed on by the reader thread.
-fn send(pipe: &mut Option<std::fs::File>, stdout: &Arc<Mutex<std::io::Stdout>>, message: &[u8], start: bool) -> Result<(), String> {
-    let write_to = |file: &mut std::fs::File| file.write_all(message).and_then(|_| file.write_all(b"\n")).and_then(|_| file.flush());
-    if let Some(file) = pipe.as_mut() {
-        if write_to(file).is_ok() {
+#[cfg(not(windows))]
+async fn relay_messages() {}
+
+/// Sends one message to the app, connecting first if needed; whatever comes back is passed on as it arrives.
+#[cfg(windows)]
+async fn send(
+    pipe: &mut Option<tokio::io::WriteHalf<tokio::net::windows::named_pipe::NamedPipeClient>>,
+    stdout: &Arc<Mutex<std::io::Stdout>>,
+    message: &[u8],
+    start: bool,
+) -> Result<(), String> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    if let Some(write) = pipe.as_mut() {
+        if write_line(write, message).await.is_ok() {
             return Ok(());
         }
     }
     // Not connected yet, or the app restarted since the last message.
-    let (mut file, reader) = connect(start)?;
-    file.write_all(format!("{RELAY_HELLO}
-").as_bytes()).map_err(|e| e.to_string())?;
+    let (read, mut write) = tokio::io::split(connect(start).await?);
+    write.write_all(format!("{RELAY_HELLO}\n").as_bytes()).await.map_err(|e| e.to_string())?;
     let stdout = stdout.clone();
-    std::thread::spawn(move || {
-        for line in reader.lines().map_while(Result::ok) {
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(read).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
             let line = if line.len() > MAX_REPLY {
                 let id = serde_json::from_str::<Value>(&line).ok().and_then(|v| v.get("id").cloned());
                 json!({ "id": id, "error": "MultiTasker's answer was too big to pass on." }).to_string()
@@ -280,19 +335,38 @@ fn send(pipe: &mut Option<std::fs::File>, stdout: &Arc<Mutex<std::io::Stdout>>, 
             }
         }
     });
-    write_to(&mut file).map_err(|e| e.to_string())?;
-    *pipe = Some(file);
+    write_line(&mut write, message).await.map_err(|e| e.to_string())?;
+    *pipe = Some(write);
     Ok(())
 }
 
-fn open_pipe() -> std::io::Result<(std::fs::File, BufReader<std::fs::File>)> {
-    let file = std::fs::OpenOptions::new().read(true).write(true).open(PIPE)?;
-    let reader = BufReader::new(file.try_clone()?);
-    Ok((file, reader))
+#[cfg(windows)]
+async fn write_line(write: &mut (impl tokio::io::AsyncWrite + Unpin), message: &[u8]) -> std::io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+    write.write_all(message).await?;
+    write.write_all(b"\n").await?;
+    write.flush().await
 }
 
-fn connect(start: bool) -> Result<(std::fs::File, BufReader<std::fs::File>), String> {
-    if let Ok(pipe) = open_pipe() {
+/// Opens the app's pipe, waiting briefly when every instance is busy taking another connection.
+#[cfg(windows)]
+async fn open_pipe() -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeClient> {
+    let mut tries = 0;
+    loop {
+        match tokio::net::windows::named_pipe::ClientOptions::new().open(PIPE) {
+            // ERROR_PIPE_BUSY: the app is setting up the next instance.
+            Err(e) if e.raw_os_error() == Some(231) && tries < 10 => {
+                tries += 1;
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            other => return other,
+        }
+    }
+}
+
+#[cfg(windows)]
+async fn connect(start: bool) -> Result<tokio::net::windows::named_pipe::NamedPipeClient, String> {
+    if let Ok(pipe) = open_pipe().await {
         return Ok(pipe);
     }
     if !start {
@@ -301,8 +375,8 @@ fn connect(start: bool) -> Result<(std::fs::File, BufReader<std::fs::File>), Str
     std::process::Command::new(app_exe()?).spawn().map_err(|e| format!("Couldn't start MultiTasker: {e}"))?;
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(20) {
-        std::thread::sleep(Duration::from_millis(400));
-        if let Ok(pipe) = open_pipe() {
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        if let Ok(pipe) = open_pipe().await {
             return Ok(pipe);
         }
     }
@@ -408,5 +482,6 @@ mod tests {
     fn only_deliberate_requests_start_the_app() {
         assert!(!starts_app(&json!({ "type": "active_tab", "url": "https://x" })));
         assert!(starts_app(&json!({ "type": "tasks" })));
+        assert!(!starts_app(&json!({ "type": "ai_done", "tab_id": 4, "looking": false })));
     }
 }

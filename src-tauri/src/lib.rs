@@ -6,6 +6,7 @@ mod commands;
 mod detection;
 mod device;
 mod here;
+mod jobs;
 mod on_top;
 mod projects;
 mod reminders;
@@ -151,6 +152,7 @@ pub fn run() {
             detection::start(app.handle(), detector);
             syncing::start(app.handle(), syncer);
             shared::start(app.handle());
+            jobs::start(app.handle());
             reminders::start(app.handle());
             away::start(app.handle());
             on_top::start(app.handle());
@@ -262,6 +264,11 @@ pub fn run() {
             commands::settings_sync,
             commands::day_plan,
             commands::set_day_plan,
+            commands::job_windows,
+            commands::jobs,
+            commands::wait_for,
+            commands::forget_job,
+            commands::back_to_job,
             commands::sign_in_wilsoon,
             commands::use_local_tasks,
             commands::connect_todoist,

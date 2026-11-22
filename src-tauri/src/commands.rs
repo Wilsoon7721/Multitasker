@@ -1318,3 +1318,57 @@ pub fn day_plan(state: State<'_, AppState>) -> Option<crate::shared::Plan> {
 pub fn set_day_plan(app: AppHandle, plan: crate::shared::Plan) {
     crate::shared::set_plan(&app, &plan);
 }
+
+/// A window that can be waited on, with the process behind it.
+#[derive(serde::Serialize)]
+pub struct JobWindow {
+    pid: u32,
+    exe: String,
+    name: String,
+    title: String,
+}
+
+/// Windows to choose from when waiting for something to finish, one per process.
+#[tauri::command]
+pub async fn job_windows() -> Vec<JobWindow> {
+    tauri::async_runtime::spawn_blocking(|| {
+        multitasker_activity::process_windows()
+            .into_iter()
+            .map(|w| JobWindow { pid: w.pid, exe: w.exe, name: w.name, title: w.title })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// What tasks are waiting on, running or done.
+#[tauri::command]
+pub fn jobs() -> Vec<crate::jobs::Job> {
+    crate::jobs::list()
+}
+
+/// Starts waiting on a program or a file for a task.
+#[tauri::command]
+pub fn wait_for(app: AppHandle, task_id: TaskId, task_title: String, label: String, what: crate::jobs::What) -> crate::jobs::Job {
+    crate::jobs::add(&app, task_id, task_title, label, what)
+}
+
+#[tauri::command]
+pub fn forget_job(app: AppHandle, id: String) {
+    crate::jobs::remove(&app, &id);
+}
+
+/// Goes back to what a finished job was for: brings its browser tab up, and starts its task again if it was paused.
+#[tauri::command]
+pub async fn back_to_job(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    let Some(job) = crate::jobs::go_back(&id) else { return Ok(()) };
+    crate::jobs::remove(&app, &id);
+    if job.task_id.is_empty() {
+        return Ok(());
+    }
+    let running = task_views(&state).await?.into_iter().any(|t| t.task.id == job.task_id && t.in_progress);
+    if !running {
+        set_in_progress(app, state, job.task_id, true).await?;
+    }
+    Ok(())
+}

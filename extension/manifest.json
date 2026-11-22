@@ -6,6 +6,24 @@
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwGfpQ/hzjMK6EmvshPPzotkI+gOep3Oj3p9IlL7XhWHI2ngvhAvUep4Kh6iC6HJrpCS9aPqoNHb946DXg6ss6YNa4UoG27bGRLH4lR8C1A0vLBGRwpE49oK96Y52aT/u5q340o0IMgDRxI4+nt7ghCRU2Z0Qx3dLIQ22MAQnht1ATHWfo5btXIf5SxPlUazudD69bILfulliQxmslL+yB+zDWQBREFodeOKLwooJzDkPTLjRMJpRyPiDI/PITPuNtPCFjvTWex6PsyuzEqILtEjg2GWG907FgVWjGRZNAKCDFI4mPCHPTvsdiqXg16005oteNyveAoEe1XSUYgUGvQIDAQAB",
   "permissions": ["nativeMessaging", "tabs"],
   "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://aistudio.google.com/*",
+        "https://www.perplexity.ai/*",
+        "https://perplexity.ai/*",
+        "https://copilot.microsoft.com/*",
+        "https://chat.deepseek.com/*",
+        "https://grok.com/*"
+      ],
+      "js": ["ai.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
     "default_title": "MultiTasker",
     "default_popup": "popup.html",
