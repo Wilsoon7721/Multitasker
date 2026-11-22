@@ -108,6 +108,12 @@ mod imp {
             if class == "Progman" || class == "WorkerW" {
                 return false;
             }
+            // Where the taskbar takes no space, a maximized window covers the screen too; it isn't full screen, and
+            // neither is any window with a title bar. Games and full-screen video have neither.
+            use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, IsZoomed, GWL_STYLE, WS_CAPTION};
+            if IsZoomed(hwnd) != 0 || (GetWindowLongPtrW(hwnd, GWL_STYLE) as u32 & WS_CAPTION) == WS_CAPTION {
+                return false;
+            }
             let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
             if GetWindowRect(hwnd, &mut rect) == 0 {
                 return false;
