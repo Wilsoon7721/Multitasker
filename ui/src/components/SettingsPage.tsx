@@ -42,6 +42,7 @@ import {
   type SyncTarget,
 } from '../api';
 import { AppPicker } from './AppPicker';
+import { STILL_ON_CHOICES, STILL_ON_KEY, stillOnHours } from './StillOn';
 import { guessProvider, providerById, S3_PROVIDERS } from '../s3Providers';
 import { elapsed, useNow } from '../time';
 import type { Run } from '../useTasks';
@@ -915,6 +916,7 @@ function DetectionSection({ run }: { run: Run }) {
   const [away, setAway] = useState<number | null | undefined>(undefined);
   const [autoSwitch, setAutoSwitch] = useState<boolean | null>(null);
   const [startAfter, setStartAfter] = useState<number | null>(null);
+  const [stillOn, setStillOn] = useState(stillOnHours);
 
   useEffect(() => {
     void api.pauseAfterAway().then(setAway, () => {});
@@ -988,6 +990,33 @@ function DetectionSection({ run }: { run: Run }) {
           </select>
         </label>
       )}
+      <label className="toggle-row reminder-row">
+        <span>
+          <span className="choice-title">Ask if I'm still on a task</span>
+          <span className="choice-detail">
+            When something's been in progress here this long with none of its files, pages or apps in front.
+          </span>
+        </span>
+        <select
+          className="inline-select"
+          value={stillOn}
+          onChange={(e) => {
+            const hours = Number(e.target.value);
+            setStillOn(hours);
+            try {
+              localStorage.setItem(STILL_ON_KEY, String(hours));
+            } catch {
+              // Without storage the default stays.
+            }
+          }}
+        >
+          {STILL_ON_CHOICES.map((h) => (
+            <option key={h} value={h}>
+              {h === 0 ? 'Never' : h === 1 ? 'After 1 hour' : `After ${h} hours`}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className="toggle-row reminder-row">
         <span>
           <span className="choice-title">Pause when I'm away</span>

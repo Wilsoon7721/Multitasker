@@ -18,6 +18,7 @@ import { api, onWidgetAppearance } from './api';
 import { AppPicker } from './components/AppPicker';
 import { CheckButton } from './components/CheckButton';
 import { DueNudge, nudgeFor } from './components/DueNudge';
+import { StillOnNote, stillOnFor, stillOnHours, useLastActive } from './components/StillOn';
 import { LeftOffPrompt, LinkOfferNote, PickUpBar } from './components/PickUp';
 import { WidgetTodo } from './components/WidgetTodo';
 import { dueInfo, localDate, localTime, useNow, workedTime } from './time';
@@ -54,6 +55,8 @@ export function WidgetView() {
   const paused = snapshot.paused;
   // Only one nudge at a time, and none while a suggestion already asks for attention.
   const [, nudgesPutOff] = useState(0);
+  const lastActive = useLastActive(snapshot.active);
+  const [openedAt] = useState(() => Date.now());
   const nudge = suggestion ? null : nudgeFor(tasks ?? [], now);
   const dayStart = startOfDay(0, new Date(now));
   const todaySessions = useSessions(dayStart, startOfDay(1, dayStart));
@@ -143,6 +146,8 @@ export function WidgetView() {
       if (paths.length) await api.addAttachments(id, pathItems(paths));
     });
 
+  const stillOn = stillOnFor(tasks ?? [], deviceId, lastActive, openedAt, now);
+
   return (
     <div
       className={`widget-card${dragging ? ' resizing' : ''}`}
@@ -218,6 +223,16 @@ export function WidgetView() {
                 <X size={14} />
               </button>
             </div>
+          )}
+
+          {stillOn && (
+            <StillOnNote
+              key={`still-on-${stillOn.id}`}
+              task={stillOn}
+              hours={stillOnHours()}
+              onKeep={() => nudgesPutOff((n) => n + 1)}
+              onPause={() => pause({ id: stillOn.id, title: stillOn.title })}
+            />
           )}
 
           {nudge && (

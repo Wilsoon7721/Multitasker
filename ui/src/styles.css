@@ -1367,6 +1367,7 @@ html.switcher body {
 }
 
 .suggestion.switched,
+.suggestion.still-on,
 .suggestion.pick-up,
 .suggestion.link-offer,
 .suggestion.left-off-prompt,
