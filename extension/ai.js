@@ -48,7 +48,9 @@
       // The extension was updated or removed; this copy of the script has no one left to tell.
     }
   };
-  tell({ seen: true });
+  tell({ seen: true, hidden: document.hidden });
+  // Out of sight, the page stops drawing the reply, so the extension leans on the reply's request instead.
+  document.addEventListener('visibilitychange', () => tell({ hidden: document.hidden }));
 
   setInterval(() => {
     if (grew) {

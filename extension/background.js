@@ -1,4 +1,4 @@
-import { setUp, turnOff, turnOn } from './replies.js';
+import { note, setUp, turnOff, turnOn } from './replies.js';
 
 // Talks to MultiTasker through the relay it registers with the browser, and tells it which tab is in front.
 const HOST = 'dev.wilsoon.multitasker';
@@ -105,6 +105,7 @@ async function openTabs(urls) {
 /** Brings a tab and its window to the front. */
 async function focusTab(tabId) {
   const tab = await chrome.tabs.update(tabId, { active: true }).catch(() => null);
+  void note(`asked to show tab ${tabId}: ${tab ? 'found' : 'gone'}`);
   if (tab) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
 }
 

@@ -40,7 +40,7 @@ const hostOf = (url) => {
 /** What's known about each tab's chat: whether its page looks busy, its open requests, and whether a reply started. */
 const tabs = new Map();
 const tabState = (tabId) => {
-  if (!tabs.has(tabId)) tabs.set(tabId, { page: false, requests: new Map(), started: 0, settle: null });
+  if (!tabs.has(tabId)) tabs.set(tabId, { page: false, hidden: false, requests: new Map(), started: 0, settle: null });
   return tabs.get(tabId);
 };
 
@@ -53,9 +53,30 @@ async function remember(host, field) {
   await chrome.storage.local.set({ health });
 }
 
+/** The last few things reply notices did, for working out why one didn't show. */
+export async function note(event) {
+  const { log = [] } = await chrome.storage.local.get('log');
+  log.push(`${new Date().toISOString()} ${event}`);
+  await chrome.storage.local.set({ log: log.slice(-30) });
+}
+
 export async function health() {
   const { health = {} } = await chrome.storage.local.get('health');
   return health;
+}
+
+/** Requests made for the reply in progress: from just before it started, and not a background connection. */
+const replyRequests = (s, now) =>
+  s.started ? [...s.requests.values()].filter((at) => at >= s.started - LEAD && now - at < STALE) : [];
+
+/**
+ * Whether a tab's reply is still being written. A page in a tab out of sight stops drawing, so it can look busy long
+ * after its reply arrived; there, once the reply's own request has been seen, that request says when it's done.
+ */
+function busyNow(s, now) {
+  const open = replyRequests(s, now).length > 0;
+  const pageBusy = s.page && !(s.hidden && s.sawRequest);
+  return pageBusy || open;
 }
 
 /**
@@ -66,12 +87,15 @@ export async function health() {
 function update(tabId, url, ask, looking) {
   const s = tabState(tabId);
   const now = Date.now();
-  const waiting = s.started && [...s.requests.values()].some((at) => at >= s.started - LEAD && now - at < STALE);
-  const busy = s.page || waiting;
+  const busy = s.started ? busyNow(s, now) : s.page;
 
   if (busy && !s.started) {
     s.started = now;
-    void ask({ type: 'ai_started', tab_id: tabId, site: SITES[hostOf(url)] ?? hostOf(url) });
+    s.sawRequest = replyRequests(s, now).length > 0;
+    void note(`started tab ${tabId} page=${s.page}`);
+    void ask({ type: 'ai_started', tab_id: tabId, site: SITES[hostOf(url)] ?? hostOf(url) }).then((r) =>
+      r?.error ? note(`started not delivered: ${r.error}`) : null,
+    );
   }
   if (busy) {
     clearTimeout(s.settle);
@@ -81,12 +105,14 @@ function update(tabId, url, ask, looking) {
   if (s.started && !s.settle) {
     s.settle = setTimeout(async () => {
       s.settle = null;
-      const later = Date.now();
-      const still = s.page || [...s.requests.values()].some((at) => at >= s.started - LEAD && later - at < STALE);
-      if (still) return;
+      if (busyNow(s, Date.now())) return;
       s.started = 0;
       void remember(hostOf(url), 'replied');
-      void ask({ type: 'ai_done', tab_id: tabId, looking: await looking(tabId) });
+      const now = await looking(tabId);
+      void note(`done tab ${tabId} looking=${now}`);
+      void ask({ type: 'ai_done', tab_id: tabId, looking: now }).then((r) =>
+        r?.error ? note(`done not delivered: ${r.error}`) : null,
+      );
     }, SETTLE);
   }
 }
@@ -100,7 +126,9 @@ function listen(ask, looking) {
   const filter = { urls: ORIGINS, types: ['xmlhttprequest', 'other'] };
   chrome.webRequest.onBeforeRequest.addListener((d) => {
     if (d.tabId < 0) return;
-    tabState(d.tabId).requests.set(d.requestId, Date.now());
+    const s = tabState(d.tabId);
+    s.requests.set(d.requestId, Date.now());
+    if (s.started) s.sawRequest = true;
   }, filter);
   const ended = (d) => {
     const s = tabs.get(d.tabId);
@@ -136,7 +164,12 @@ export function setUp(ask, looking) {
     void isOn().then((on) => {
       if (!on) return;
       if (message.seen) void remember(hostOf(url), 'visited');
+      if (typeof message.hidden === 'boolean') {
+        tabState(tabId).hidden = message.hidden;
+        update(tabId, url, ask, looking);
+      }
       if (typeof message.busy === 'boolean') {
+        void note(`page tab ${tabId} busy=${message.busy}`);
         tabState(tabId).page = message.busy;
         update(tabId, url, ask, looking);
       }

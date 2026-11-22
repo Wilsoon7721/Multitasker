@@ -135,6 +135,7 @@ async fn handle(app: &AppHandle, request: Request) -> Result<Value, String> {
                 .filter(|t| t.in_progress && t.in_progress_on.contains(&device))
                 .max_by_key(|t| t.started_at);
             let (task_id, title) = task.map(|t| (t.task.id, t.task.title)).unwrap_or_default();
+            eprintln!("AI reply started on {site} in tab {tab_id}");
             crate::jobs::add(app, task_id, title, site, crate::jobs::What::Tab { tab_id });
             Ok(json!({}))
         }
@@ -180,6 +181,12 @@ pub fn open_tabs(urls: &[String]) -> bool {
 
 /// Brings a tab to the front in the browser it's in.
 pub fn focus_tab(tab_id: i64) -> bool {
+    // Windows keeps a program from jumping in front of the one being used; this one was just clicked, so it can let
+    // the browser come forward.
+    #[cfg(windows)]
+    unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(windows_sys::Win32::UI::WindowsAndMessaging::ASFW_ANY);
+    }
     push(json!({ "push": "focus_tab", "tab_id": tab_id }).to_string())
 }
 

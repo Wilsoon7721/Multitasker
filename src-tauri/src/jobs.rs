@@ -113,8 +113,12 @@ pub fn tab_done(app: &AppHandle, tab_id: i64, looking: bool) {
     let finished = {
         let mut jobs = lock();
         let open = |w: &Watch| matches!(w.job.what, What::Tab { tab_id: t } if t == tab_id) && w.job.finished_at.is_none();
-        let Some(i) = jobs.iter().position(open) else { return };
+        let Some(i) = jobs.iter().position(open) else {
+            eprintln!("AI reply in tab {tab_id} finished, but its start was never heard");
+            return;
+        };
         let quick = (Utc::now() - jobs[i].job.started_at).to_std().unwrap_or_default() < QUICK_REPLY;
+        eprintln!("AI reply in tab {tab_id} finished: looking={looking}, quick={quick}");
         if looking || quick {
             jobs.remove(i);
             None
