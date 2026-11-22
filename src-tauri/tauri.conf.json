@@ -21,7 +21,8 @@
         "minHeight": 420,
         "center": true,
         "decorations": false,
-        "visible": false
+        "visible": false,
+        "create": false
       },
       {
         "label": "widget",
@@ -38,7 +39,8 @@
         "maximizable": false,
         "minimizable": false,
         "focus": false,
-        "visible": false
+        "visible": false,
+        "create": false
       },
       {
         "label": "switcher",
@@ -55,7 +57,8 @@
         "maximizable": false,
         "minimizable": false,
         "center": true,
-        "visible": false
+        "visible": false,
+        "create": false
       }
     ],
     "security": {

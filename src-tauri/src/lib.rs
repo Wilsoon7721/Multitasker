@@ -122,6 +122,11 @@ pub fn run() {
                 projects: Arc::default(),
             });
 
+            // The windows open only now, so their first questions never arrive before the state they ask about.
+            for config in app.config().app.windows.clone() {
+                tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?.build()?;
+            }
+
             // Installers register the app link; development builds register it here so sign-in works there too.
             #[cfg(any(windows, target_os = "linux"))]
             let _ = app.deep_link().register_all();
