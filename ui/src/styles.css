@@ -1367,6 +1367,7 @@ html.switcher body {
 }
 
 .suggestion.switched,
+.suggestion.plan-note,
 .suggestion.still-on,
 .suggestion.pick-up,
 .suggestion.link-offer,
@@ -2946,4 +2947,28 @@ button.secondary.small {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* ───────────── Daily plan ───────────── */
+
+.icon-btn.plan {
+  color: var(--text-3);
+  opacity: 0;
+}
+
+.card:hover .icon-btn.plan,
+.icon-btn.plan:focus-visible,
+.icon-btn.plan.on {
+  opacity: 1;
+}
+
+.icon-btn.plan.on {
+  color: #f59e0b;
+}
+
+.plan-mark {
+  flex: none;
+  margin-right: 5px;
+  color: #f59e0b;
+  vertical-align: -1px;
 }

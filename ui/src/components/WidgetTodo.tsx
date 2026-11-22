@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronDown, GripVertical, Play } from 'lucide-react';
+import { CalendarDays, ChevronDown, GripVertical, Play, Sun } from 'lucide-react';
 import { useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { api, type TaskView } from '../api';
 import { dueInfo, useNow } from '../time';
@@ -24,8 +24,10 @@ export function WidgetTodo(props: {
   onCollapse: () => void;
   /** Called once a task has been started from here. */
   onStarted?: (task: TaskView) => void;
+  /** Today's plan, shown first. */
+  planned?: Set<string>;
 }) {
-  const { tasks, run, target, onDragChange, onCollapse, onStarted } = props;
+  const { tasks, run, target, onDragChange, onCollapse, onStarted, planned } = props;
   const [drag, setDrag] = useState<Drag | null>(null);
   const origin = useRef({ x: 0, y: 0 });
   const now = useNow();
@@ -75,42 +77,50 @@ export function WidgetTodo(props: {
         <p className="widget-todo-empty">No other tasks waiting.</p>
       ) : (
         <ul className="widget-list widget-todo-list">
-          {tasks.map((t) => {
-            const due = dueInfo(t, now);
-            const dragging = drag?.started && drag.task.id === t.id;
-            return (
-              <li
-                key={t.id}
-                className={`widget-item todo-item${dragging ? ' dragging' : ''}`}
-                onPointerDown={(e) => onPointerDown(e, t)}
-                onPointerMove={onPointerMove}
-                onPointerUp={() => finish(true)}
-                onPointerCancel={() => finish(false)}
-              >
-                <GripVertical size={14} className="grip" />
-                <div className="widget-task">
-                  <span className="widget-title" title={t.title}>
-                    {t.title}
-                  </span>
-                  {(t.category || due) && (
-                    <span className="card-meta">
-                      {t.category && <span className="tag">{t.category}</span>}
-                      {due && (
-                        <span className={`meta${due.late ? ' late' : due.soon ? ' soon' : ''}`}>
-                          <CalendarDays size={11} /> {due.text}
-                        </span>
-                      )}
+          {[...tasks]
+            .sort((a, b) => Number(!!planned?.has(b.id)) - Number(!!planned?.has(a.id)))
+            .map((t) => {
+              const due = dueInfo(t, now);
+              const dragging = drag?.started && drag.task.id === t.id;
+              return (
+                <li
+                  key={t.id}
+                  className={`widget-item todo-item${dragging ? ' dragging' : ''}`}
+                  onPointerDown={(e) => onPointerDown(e, t)}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={() => finish(true)}
+                  onPointerCancel={() => finish(false)}
+                >
+                  <GripVertical size={14} className="grip" />
+                  <div className="widget-task">
+                    <span className="widget-title" title={t.title}>
+                      {planned?.has(t.id) && <Sun size={12} className="plan-mark" aria-label="On today's plan" />}
+                      {t.title}
                     </span>
-                  )}
-                </div>
-                <div className="widget-actions">
-                  <button className="icon-btn" onClick={() => start(t)} aria-label={`Start "${t.title}"`} title="Start">
-                    <Play size={14} />
-                  </button>
-                </div>
-              </li>
-            );
-          })}
+                    {(t.category || due) && (
+                      <span className="card-meta">
+                        {t.category && <span className="tag">{t.category}</span>}
+                        {due && (
+                          <span className={`meta${due.late ? ' late' : due.soon ? ' soon' : ''}`}>
+                            <CalendarDays size={11} /> {due.text}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  <div className="widget-actions">
+                    <button
+                      className="icon-btn"
+                      onClick={() => start(t)}
+                      aria-label={`Start "${t.title}"`}
+                      title="Start"
+                    >
+                      <Play size={14} />
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
         </ul>
       )}
 

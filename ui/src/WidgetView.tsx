@@ -10,6 +10,7 @@ import {
   Paperclip,
   Pause,
   Play,
+  Sun,
   Timer,
   Undo2,
   X,
@@ -29,6 +30,7 @@ import { useActivity } from './useActivity';
 import { hours, spentBetween, startOfDay, useSessions } from './useTimeSpent';
 import { useTasks } from './useTasks';
 import { useWidgetSize, type Edge } from './useWidgetSize';
+import { requestView, usePlan } from './usePlan';
 
 const EXPANDED_KEY = 'widget.expanded';
 
@@ -58,6 +60,10 @@ export function WidgetView() {
   // Only one nudge at a time, and none while a suggestion already asks for attention.
   const [, nudgesPutOff] = useState(0);
   const lastActive = useLastActive(snapshot.active);
+  const plan = usePlan();
+  // Each morning, once there's a choice to make, it asks what today is for.
+  const askToPlan =
+    !plan.order.length && !plan.isSkipped && new Date(now).getHours() >= 5 && todo.length + active.length >= 2;
   const [openedAt] = useState(() => Date.now());
   const nudge = suggestion ? null : nudgeFor(tasks ?? [], now);
   const dayStart = startOfDay(0, new Date(now));
@@ -222,6 +228,30 @@ export function WidgetView() {
                 aria-label="Not now"
                 title="Not now (quiet for 30 minutes)"
               >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {askToPlan && (
+            <div className="suggestion plan-note" role="status">
+              <Sun size={14} className="away-icon" aria-hidden />
+              <div className="suggestion-text">
+                <span className="suggestion-title">What's today for?</span>
+                <span className="suggestion-reason">Pick a few tasks; they stay at the top of your list</span>
+              </div>
+              <button
+                className="note-action"
+                onClick={() => {
+                  requestView('today');
+                  void run(api.openMain);
+                }}
+                aria-label="Plan today"
+                title="Plan today in MultiTasker"
+              >
+                <Sun size={14} />
+              </button>
+              <button className="icon-btn" onClick={plan.skip} aria-label="Not today" title="Not today">
                 <X size={14} />
               </button>
             </div>
@@ -454,6 +484,7 @@ export function WidgetView() {
               tasks={todo}
               run={run}
               onStarted={(t) => setPickUpId(t.id)}
+              planned={plan.planned}
               target={activeZone}
               onDragChange={setDragState}
               onCollapse={toggleExpanded}

@@ -1,4 +1,4 @@
-import { ChartColumn, CircleCheckBig, Hash, Inbox, ListTodo, Settings, Timer, X } from 'lucide-react';
+import { ChartColumn, CircleCheckBig, Hash, Inbox, ListTodo, Settings, Sun, Timer, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, type NewAttachment, type TaskView } from './api';
 import { Composer } from './components/Composer';
@@ -13,12 +13,19 @@ import { useNow } from './time';
 import { useActivity } from './useActivity';
 import { useDevices } from './useDevices';
 import { useTasks } from './useTasks';
+import { OPEN_VIEW_KEY, usePlan } from './usePlan';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 
-type View = 'open' | 'active' | 'todo' | 'done' | 'time' | 'settings';
+type View = 'today' | 'open' | 'active' | 'todo' | 'done' | 'time' | 'settings';
 type TaskViewId = Exclude<View, 'settings' | 'time'>;
 
 const VIEWS: { id: TaskViewId; label: string; icon: ReactNode; empty: string }[] = [
+  {
+    id: 'today',
+    label: 'Today',
+    icon: <Sun size={16} />,
+    empty: "Pick what today is for: press the sun on a task, and it's kept at the top of the widget too.",
+  },
   { id: 'open', label: 'All open', icon: <Inbox size={16} />, empty: 'Nothing open. Add a task above.' },
   {
     id: 'active',
@@ -30,17 +37,20 @@ const VIEWS: { id: TaskViewId; label: string; icon: ReactNode; empty: string }[]
   { id: 'done', label: 'Done', icon: <CircleCheckBig size={16} />, empty: 'Finished tasks land here.' },
 ];
 
-const inView = (t: TaskView, view: TaskViewId) =>
-  view === 'open'
-    ? t.status === 'todo'
-    : view === 'active'
-      ? t.in_progress
-      : view === 'todo'
-        ? t.status === 'todo' && !t.in_progress
-        : t.status === 'done';
+const inView = (t: TaskView, view: TaskViewId, planned: Set<string>) =>
+  view === 'today'
+    ? planned.has(t.id)
+    : view === 'open'
+      ? t.status === 'todo'
+      : view === 'active'
+        ? t.in_progress
+        : view === 'todo'
+          ? t.status === 'todo' && !t.in_progress
+          : t.status === 'done';
 
 export function App() {
   const { tasks, error, setError, clearError, run } = useTasks();
+  const plan = usePlan();
   const [view, setView] = useState<View>('open');
   const [category, setCategory] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -50,6 +60,15 @@ export function App() {
   const now = useNow();
   const { activeNow } = useActivity();
   const { startedOn } = useDevices();
+
+  // The widget asks for a view (planning the day) through shared storage.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === OPEN_VIEW_KEY && e.newValue) setView(e.newValue.split(':')[0] as View);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   useEffect(
     () =>
@@ -78,15 +97,18 @@ export function App() {
   );
   const counts = useMemo(
     () =>
-      Object.fromEntries(VIEWS.map((v) => [v.id, all.filter((t) => inView(t, v.id)).length])) as Record<
+      Object.fromEntries(VIEWS.map((v) => [v.id, all.filter((t) => inView(t, v.id, plan.planned)).length])) as Record<
         TaskViewId,
         number
       >,
-    [all],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [all, plan.order.join(',')],
   );
 
   const taskView = view === 'settings' || view === 'time' ? null : view;
-  const shown = taskView ? all.filter((t) => inView(t, taskView) && (!category || t.category === category)) : [];
+  const shown = taskView
+    ? all.filter((t) => inView(t, taskView, plan.planned) && (!category || t.category === category))
+    : [];
   const selected = all.find((t) => t.id === selectedId) ?? null;
   const current = VIEWS.find((v) => v.id === view);
   const close = useCallback(() => setSelectedId(null), []);
@@ -105,6 +127,8 @@ export function App() {
       live={activeNow(t.id, now)}
       onOpen={() => setSelectedId(t.id)}
       onDone={offerHandIn}
+      planned={plan.planned.has(t.id)}
+      onTogglePlan={() => plan.toggle(t.id)}
     />
   );
 

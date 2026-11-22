@@ -50,6 +50,8 @@ Early development. What works today:
 - **Quick switcher**: Ctrl+Alt+Space (or the next free choice, if another program has it) opens a search of your open tasks. Enter switches to one (pausing what
   you were on), Shift+Enter starts it alongside, Ctrl+Enter pauses it, and typing something new adds it. The hotkey
   can be changed or turned off in Settings.
+- **A daily plan**: each morning the widget asks what today is for. Press the sun on tasks to plan them; they're listed
+  under Today and kept at the top of the widget's to-do list. The plan is kept on each computer for now.
 - **Checklists**: break a task into steps in its details; cards show how many are done and the widget shows the next
   one with a box to tick it off. With Todoist they're the task's sub-tasks, with Notion to-dos on its page, and with
   JavaDashboard its own steps (after `deploy/task-checklist.sql`).

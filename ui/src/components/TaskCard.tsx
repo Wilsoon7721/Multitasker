@@ -1,4 +1,4 @@
-import { CalendarDays, ListChecks, NotebookPen, PackageCheck, Paperclip, Pause, Play, Timer } from 'lucide-react';
+import { CalendarDays, ListChecks, NotebookPen, PackageCheck, Paperclip, Pause, Play, Sun, Timer } from 'lucide-react';
 import { api, type Activity, type TaskView } from '../api';
 import { dueInfo, workedTime } from '../time';
 import { checkCount } from './Checklist';
@@ -14,8 +14,11 @@ export function TaskCard(props: {
   onOpen: () => void;
   /** Called once the task has been marked done here. */
   onDone: (task: TaskView) => void;
+  /** Whether it's on today's plan, and how to change that. */
+  planned?: boolean;
+  onTogglePlan?: () => void;
 }) {
-  const { task, run, now, selected, live, onOpen, onDone } = props;
+  const { task, run, now, selected, live, onOpen, onDone, planned, onTogglePlan } = props;
   const done = task.status === 'done';
   const due = done ? null : dueInfo(task, now);
   const worked = workedTime(task, now);
@@ -80,6 +83,20 @@ export function TaskCard(props: {
         </span>
       </div>
 
+      {!done && onTogglePlan && (
+        <button
+          className={`icon-btn plan${planned ? ' on' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePlan();
+          }}
+          aria-pressed={planned}
+          aria-label={planned ? `Take "${task.title}" off today's plan` : `Plan "${task.title}" for today`}
+          title={planned ? "On today's plan" : 'Plan it for today'}
+        >
+          <Sun size={15} />
+        </button>
+      )}
       {!done && (
         <button
           className={`icon-btn start${task.in_progress ? ' on' : ''}`}
