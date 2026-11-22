@@ -106,7 +106,7 @@ pub fn run() {
             let deliverables = Arc::new(multitasker_deliverables::Store::open(data_dir.join("deliverables"))?);
             let prefs = settings::load(&data_dir);
             let device = device::load_or_create(&data_dir)?;
-            let detector = detection::Detector::new(prefs.detection, prefs.auto_switch, device.id.clone());
+            let detector = detection::Detector::new(prefs.detection, prefs.auto_switch, prefs.auto_start_after_secs, device.id.clone());
             let syncer = syncing::Syncer::new(prefs.sync.clone());
             app.manage(AppState {
                 provider: RwLock::new(initial_provider(&prefs.tasks, db.clone())),
@@ -229,6 +229,8 @@ pub fn run() {
             commands::dismiss_switch,
             commands::auto_switch,
             commands::set_auto_switch,
+            commands::auto_start_after,
+            commands::set_auto_start_after,
             commands::pause_after_away,
             commands::set_pause_after_away,
             commands::sync_status,

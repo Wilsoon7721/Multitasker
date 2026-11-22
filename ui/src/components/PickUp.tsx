@@ -44,7 +44,7 @@ export function LeftOffPrompt(props: { task: { id: string; title: string }; run:
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onKeyDown={(e) => e.key === 'Escape' && onClose()}
-        placeholder={`Where did you leave “${task.title}”?`}
+        placeholder={`Leave a note for where you stopped "${task.title}" at?`}
         aria-label={`Where you left off “${task.title}”`}
         maxLength={500}
       />

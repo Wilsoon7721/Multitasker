@@ -22,6 +22,8 @@ pub struct Settings {
     pub pause_after_away: Option<u32>,
     /// Switch to a task on its own when its things stay in front, rather than asking first.
     pub auto_switch: bool,
+    /// Seconds a task's related file or program must stay in front before it starts on its own.
+    pub auto_start_after_secs: u64,
     /// Whether the widget stays above other windows, and when it steps aside.
     pub widget_on_top: OnTop,
     /// Start MultiTasker when signing in to Windows (installed builds only).
@@ -82,6 +84,7 @@ impl Default for Settings {
             widget_opacity: 94,
             pause_after_away: Some(15),
             auto_switch: true,
+            auto_start_after_secs: crate::detection::DEFAULT_START_AFTER_SECS,
             widget_on_top: OnTop::default(),
             start_with_windows: true,
             switcher_shortcut: Some("Ctrl+Alt+Space".into()),

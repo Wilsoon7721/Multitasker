@@ -192,6 +192,7 @@ let activity: ActivitySnapshot = {
 };
 let pauseAfterAway: number | null = 15;
 let autoSwitch = true;
+let startAfter = 30;
 let startup = true;
 const projectRuns = new Map<string, RunView>();
 const projectAutoruns = new Map<string, string[]>();
@@ -532,6 +533,13 @@ mockIPC(
       case 'dismiss_switch':
         activity = { ...activity, switched: null };
         activityChanged();
+        return null;
+
+      case 'auto_start_after':
+        return startAfter;
+
+      case 'set_auto_start_after':
+        startAfter = Number(a.secs);
         return null;
 
       case 'auto_switch':

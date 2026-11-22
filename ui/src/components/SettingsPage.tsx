@@ -906,16 +906,20 @@ function RemindersSection({ run }: { run: Run }) {
   );
 }
 
+const START_AFTER = [5, 15, 30, 60, 120, 300];
+
 const AWAY_OPTIONS = [5, 10, 15, 30, 60, null];
 
 function DetectionSection({ run }: { run: Run }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [away, setAway] = useState<number | null | undefined>(undefined);
   const [autoSwitch, setAutoSwitch] = useState<boolean | null>(null);
+  const [startAfter, setStartAfter] = useState<number | null>(null);
 
   useEffect(() => {
     void api.pauseAfterAway().then(setAway, () => {});
     void api.autoSwitch().then(setAutoSwitch, () => {});
+    void api.autoStartAfter().then(setStartAfter, () => {});
     void api.detectionEnabled().then(setEnabled, () => {});
     return onActivity((s) => setEnabled(s.enabled));
   }, []);
@@ -941,10 +945,10 @@ function DetectionSection({ run }: { run: Run }) {
       </label>
       <label className="toggle-row reminder-row">
         <span>
-          <span className="choice-title">Switch tasks on its own</span>
+          <span className="choice-title">Auto-start tasks when a related file or process opens</span>
           <span className="choice-detail">
-            After half a minute on another task's linked files or pages, starts that task and pauses what you were on.
-            Turn this off to be asked first.
+            Starts the task whose linked file, page or app you've stayed on, pausing what you were on, with Undo in the
+            widget. Turn this off to be asked first.
           </span>
         </span>
         <input
@@ -960,6 +964,30 @@ function DetectionSection({ run }: { run: Run }) {
           }}
         />
       </label>
+      {autoSwitch && enabled && (
+        <label className="toggle-row reminder-row">
+          <span>
+            <span className="choice-title">How long before auto-starting</span>
+            <span className="choice-detail">How long the related file or process has to stay open first.</span>
+          </span>
+          <select
+            className="inline-select"
+            value={startAfter ?? 30}
+            disabled={startAfter === null}
+            onChange={(e) => {
+              const secs = Number(e.target.value);
+              setStartAfter(secs);
+              void run(() => api.setAutoStartAfter(secs));
+            }}
+          >
+            {START_AFTER.map((s) => (
+              <option key={s} value={s}>
+                {s < 60 ? `${s} seconds` : s === 60 ? '1 minute' : `${s / 60} minutes`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="toggle-row reminder-row">
         <span>
           <span className="choice-title">Pause when I'm away</span>

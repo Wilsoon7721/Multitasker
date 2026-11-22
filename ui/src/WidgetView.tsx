@@ -244,7 +244,7 @@ export function WidgetView() {
               <ArrowRightLeft size={14} className="away-icon" aria-hidden />
               <div className="suggestion-text">
                 <span className="suggestion-title" title={switched.to.title}>
-                  Switched to “{switched.to.title}”
+                  {switched.from.length ? 'Switched to' : 'Started'} “{switched.to.title}”
                 </span>
                 <span className="suggestion-reason" title={switched.reason}>
                   {switched.from.length ? `Paused ${switched.from.map((t) => `“${t.title}”`).join(', ')} · ` : ''}

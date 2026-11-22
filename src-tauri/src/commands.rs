@@ -800,6 +800,20 @@ pub fn dismiss_switch(app: AppHandle, state: State<'_, AppState>) {
     state.detector.take_switch(&app);
 }
 
+/// Seconds a task's related file or program must stay in front before it starts on its own.
+#[tauri::command]
+pub fn auto_start_after(state: State<'_, AppState>) -> u64 {
+    state.detector.start_after().as_secs()
+}
+
+#[tauri::command]
+pub fn set_auto_start_after(state: State<'_, AppState>, secs: u64) -> CmdResult<()> {
+    let secs = secs.clamp(1, 3600);
+    settings::update(&state.data_dir, |s| s.auto_start_after_secs = secs).map_err(err)?;
+    state.detector.set_start_after(secs);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn auto_switch(state: State<'_, AppState>) -> bool {
     state.detector.auto_switch()

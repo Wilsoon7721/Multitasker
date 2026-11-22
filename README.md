@@ -33,9 +33,9 @@ Early development. What works today:
   browser is in front, the linked tab counts as working on its task (see
   [docs/browser-extension.md](docs/browser-extension.md)).
 - **Activity detection** (Windows): link apps, files and folders to a task, and MultiTasker notices when you're on
-  them — from the window in front and from file saves. Tasks in progress show as *active now*. Stay on another task's
-  linked files or pages for half a minute and MultiTasker switches to it, pausing what you were on (Undo is one click
-  away, or have it ask first in Settings). Time spent on a task adds up across pauses and computers. Everything stays
+  them — from the window in front and from file saves. Tasks in progress show as *active now*. When a task's linked
+  file, page or app stays open for 30 seconds (adjustable), MultiTasker starts that task, pausing what you were on, with
+  Undo one click away; or have it ask first in Settings. Time spent on a task adds up across pauses and computers. Everything stays
   on your computer; window titles are only read in memory. Turn it off from the tray ("Detect what I'm working on").
 - **Pauses when you're away**: after 15 minutes with no keyboard or mouse, or while the computer sleeps or MultiTasker
   is closed, what's in progress on that computer pauses. The widget offers to resume when you're back. Change the wait

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -32,10 +32,12 @@ const SUGGESTION_TTL: Duration = Duration::from_secs(5 * 60);
 const FORGET_AFTER: Duration = Duration::from_secs(60 * 60);
 /// Re-announce ongoing activity this often, so "active now" stays fresh in the UI.
 const TOUCH_EVERY: Duration = Duration::from_secs(30);
-/// Staying on another task's things this long switches to it.
-const SWITCH_AFTER: Duration = Duration::from_secs(30);
-/// Looking away for longer than this starts the count again.
-const SWITCH_GAP: Duration = Duration::from_secs(6);
+/// How long a task's things must stay in front before it starts on its own, unless Settings says otherwise.
+pub const DEFAULT_START_AFTER_SECS: u64 = 30;
+/// A task whose things were in front this recently is kept going when another one starts.
+const KEEP_IF_ACTIVE_WITHIN: Duration = Duration::from_secs(30);
+/// Looking away for at least this long starts the count again; longer waits allow longer glances away.
+const MIN_GAP: Duration = Duration::from_secs(6);
 /// The "switched" note goes away after this long.
 const SWITCH_NOTE_FOR: Duration = Duration::from_secs(5 * 60);
 /// Staying on a page linked to nothing this long, while a task is in progress here, offers to link it.
@@ -144,6 +146,8 @@ pub struct Detector {
     enabled: AtomicBool,
     /// Switch to another task on its own, rather than only suggesting it.
     auto_switch: AtomicBool,
+    /// Seconds a task's things must stay in front before it starts on its own.
+    start_after: AtomicU64,
     dirty: AtomicBool,
     inner: Mutex<Inner>,
     /// The browser tab in front, as the extension last reported it; `None` once the browser lost focus.
@@ -153,10 +157,11 @@ pub struct Detector {
 }
 
 impl Detector {
-    pub fn new(enabled: bool, auto_switch: bool, device: String) -> Arc<Self> {
+    pub fn new(enabled: bool, auto_switch: bool, start_after_secs: u64, device: String) -> Arc<Self> {
         Arc::new(Self {
             enabled: AtomicBool::new(enabled),
             auto_switch: AtomicBool::new(auto_switch),
+            start_after: AtomicU64::new(start_after_secs.max(1)),
             dirty: AtomicBool::new(true),
             inner: Mutex::default(),
             tab: Mutex::new(None),
@@ -240,6 +245,19 @@ impl Detector {
         self.auto_switch.load(Ordering::Relaxed)
     }
 
+    pub fn start_after(&self) -> Duration {
+        Duration::from_secs(self.start_after.load(Ordering::Relaxed))
+    }
+
+    pub fn set_start_after(&self, secs: u64) {
+        self.start_after.store(secs.max(1), Ordering::Relaxed);
+    }
+
+    /// How long a glance away is allowed before the count starts again.
+    fn gap(&self) -> Duration {
+        MIN_GAP.max(self.start_after() / 10)
+    }
+
     pub fn set_auto_switch(&self, on: bool) {
         self.auto_switch.store(on, Ordering::Relaxed);
         self.inner().candidate = None;
@@ -247,7 +265,7 @@ impl Detector {
 
     /// Whether a task's things were in front within the last moment, so switching away from it would be wrong.
     fn recently_active(&self, task_id: &TaskId) -> bool {
-        self.inner().active.get(task_id).is_some_and(|a| (Utc::now() - a.at).to_std().unwrap_or_default() < SWITCH_AFTER)
+        self.inner().active.get(task_id).is_some_and(|a| (Utc::now() - a.at).to_std().unwrap_or_default() < KEEP_IF_ACTIVE_WITHIN)
     }
 
     /// The task to switch to, once its things have stayed in front long enough.
@@ -256,7 +274,8 @@ impl Detector {
             return None;
         }
         let mut inner = self.inner();
-        let due = inner.candidate.as_ref().is_some_and(|c| c.first.elapsed() >= SWITCH_AFTER && c.last.elapsed() < SWITCH_GAP);
+        let (after, gap) = (self.start_after(), self.gap());
+        let due = inner.candidate.as_ref().is_some_and(|c| c.first.elapsed() >= after && c.last.elapsed() < gap);
         if !due {
             return None;
         }
@@ -407,15 +426,19 @@ impl Detector {
             let dismissed = inner.dismissed.get(&m.task_id).is_some_and(|at| at.elapsed() < DISMISS_FOR);
             if !dismissed {
                 let now = Instant::now();
+                let gap = self.gap();
                 let first = match &inner.candidate {
-                    Some(c) if c.task_id == m.task_id && c.last.elapsed() < SWITCH_GAP => c.first,
+                    Some(c) if c.task_id == m.task_id && c.last.elapsed() < gap => c.first,
                     _ => now,
                 };
                 inner.candidate = Some(Candidate { task_id: m.task_id.clone(), reason: m.reason.clone(), first, last: now });
-                let title = titles.get(&m.task_id).cloned().unwrap_or_default();
-                let suggestion = Suggestion { task_id: m.task_id.clone(), title, reason: m.reason.clone() };
-                changed |= inner.suggestion.as_ref().map(|(s, _)| s) != Some(&suggestion);
-                inner.suggestion = Some((suggestion, Instant::now()));
+                // Starting on its own needs no question first; only asking instead shows one.
+                if !self.auto_switch() {
+                    let title = titles.get(&m.task_id).cloned().unwrap_or_default();
+                    let suggestion = Suggestion { task_id: m.task_id.clone(), title, reason: m.reason.clone() };
+                    changed |= inner.suggestion.as_ref().map(|(s, _)| s) != Some(&suggestion);
+                    inner.suggestion = Some((suggestion, Instant::now()));
+                }
             }
         }
         changed
@@ -606,7 +629,7 @@ mod tests {
     }
 
     fn setup() -> Arc<Detector> {
-        let d = Detector::new(true, true, "pc".into());
+        let d = Detector::new(true, false, DEFAULT_START_AFTER_SECS, "pc".into());
         d.refresh(vec![
             view("essay", true, vec![(AttachmentKind::App, "Word", r"C:\Office\WINWORD.EXE")]),
             view("report", false, vec![(AttachmentKind::Document, "report.docx", r"C:\Docs\report.docx")]),
@@ -638,32 +661,38 @@ mod tests {
     #[test]
     fn switches_only_after_staying_on_another_task() {
         let d = setup();
+        d.set_auto_switch(true);
         d.observe(&word("report - Word"));
         assert_eq!(d.due_switch(), None, "a glance isn't enough");
+        assert!(d.snapshot().suggestion.is_none(), "starting on its own asks nothing first");
 
         let rewind = |d: &Detector, by: Duration| {
             if let Some(c) = d.inner().candidate.as_mut() {
                 c.first -= by;
             }
         };
-        rewind(&d, SWITCH_AFTER);
+        rewind(&d, d.start_after());
         d.set_auto_switch(false);
         d.observe(&word("report - Word"));
-        rewind(&d, SWITCH_AFTER);
+        rewind(&d, d.start_after());
         assert_eq!(d.due_switch(), None, "asking instead only suggests");
+        assert!(d.snapshot().suggestion.is_some(), "and it does ask");
+
+        // A longer wait allows longer glances away, and starts only once it has passed.
+        d.set_start_after(300);
+        assert_eq!(d.gap(), Duration::from_secs(30));
 
         d.set_auto_switch(true);
         d.observe(&word("report - Word"));
-        rewind(&d, SWITCH_AFTER);
+        rewind(&d, d.start_after());
         assert_eq!(d.due_switch().map(|(id, _)| id), Some("report".into()));
-        assert!(d.snapshot().suggestion.is_none(), "the switch replaces the suggestion");
         assert_eq!(d.due_switch(), None, "and happens once");
 
         // Looking elsewhere for a while starts the count again.
         d.observe(&word("report - Word"));
-        rewind(&d, SWITCH_AFTER);
+        rewind(&d, d.start_after());
         if let Some(c) = d.inner().candidate.as_mut() {
-            c.last -= SWITCH_GAP;
+            c.last -= d.gap();
         }
         d.observe(&word("report - Word"));
         assert_eq!(d.due_switch(), None);
