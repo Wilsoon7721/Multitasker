@@ -2790,30 +2790,41 @@ button.secondary.small {
 }
 
 .resize-edge {
-  position: fixed;
+  position: absolute;
   z-index: 50;
+  touch-action: none;
 }
 
 .resize-west {
-  top: 8px;
-  bottom: 14px;
+  top: 0;
+  bottom: 12px;
   left: 0;
-  width: 10px;
+  width: 7px;
   cursor: ew-resize;
 }
 
 .resize-south {
-  right: 8px;
+  right: 0;
   bottom: 0;
-  left: 14px;
-  height: 10px;
+  left: 12px;
+  height: 7px;
   cursor: ns-resize;
 }
 
 .resize-southwest {
   bottom: 0;
   left: 0;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   cursor: nesw-resize;
+}
+
+/* While its edge is dragged the card sits in a larger window, held to the top-right corner. */
+.widget-card {
+  position: relative;
+  margin-left: auto;
+}
+
+.widget-card.resizing {
+  outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
 }

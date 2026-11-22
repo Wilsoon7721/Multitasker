@@ -1,5 +1,5 @@
-import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { getCurrentWindow, LogicalPosition, LogicalSize } from '@tauri-apps/api/window';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 
 /** The card's margin on every side; the window includes it so the shadow isn't clipped. */
 export const MARGIN = 8;
@@ -13,6 +13,8 @@ export interface WidgetSize {
   width: number;
   maxHeight: number;
 }
+
+export type Edge = 'West' | 'South' | 'SouthWest';
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(v)));
 
@@ -31,76 +33,100 @@ function load(): WidgetSize {
   return DEFAULT;
 }
 
-export type Edge = 'West' | 'South' | 'SouthWest';
+interface Drag {
+  edge: Edge;
+  x: number;
+  y: number;
+  start: WidgetSize;
+}
 
-/** Keeps the window hugging the card, so its transparent edge never blocks clicks, within the size dragged to. */
+/**
+ * Keeps the window hugging the card, so its transparent edge never blocks clicks. Dragging an edge resizes only the
+ * card inside a window opened to the largest size, because resizing a transparent webview window live repaints badly.
+ */
 export function useWidgetSize(header: RefObject<HTMLElement | null>, body: RefObject<HTMLElement | null>) {
   const [size, setSize] = useState<WidgetSize>(load);
   const sizeRef = useRef(size);
   sizeRef.current = size;
-  // While an edge is being dragged, the window's size is the person's, not the content's.
-  const resizing = useRef<Edge | null>(null);
-  const settle = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const drag = useRef<Drag | null>(null);
+  const [dragging, setDragging] = useState(false);
 
-  const fit = () => {
-    if (resizing.current !== null || !header.current || !body.current) return;
+  /** Sizes the window to the card, keeping its right edge where it is, since the widget is pinned top-right. */
+  const fit = async () => {
+    if (drag.current || !header.current || !body.current) return;
+    const win = getCurrentWindow();
     const natural = header.current.offsetHeight + body.current.offsetHeight + 2 + MARGIN * 2;
     const { width, maxHeight } = sizeRef.current;
-    void getCurrentWindow().setSize(new LogicalSize(width + MARGIN * 2, Math.min(maxHeight + MARGIN * 2, natural)));
+    const w = width + MARGIN * 2;
+    const h = Math.min(maxHeight + MARGIN * 2, natural);
+    const scale = await win.scaleFactor();
+    const [pos, outer] = await Promise.all([win.outerPosition(), win.outerSize()]);
+    const right = (pos.x + outer.width) / scale;
+    if (Math.abs(outer.width / scale - w) > 0.5) await win.setPosition(new LogicalPosition(right - w, pos.y / scale));
+    await win.setSize(new LogicalSize(w, h));
   };
 
   useEffect(() => {
-    const observer = new ResizeObserver(fit);
+    const observer = new ResizeObserver(() => void fit());
     if (header.current) observer.observe(header.current);
     if (body.current) observer.observe(body.current);
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(fit, [size]);
-
   useEffect(() => {
-    const win = getCurrentWindow();
-    const stop = win.onResized(async ({ payload }) => {
-      const edge = resizing.current;
-      if (edge === null) return;
-      const scale = await win.scaleFactor();
-      // Only the edge being dragged changes its setting, so widening never caps the height at what's showing now.
-      const next = {
-        width:
-          edge === 'South'
-            ? sizeRef.current.width
-            : clamp(payload.width / scale - MARGIN * 2, LIMITS.minWidth, LIMITS.maxWidth),
-        maxHeight:
-          edge === 'West'
-            ? sizeRef.current.maxHeight
-            : clamp(payload.height / scale - MARGIN * 2, LIMITS.minHeight, LIMITS.maxHeight),
-      };
-      clearTimeout(settle.current);
-      // The drag has ended once the size stops changing; then the window hugs the content again.
-      settle.current = setTimeout(() => {
-        resizing.current = null;
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        } catch {
-          // Without storage the size lasts until the widget restarts.
-        }
-        setSize(next);
-      }, 400);
-    });
-    return () => void stop.then((unlisten) => unlisten());
-  }, []);
+    if (!dragging) void fit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [size, dragging]);
 
-  const startResize = (edge: Edge) => {
-    resizing.current = edge;
-    // A press without a drag sends no resize at all, so the widget stops waiting for one after a moment.
-    clearTimeout(settle.current);
-    settle.current = setTimeout(() => {
-      resizing.current = null;
-      fit();
-    }, 1500);
-    void getCurrentWindow().startResizeDragging(edge);
+  const start = async (edge: Edge, e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    // Dragging the bottom starts from the height showing now, so the edge follows the pointer from the first move.
+    const card = target.closest<HTMLElement>('.widget-card');
+    const showing = card ? Math.round(card.getBoundingClientRect().height) : sizeRef.current.maxHeight;
+    const from = {
+      ...sizeRef.current,
+      maxHeight: Math.min(sizeRef.current.maxHeight, Math.max(LIMITS.minHeight, showing)),
+    };
+    drag.current = { edge, x: e.screenX, y: e.screenY, start: from };
+    setDragging(true);
+    // Room for the card to grow into: the largest size, still anchored at the top-right corner.
+    const win = getCurrentWindow();
+    const scale = await win.scaleFactor();
+    const [pos, outer] = await Promise.all([win.outerPosition(), win.outerSize()]);
+    const right = (pos.x + outer.width) / scale;
+    const w = LIMITS.maxWidth + MARGIN * 2;
+    await win.setPosition(new LogicalPosition(right - w, pos.y / scale));
+    await win.setSize(new LogicalSize(w, LIMITS.maxHeight + MARGIN * 2));
   };
 
-  return { size, startResize };
+  const move = (e: ReactPointerEvent<HTMLElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const width = d.edge === 'South' ? d.start.width : d.start.width + (d.x - e.screenX);
+    const maxHeight = d.edge === 'West' ? d.start.maxHeight : d.start.maxHeight + (e.screenY - d.y);
+    const next = {
+      width: clamp(width, LIMITS.minWidth, LIMITS.maxWidth),
+      maxHeight: clamp(maxHeight, LIMITS.minHeight, LIMITS.maxHeight),
+    };
+    // Kept at once, so letting go saves the last position even before the screen has caught up.
+    sizeRef.current = next;
+    setSize(next);
+  };
+
+  const end = () => {
+    if (!drag.current) return;
+    drag.current = null;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sizeRef.current));
+    } catch {
+      // Without storage the size lasts until the widget restarts.
+    }
+    setDragging(false);
+  };
+
+  return { size, dragging, grip: { start, move, end } };
 }

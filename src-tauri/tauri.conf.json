@@ -34,15 +34,11 @@
         "shadow": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "resizable": true,
+        "resizable": false,
         "maximizable": false,
         "minimizable": false,
         "focus": false,
-        "visible": false,
-        "minWidth": 316,
-        "maxWidth": 576,
-        "minHeight": 60,
-        "maxHeight": 916
+        "visible": false
       },
       {
         "label": "switcher",

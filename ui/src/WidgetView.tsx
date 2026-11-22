@@ -24,7 +24,7 @@ import { pathItems, taskZone, useFileDrop } from './useFileDrop';
 import { useActivity } from './useActivity';
 import { hours, spentBetween, startOfDay, useSessions } from './useTimeSpent';
 import { useTasks } from './useTasks';
-import { MARGIN, useWidgetSize, type Edge } from './useWidgetSize';
+import { useWidgetSize, type Edge } from './useWidgetSize';
 
 const EXPANDED_KEY = 'widget.expanded';
 
@@ -114,7 +114,7 @@ export function WidgetView() {
 
   const header = useRef<HTMLElement>(null);
   const body = useRef<HTMLDivElement>(null);
-  const { startResize } = useWidgetSize(header, body);
+  const { size, dragging, grip } = useWidgetSize(header, body);
 
   // Drop a file you're working on onto its task; with only one task going, anywhere on the card will do.
   useFileDrop((paths, zone) => {
@@ -130,8 +130,12 @@ export function WidgetView() {
     });
 
   return (
-    <div className="widget-card" ref={card} style={{ maxHeight: `calc(100vh - ${MARGIN * 2}px)` }}>
-      <ResizeEdges onStart={startResize} />
+    <div
+      className={`widget-card${dragging ? ' resizing' : ''}`}
+      ref={card}
+      style={{ width: size.width, maxHeight: size.maxHeight }}
+    >
+      <ResizeEdges grip={grip} />
       <header className="widget-header" ref={header} data-tauri-drag-region>
         <h1 data-tauri-drag-region>
           In progress <span className="count">{active.length}</span>
@@ -411,25 +415,25 @@ function awayText(since: string): string {
   return `You were away from ${day}${localTime(since)}`;
 }
 
-/** Grips on the widget's left and bottom edges; it's pinned top-right, so those are the ones that move. */
-function ResizeEdges({ onStart }: { onStart: (edge: Edge) => void }) {
-  const grip = (edge: Edge, label: string) => (
+/** Grips on the card's left and bottom edges; it's pinned top-right, so those are the ones that move. */
+function ResizeEdges({ grip }: { grip: ReturnType<typeof useWidgetSize>['grip'] }) {
+  const edge = (which: Edge, label: string) => (
     <div
-      className={`resize-edge resize-${edge.toLowerCase()}`}
-      onMouseDown={(e) => {
-        if (e.button !== 0) return;
-        e.preventDefault();
-        onStart(edge);
-      }}
+      className={`resize-edge resize-${which.toLowerCase()}`}
+      onPointerDown={(e) => void grip.start(which, e)}
+      onPointerMove={grip.move}
+      onPointerUp={grip.end}
+      onPointerCancel={grip.end}
+      onLostPointerCapture={grip.end}
       aria-hidden
       title={label}
     />
   );
   return (
     <>
-      {grip('West', 'Drag to make it wider or narrower')}
-      {grip('South', 'Drag to set how tall it can grow')}
-      {grip('SouthWest', 'Drag to resize')}
+      {edge('West', 'Drag to make it wider or narrower')}
+      {edge('South', 'Drag to set how tall it can grow')}
+      {edge('SouthWest', 'Drag to resize')}
     </>
   );
 }
