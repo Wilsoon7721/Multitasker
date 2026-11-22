@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use multitasker_core::{NewAttachment, NewTask, TaskStatus};
@@ -145,6 +146,18 @@ async fn answer(app: &AppHandle, line: &str) -> String {
     reply.to_string()
 }
 
+/// Each connected extension's outgoing line queue, so MultiTasker can tell it things unasked.
+static EXTENSIONS: Mutex<Vec<tokio::sync::mpsc::UnboundedSender<String>>> = Mutex::new(Vec::new());
+
+/// Asks the browser to bring these pages up: switching to tabs already open and opening the rest beside them.
+pub fn open_tabs(urls: &[String]) -> bool {
+    let message = json!({ "push": "open_tabs", "urls": urls }).to_string();
+    let mut senders = EXTENSIONS.lock().unwrap_or_else(|e| e.into_inner());
+    senders.retain(|s| !s.is_closed());
+    // One browser is enough; the most recently connected is likely the one in use.
+    senders.last().is_some_and(|s| s.send(message).is_ok())
+}
+
 /// Listens for the relay for as long as the app runs.
 #[cfg(windows)]
 pub fn serve(app: &AppHandle) {
@@ -171,10 +184,19 @@ pub fn serve(app: &AppHandle) {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 let (read, mut write) = tokio::io::split(server);
+                // Replies and messages sent unasked share one queue, so their lines never interleave.
+                let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+                EXTENSIONS.lock().unwrap_or_else(|e| e.into_inner()).push(tx.clone());
+                tauri::async_runtime::spawn(async move {
+                    while let Some(line) = rx.recv().await {
+                        if write.write_all(format!("{line}\n").as_bytes()).await.is_err() {
+                            break;
+                        }
+                    }
+                });
                 let mut lines = BufReader::new(read).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    let reply = answer(&app, &line).await;
-                    if write.write_all(format!("{reply}\n").as_bytes()).await.is_err() {
+                    if tx.send(answer(&app, &line).await).is_err() {
                         break;
                     }
                 }
@@ -191,11 +213,19 @@ fn starts_app(message: &Value) -> bool {
     message.get("type").and_then(|t| t.as_str()) != Some("active_tab")
 }
 
-/// The relay: passes Chrome's length-prefixed messages to the running app and its replies back.
+/// Writes one message to Chrome, length first, from whichever thread has one.
+fn to_browser(stdout: &Mutex<std::io::Stdout>, text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut out = stdout.lock().unwrap_or_else(|e| e.into_inner());
+    out.write_all(&(bytes.len() as u32).to_le_bytes()).and_then(|_| out.write_all(bytes)).and_then(|_| out.flush()).is_ok()
+}
+
+/// The relay: passes Chrome's length-prefixed messages to the running app, and everything the app sends back, replies
+/// and messages sent unasked alike, to Chrome.
 pub fn relay() {
     let mut stdin = std::io::stdin().lock();
-    let mut stdout = std::io::stdout().lock();
-    let mut pipe: Option<(std::fs::File, BufReader<std::fs::File>)> = None;
+    let stdout = Arc::new(Mutex::new(std::io::stdout()));
+    let mut pipe: Option<std::fs::File> = None;
     loop {
         let mut len = [0u8; 4];
         if stdin.read_exact(&mut len).is_err() {
@@ -206,40 +236,43 @@ pub fn relay() {
             return;
         }
         let parsed: Value = serde_json::from_slice(&message).unwrap_or(Value::Null);
-        let reply = match exchange(&mut pipe, &message, starts_app(&parsed)) {
-            Ok(reply) if reply.len() <= MAX_REPLY => reply,
-            Ok(_) => json!({ "id": parsed.get("id"), "error": "MultiTasker's answer was too big to pass on." }).to_string(),
-            Err(error) => {
-                pipe = None;
-                json!({ "id": parsed.get("id"), "error": error, "offline": true }).to_string()
+        if let Err(error) = send(&mut pipe, &stdout, &message, starts_app(&parsed)) {
+            pipe = None;
+            let reply = json!({ "id": parsed.get("id"), "error": error, "offline": true }).to_string();
+            if !to_browser(&stdout, &reply) {
+                return;
             }
-        };
-        let bytes = reply.as_bytes();
-        if stdout.write_all(&(bytes.len() as u32).to_le_bytes()).and_then(|_| stdout.write_all(bytes)).and_then(|_| stdout.flush()).is_err() {
-            return;
         }
     }
 }
 
-fn exchange(pipe: &mut Option<(std::fs::File, BufReader<std::fs::File>)>, message: &[u8], start: bool) -> Result<String, String> {
-    if pipe.is_none() {
-        *pipe = Some(connect(start)?);
-    }
-    let (write, read) = pipe.as_mut().expect("just connected");
-    let sent = write.write_all(message).and_then(|_| write.write_all(b"\n")).and_then(|_| write.flush());
-    let mut line = String::new();
-    match sent.and_then(|_| read.read_line(&mut line)) {
-        Ok(n) if n > 0 => Ok(line.trim_end().to_owned()),
-        _ => {
-            // The app restarted since the last message; one fresh connection is worth a try.
-            *pipe = Some(connect(start)?);
-            let (write, read) = pipe.as_mut().expect("just connected");
-            write.write_all(message).and_then(|_| write.write_all(b"\n")).and_then(|_| write.flush()).map_err(|e| e.to_string())?;
-            let mut line = String::new();
-            read.read_line(&mut line).map_err(|e| e.to_string())?;
-            Ok(line.trim_end().to_owned())
+/// Sends one message to the app, connecting first if needed; whatever comes back is passed on by the reader thread.
+fn send(pipe: &mut Option<std::fs::File>, stdout: &Arc<Mutex<std::io::Stdout>>, message: &[u8], start: bool) -> Result<(), String> {
+    let write_to = |file: &mut std::fs::File| file.write_all(message).and_then(|_| file.write_all(b"\n")).and_then(|_| file.flush());
+    if let Some(file) = pipe.as_mut() {
+        if write_to(file).is_ok() {
+            return Ok(());
         }
     }
+    // Not connected yet, or the app restarted since the last message.
+    let (mut file, reader) = connect(start)?;
+    let stdout = stdout.clone();
+    std::thread::spawn(move || {
+        for line in reader.lines().map_while(Result::ok) {
+            let line = if line.len() > MAX_REPLY {
+                let id = serde_json::from_str::<Value>(&line).ok().and_then(|v| v.get("id").cloned());
+                json!({ "id": id, "error": "MultiTasker's answer was too big to pass on." }).to_string()
+            } else {
+                line
+            };
+            if !to_browser(&stdout, &line) {
+                return;
+            }
+        }
+    });
+    write_to(&mut file).map_err(|e| e.to_string())?;
+    *pipe = Some(file);
+    Ok(())
 }
 
 fn open_pipe() -> std::io::Result<(std::fs::File, BufReader<std::fs::File>)> {

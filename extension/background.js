@@ -16,6 +16,7 @@ function friendly(message) {
 function connect() {
   port = chrome.runtime.connectNative(HOST);
   port.onMessage.addListener((reply) => {
+    if (reply?.push === 'open_tabs') return void openTabs(reply.urls ?? []);
     const resolve = waiting.get(reply?.id);
     if (resolve) {
       waiting.delete(reply.id);
@@ -46,6 +47,57 @@ function ask(request) {
 }
 
 const linkable = (url) => /^https?:\/\//i.test(url ?? '');
+
+/** An address as compared: no fragment, no "www.", no trailing slash; `withQuery` keeps what follows "?". */
+function comparable(url, withQuery) {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.replace(/\/+$/, '');
+    return `${u.hostname.replace(/^www\./, '')}${path}${withQuery ? u.search : ''}`.toLowerCase();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Brings a task's pages up together: switches to the first one already open, moves any others that are open next to
+ * it, and opens the rest right after them. A page matches exactly where it can, and otherwise ignoring what follows "?".
+ */
+async function openTabs(urls) {
+  const tabs = (await chrome.tabs.query({})).filter((t) => linkable(t.url));
+  const used = new Set();
+  const find = (url, withQuery) =>
+    tabs.find((t) => !used.has(t.id) && comparable(t.url, withQuery) === comparable(url, withQuery));
+  const found = [];
+  const missing = [];
+  for (const url of urls) {
+    const tab = find(url, true) ?? find(url, false);
+    if (tab) {
+      used.add(tab.id);
+      found.push(tab);
+    } else {
+      missing.push(url);
+    }
+  }
+
+  let anchor = found[0];
+  if (!anchor) {
+    const win = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null);
+    anchor = await chrome.tabs.create({ url: missing.shift(), active: true, ...(win ? { windowId: win.id } : {}) });
+  }
+  await chrome.tabs.update(anchor.id, { active: true });
+  await chrome.windows.update(anchor.windowId, { focused: true });
+
+  let index = (await chrome.tabs.get(anchor.id)).index;
+  for (const tab of found.slice(1)) {
+    index += 1;
+    await chrome.tabs.move(tab.id, { windowId: anchor.windowId, index }).catch(() => {});
+  }
+  for (const url of missing) {
+    index += 1;
+    await chrome.tabs.create({ url, windowId: anchor.windowId, index, active: false });
+  }
+}
 
 function showLinked(tabId, linked) {
   const names = linked.map((l) => l.title).join(', ');

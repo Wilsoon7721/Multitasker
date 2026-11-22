@@ -57,7 +57,23 @@ export function LeftOffPrompt(props: { task: { id: string; title: string }; run:
 
 /** Things a task can reopen on this computer: its pages, apps, and the files and folders attached here. */
 export function reopenable(task: TaskView, deviceId: string | null): number {
-  return task.attachments.filter((a) => a.kind === 'link' || a.kind === 'app' || a.device === deviceId).length;
+  const { files, pages } = openable(task, deviceId);
+  return files + pages;
+}
+
+/** What starting a task can open again: its pages, and its files and folders here; apps rarely resume without their file. */
+export function openable(task: TaskView, deviceId: string | null): { files: number; pages: number } {
+  const pages = task.attachments.filter((a) => a.kind === 'link').length;
+  const files = task.attachments.filter((a) => a.kind !== 'link' && a.kind !== 'app' && a.device === deviceId).length;
+  return { files, pages };
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** "its 2 files and 3 pages" */
+function whatItOpens({ files, pages }: { files: number; pages: number }): string {
+  const parts = [files && plural(files, 'file', 'files'), pages && plural(pages, 'page', 'pages')].filter(Boolean);
+  return `its ${parts.join(' and ')}`;
 }
 
 /** Back on a task: shows where it was left and offers to open its things again. */
@@ -72,7 +88,8 @@ export function PickUpBar(props: {
   const { task, deviceId, noteOnly, run, onClose } = props;
   const [hovered, setHovered] = useState(false);
   useHideWhenIgnored(onClose, hovered);
-  const count = noteOnly ? 0 : reopenable(task, deviceId);
+  const things = openable(task, deviceId);
+  const count = noteOnly ? 0 : things.files + things.pages;
   const note = task.left_off?.text;
   if (!note && !count) return null;
 
@@ -86,10 +103,10 @@ export function PickUpBar(props: {
       <Undo2 size={14} className="away-icon" aria-hidden />
       <div className="suggestion-text">
         <span className="suggestion-title" title={task.title}>
-          Back to “{task.title}”
+          {count ? `Open ${whatItOpens(things)}?` : `Back to “${task.title}”`}
         </span>
         <span className="suggestion-reason" title={note}>
-          {note ? `Left off: ${note}` : 'Pick up where you were'}
+          {note ? `Left off: ${note}` : `For “${task.title}”`}
         </span>
       </div>
       {count > 0 && (
@@ -102,8 +119,8 @@ export function PickUpBar(props: {
               if (r.skipped.length) throw r.skipped.join(' ');
             });
           }}
-          aria-label={`Open its ${count} linked ${count === 1 ? 'item' : 'items'}`}
-          title={`Open its ${count} linked ${count === 1 ? 'item' : 'items'}`}
+          aria-label={`Open ${whatItOpens(things)}`}
+          title={`Open ${whatItOpens(things)}; pages already open in the browser are switched to`}
         >
           <FolderOpen size={14} />
         </button>

@@ -362,11 +362,18 @@ pub async fn open_task_things(app: AppHandle, state: State<'_, AppState>, task_i
         .find(|t| t.task.id == task_id)
         .ok_or_else(|| format!("task {task_id} was not found"))?;
     let mut report = Reopened { opened: 0, skipped: Vec::new() };
+    // With the extension connected, the browser switches to pages already open and opens the rest beside them.
+    let urls: Vec<String> = task.attachments.iter().filter(|a| a.kind == AttachmentKind::Link).map(|a| a.target.clone()).collect();
+    let by_extension = !urls.is_empty() && crate::bridge::open_tabs(&urls);
+    if by_extension {
+        report.opened += urls.len();
+    }
     for a in &task.attachments {
         let opened = match a.kind {
+            AttachmentKind::Link if by_extension => continue,
             AttachmentKind::Link => app.opener().open_url(&a.target, None::<&str>).map_err(err),
-            // An app that's already open is left as it is rather than started a second time.
-            AttachmentKind::App if multitasker_activity::is_process_running(file_name(&a.target)) == Some(true) => continue,
+            // A program started without its file or arguments rarely puts you back where you were.
+            AttachmentKind::App => continue,
             _ => existing_path(&state, a).and_then(|p| app.opener().open_path(p.to_string_lossy(), None::<&str>).map_err(err)),
         };
         match opened {
@@ -375,10 +382,6 @@ pub async fn open_task_things(app: AppHandle, state: State<'_, AppState>, task_i
         }
     }
     Ok(report)
-}
-
-fn file_name(path: &str) -> &str {
-    path.rsplit(['\\', '/']).next().unwrap_or(path)
 }
 
 /// Opens an attachment in its default app; done here so the webview can only open what was attached.

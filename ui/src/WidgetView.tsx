@@ -78,6 +78,19 @@ export function WidgetView() {
     [],
   );
 
+  // However a task was started here (widget, main window, switcher), offer to open what it uses.
+  const startedHere = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!tasks || !deviceId) return;
+    const now = new Set(tasks.filter((t) => t.in_progress && t.in_progress_on.includes(deviceId)).map((t) => t.id));
+    const before = startedHere.current;
+    startedHere.current = now;
+    if (!before) return;
+    const fresh = [...now].filter((id) => !before.has(id) && switched?.to.task_id !== id);
+    if (fresh.length) setPickUpId(fresh[fresh.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, deviceId]);
+
   // A switch made on its own asks about the task left behind and helps with the one moved to.
   const switchedKey = switched ? `${switched.to.task_id}:${switched.from.map((f) => f.task_id).join(',')}` : null;
   useEffect(() => {
