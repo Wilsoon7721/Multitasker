@@ -1277,6 +1277,8 @@ fn switch_source(
     }
     state.set_provider(provider);
     state.syncer.wake();
+    // A list signed in to on a new computer brings the settings chosen on the others.
+    crate::shared::wake();
     changed(app);
     Ok(())
 }
@@ -1298,4 +1300,21 @@ pub fn set_widget_opacity(app: AppHandle, state: State<'_, AppState>, opacity: u
     }
     let _ = app.emit(WIDGET_APPEARANCE, opacity);
     Ok(opacity)
+}
+
+/// How sharing settings between computers is going, if they're shared at all.
+#[tauri::command]
+pub fn settings_sync() -> Option<crate::shared::SettingsSync> {
+    crate::shared::status()
+}
+
+/// The day's plan, shared between computers.
+#[tauri::command]
+pub fn day_plan(state: State<'_, AppState>) -> Option<crate::shared::Plan> {
+    crate::shared::plan(&state.data_dir)
+}
+
+#[tauri::command]
+pub fn set_day_plan(app: AppHandle, plan: crate::shared::Plan) {
+    crate::shared::set_plan(&app, &plan);
 }

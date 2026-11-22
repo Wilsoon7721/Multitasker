@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Local, NaiveDate, SecondsFormat, Utc};
 use multitasker_core::{
     check_category, check_title, clean, content_type, multipart_file, Attachment, AttachmentKind, CheckItem, DeviceId, Error, LeftOff,
-    ExtrasStore, HandedInFile, NewTask, Result, Task, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus, WorkStore,
+    ExtrasStore, HandedInFile, NewTask, Result, SettingsStore, SharedSettings, Task, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus, WorkStore,
 };
 use serde_json::{json, Map, Value};
 
@@ -262,7 +262,9 @@ impl Inner {
                 body["start_cursor"] = json!(c);
             }
             let result = self.send("POST", &format!("/data_sources/{}/query", self.source), Some(&body))?;
-            pages.extend(result.get("results").and_then(|v| v.as_array()).into_iter().flatten().filter_map(page_of));
+            pages.extend(
+                result.get("results").and_then(|v| v.as_array()).into_iter().flatten().filter_map(page_of).filter(|p| !is_settings(p)),
+            );
             cursor = result.get("next_cursor").and_then(|v| v.as_str()).map(str::to_owned);
             if cursor.is_none() {
                 break;
@@ -295,6 +297,16 @@ fn page_of(v: &Value) -> Option<Page> {
         edited: time("last_edited_time")?,
         properties: v.get("properties")?.as_object()?.clone(),
     })
+}
+
+/// The page MultiTasker keeps its shared settings on, left out of the tasks.
+const SETTINGS_TITLE: &str = "⚙ MultiTasker settings";
+
+fn is_settings(page: &Page) -> bool {
+    page.properties
+        .values()
+        .find(|v| v.get("type").and_then(|t| t.as_str()) == Some("title"))
+        .is_some_and(|v| plain(v.get("title")).trim() == SETTINGS_TITLE)
 }
 
 /// Concatenated text of a rich-text or title array.
@@ -662,6 +674,10 @@ impl TaskProvider for Notion {
         Some(self)
     }
 
+    fn settings(&self) -> Option<&dyn SettingsStore> {
+        Some(self)
+    }
+
     async fn list(&self) -> Result<Vec<Task>> {
         self.call(|inner| {
             let columns = inner.columns()?;
@@ -948,6 +964,67 @@ fn handed_in_block(task_id: &str, block: &Value) -> Option<HandedInFile> {
         device: parts.get(2).filter(|d| **d != "-").map(|d| d.to_string()),
         added_at,
     })
+}
+
+impl Inner {
+    fn settings_page(&self) -> Result<Option<String>> {
+        let columns = self.columns()?;
+        let body = json!({ "filter": { "property": columns.title, "title": { "equals": SETTINGS_TITLE } }, "page_size": 1 });
+        let result = self.send("POST", &format!("/data_sources/{}/query", self.source), Some(&body))?;
+        Ok(result.get("results").and_then(|v| v.as_array()).and_then(|r| r.first()).and_then(|p| p.get("id")?.as_str()).map(str::to_owned))
+    }
+
+    /// The code block holding the settings, and what it says.
+    fn settings_block(&self, page: &str) -> Result<Option<(String, SharedSettings)>> {
+        let result = self.send("GET", &format!("/blocks/{page}/children?page_size=100"), None)?;
+        Ok(result.get("results").and_then(|v| v.as_array()).into_iter().flatten().find_map(|b| {
+            let code = b.get("code")?;
+            Some((b.get("id")?.as_str()?.to_owned(), SharedSettings::from_json(&plain(code.get("rich_text")))))
+        }))
+    }
+}
+
+fn settings_code(settings: &SharedSettings) -> Value {
+    json!({ "rich_text": rich(&settings.to_json()), "language": "json" })
+}
+
+#[async_trait]
+impl SettingsStore for Notion {
+    async fn load_settings(&self) -> Result<Option<SharedSettings>> {
+        self.call(|inner| match inner.settings_page()? {
+            Some(page) => Ok(inner.settings_block(&page)?.map(|(_, s)| s)),
+            None => Ok(None),
+        })
+        .await
+    }
+
+    async fn save_settings(&self, settings: &SharedSettings) -> Result<()> {
+        let code = settings_code(settings);
+        self.call(move |inner| {
+            let block = json!({ "object": "block", "type": "code", "code": code });
+            let Some(page) = inner.settings_page()? else {
+                // Filed as done, so it stays out of the way of the database's open tasks in Notion too.
+                let columns = inner.columns()?;
+                let mut properties = Map::new();
+                properties.insert(columns.title.clone(), json!({ "title": rich(SETTINGS_TITLE) }));
+                let (key, value) = columns.group_value(Group::Done);
+                properties.insert(key, value);
+                let body = json!({
+                    "parent": { "type": "data_source_id", "data_source_id": inner.source },
+                    "properties": properties,
+                    "children": [block],
+                });
+                inner.send("POST", "/pages", Some(&body))?;
+                return Ok(());
+            };
+            match inner.settings_block(&page)? {
+                Some((id, _)) => inner.send("PATCH", &format!("/blocks/{id}"), Some(&json!({ "code": block["code"] })))?,
+                None => inner.send("PATCH", &format!("/blocks/{page}/children"), Some(&json!({ "children": [block] })))?,
+            };
+            Ok(())
+        })
+        .await
+    }
 }
 
 /// A page's blocks as last read, and when, so it's only read again once it changes.

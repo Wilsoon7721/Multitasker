@@ -1,69 +1,76 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { api, onPlanChanged, type DayPlan } from './api';
 import { localDate } from './time';
 
-/** The widget and the main window run in the same app, so they share this storage and both see the plan. */
-const planKey = (day = localDate(new Date().toISOString())) => `plan:${day}`;
-const skipKey = (day = localDate(new Date().toISOString())) => `plan-skipped:${day}`;
 /** Asks the main window to show a view, from the widget. */
 export const OPEN_VIEW_KEY = 'open-view';
-const CHANGED = 'plan-changed';
 
-function read(): string[] {
+const today = () => localDate(new Date().toISOString());
+const empty = (): DayPlan => ({ day: today(), tasks: [], skipped: false });
+
+/** A plan made before plans were shared lived only in this computer's storage. */
+function oldPlan(): DayPlan | null {
   try {
-    const saved = JSON.parse(localStorage.getItem(planKey()) ?? '[]');
-    return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [];
+    const day = today();
+    const saved = JSON.parse(localStorage.getItem(`plan:${day}`) ?? '[]');
+    const tasks = Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [];
+    const skipped = localStorage.getItem(`plan-skipped:${day}`) === '1';
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('plan:') || key.startsWith('plan-skipped:')) localStorage.removeItem(key);
+    }
+    return tasks.length || skipped ? { day, tasks, skipped } : null;
   } catch {
-    return [];
+    return null;
   }
 }
 
-function skipped(): boolean {
-  try {
-    return localStorage.getItem(skipKey()) === '1';
-  } catch {
-    return false;
-  }
-}
-
-/** Today's plan: the tasks picked as what today is for, kept on this computer and fresh each day. */
+/** Today's plan: the tasks picked as what today is for, the same on every computer and fresh each day. */
 export function usePlan() {
-  const [planned, setPlanned] = useState<string[]>(read);
-  const [isSkipped, setSkipped] = useState(skipped);
+  const [plan, setPlan] = useState<DayPlan>(empty);
+  const current = useRef(plan);
+
+  const show = (next: DayPlan) => {
+    current.current = next;
+    setPlan(next);
+  };
 
   useEffect(() => {
-    const reload = () => {
-      setPlanned(read());
-      setSkipped(skipped());
-    };
-    // Another window changing it arrives as a storage event; this one's own changes as its own event.
-    window.addEventListener('storage', reload);
-    window.addEventListener(CHANGED, reload);
+    const load = () =>
+      void api.dayPlan().then(
+        (saved) => {
+          if (saved?.day === today()) return show(saved);
+          const old = oldPlan();
+          if (old) void api.setDayPlan(old);
+          show(old ?? empty());
+        },
+        () => {},
+      );
+    load();
+    const stop = onPlanChanged(load);
     // A new day starts a new plan even if the window stays open overnight.
-    const timer = setInterval(reload, 60_000);
+    const timer = setInterval(load, 60_000);
     return () => {
-      window.removeEventListener('storage', reload);
-      window.removeEventListener(CHANGED, reload);
+      stop();
       clearInterval(timer);
     };
   }, []);
 
-  const write = (key: string, value: string) => {
-    try {
-      localStorage.setItem(key, value);
-    } catch {
-      // Without storage the plan lasts only while this window is open.
-    }
-    window.dispatchEvent(new Event(CHANGED));
-  };
-
-  const toggle = useCallback((id: string) => {
-    const now = read();
-    write(planKey(), JSON.stringify(now.includes(id) ? now.filter((x) => x !== id) : [...now, id]));
+  const save = useCallback((change: (plan: DayPlan) => DayPlan) => {
+    const base = current.current.day === today() ? current.current : empty();
+    const next = change(base);
+    show(next);
+    void api.setDayPlan(next);
   }, []);
 
-  const skip = useCallback(() => write(skipKey(), '1'), []);
+  const toggle = useCallback(
+    (id: string) =>
+      save((p) => ({ ...p, tasks: p.tasks.includes(id) ? p.tasks.filter((x) => x !== id) : [...p.tasks, id] })),
+    [save],
+  );
 
-  return { planned: new Set(planned), order: planned, isSkipped, toggle, skip };
+  const skip = useCallback(() => save((p) => ({ ...p, skipped: true })), [save]);
+
+  return { planned: new Set(plan.tasks), order: plan.tasks, isSkipped: plan.skipped, toggle, skip };
 }
 
 /** Asks the main window to open a view, then brings it up. */

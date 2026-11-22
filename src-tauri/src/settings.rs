@@ -140,11 +140,28 @@ pub fn load(data_dir: &Path) -> Settings {
 
 /// Loads, changes and saves the settings, one caller at a time so concurrent changes don't overwrite each other.
 pub fn update(data_dir: &Path, change: impl FnOnce(&mut Settings)) -> std::io::Result<Settings> {
+    write(data_dir, change, true)
+}
+
+/// Changes settings without sending the change to other computers: for ones that arrived from them, or that only
+/// suit this computer.
+pub fn update_quiet(data_dir: &Path, change: impl FnOnce(&mut Settings)) -> std::io::Result<Settings> {
+    write(data_dir, change, false)
+}
+
+fn write(data_dir: &Path, change: impl FnOnce(&mut Settings), share: bool) -> std::io::Result<Settings> {
     static LOCK: Mutex<()> = Mutex::new(());
     let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let mut settings = load(data_dir);
+    if share {
+        crate::shared::ensure(data_dir);
+    }
+    let before = load(data_dir);
+    let mut settings = before.clone();
     change(&mut settings);
     save(data_dir, &settings)?;
+    if share {
+        crate::shared::record(data_dir, &before, &settings);
+    }
     Ok(settings)
 }
 

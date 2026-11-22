@@ -25,21 +25,23 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  api,
-  onActivity,
-  onTasksChanged,
-  onSyncStatus,
   type CloudService,
   type FolderSuggestion,
-  type ReminderSettings,
   type NotionDatabases,
   type OnTop,
-  type UpdateInfo,
-  onUpdateReady,
-  type TaskSourceView,
+  type ReminderSettings,
   type S3Settings,
+  type SettingsSync,
   type SyncStatus,
   type SyncTarget,
+  type TaskSourceView,
+  type UpdateInfo,
+  api,
+  onActivity,
+  onSettingsSynced,
+  onSyncStatus,
+  onTasksChanged,
+  onUpdateReady,
 } from '../api';
 import { AppPicker } from './AppPicker';
 import { STILL_ON_CHOICES, STILL_ON_KEY, stillOnHours } from './StillOn';
@@ -57,15 +59,50 @@ export function SettingsPage({ run }: { run: Run }) {
   const source = useTaskSource();
   // An online task list keeps in-progress marks and attachments itself, so there's nothing to sync.
   const syncs = source?.active === 'sqlite';
+  // Settings that arrive from another computer show by reading them again.
+  const [synced, setSynced] = useState(0);
+  useEffect(() => onSettingsSynced(() => setSynced((n) => n + 1)), []);
   return (
     <>
-      <AppSection run={run} />
+      <AppSection key={`app-${synced}`} run={run} />
       <TaskListSection run={run} />
       {syncs && <SyncSection run={run} />}
-      <WidgetSection run={run} />
-      <RemindersSection run={run} />
-      <DetectionSection run={run} />
+      <WidgetSection key={`widget-${synced}`} run={run} />
+      <RemindersSection key={`reminders-${synced}`} run={run} />
+      <DetectionSection key={`detection-${synced}`} run={run} />
     </>
+  );
+}
+
+/** Where settings travel between computers, and whether that's working. */
+function SettingsSyncBadge() {
+  const [status, setStatus] = useState<SettingsSync | null>(null);
+  const now = useNow(15_000);
+
+  useEffect(() => {
+    const load = () => void api.settingsSync().then(setStatus, () => {});
+    load();
+    const timer = setInterval(load, 15_000);
+    const stop = onSettingsSynced(load);
+    return () => {
+      clearInterval(timer);
+      stop();
+    };
+  }, []);
+
+  if (!status) return null;
+  if (status.error) {
+    return (
+      <span className="badge warn" title={status.error}>
+        Settings not shared
+      </span>
+    );
+  }
+  if (!status.last_synced) return null;
+  return (
+    <span className="badge ok" title={`Your settings follow you to every computer through ${status.via}.`}>
+      Settings shared {ago(status.last_synced, now)}
+    </span>
   );
 }
 
@@ -399,7 +436,7 @@ function TaskListSection({ run }: { run: Run }) {
     );
 
   return (
-    <Section icon={<ListChecks size={18} />} title="Task list">
+    <Section icon={<ListChecks size={18} />} title="Task list" aside={<SettingsSyncBadge />}>
       <div className="choice-list" role="radiogroup" aria-label="Where tasks come from">
         <Choice
           selected={mode === 'local'}

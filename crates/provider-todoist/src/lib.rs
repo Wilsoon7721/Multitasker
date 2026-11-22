@@ -4,10 +4,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, SecondsFormat, TimeZone, Utc};
-use multitasker_core::{
-    check_category, check_title, CheckItem, LeftOff, clean, content_type, multipart_file, Attachment, AttachmentKind, DeviceId, Error,
-    ExtrasStore, HandedInFile, NewTask, Result, Task, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus, WorkStore,
-};
+use multitasker_core::{Attachment, AttachmentKind, CheckItem, DeviceId, Error, ExtrasStore, HandedInFile, LeftOff, NewTask, Result, SettingsStore, SharedSettings, Task, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus, WorkStore, check_category, check_title, clean, content_type, multipart_file};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -561,6 +558,10 @@ impl TaskProvider for Todoist {
         Some(self)
     }
 
+    fn settings(&self) -> Option<&dyn SettingsStore> {
+        Some(self)
+    }
+
     async fn list(&self) -> Result<Vec<Task>> {
         self.call(|inner| {
             let s = inner.snapshot()?;
@@ -806,6 +807,66 @@ impl ExtrasStore for Todoist {
     }
 }
 
+/// Where the shared settings are kept: a comment on the Inbox, which every Todoist account has.
+impl Inner {
+    fn inbox(&self) -> Result<String> {
+        self.snapshot()?
+            .projects
+            .iter()
+            .find(|p| p.inbox_project)
+            .map(|p| p.id.clone())
+            .ok_or_else(|| Error::Storage("Todoist has no Inbox project to keep settings on.".into()))
+    }
+
+    /// The settings comment's id and the settings it holds.
+    fn settings_note(&self, inbox: &str) -> Result<Option<(String, SharedSettings)>> {
+        let page: Comments =
+            serde_json::from_value(self.send("GET", &format!("/comments?project_id={inbox}&limit=200"), None)?)
+                .map_err(|e| Error::Storage(e.to_string()))?;
+        Ok(page.results.iter().filter(|n| !n.is_deleted).find_map(|n| Some((n.id.clone(), settings_of(&n.content)?))))
+    }
+}
+
+fn settings_note(settings: &SharedSettings) -> String {
+    format!("⚙ MultiTasker's settings, kept here so they follow you between computers
+
+```
+{}
+```
+
+{MARK} · settings", settings.to_json())
+}
+
+fn settings_of(content: &str) -> Option<SharedSettings> {
+    let body = content.trim_end().strip_suffix(&format!("{MARK} · settings"))?;
+    let json = body.split_once("```")?.1.rsplit_once("```")?.0;
+    Some(SharedSettings::from_json(json))
+}
+
+#[async_trait]
+impl SettingsStore for Todoist {
+    async fn load_settings(&self) -> Result<Option<SharedSettings>> {
+        self.call(|inner| {
+            let inbox = inner.inbox()?;
+            Ok(inner.settings_note(&inbox)?.map(|(_, s)| s))
+        })
+        .await
+    }
+
+    async fn save_settings(&self, settings: &SharedSettings) -> Result<()> {
+        let content = settings_note(settings);
+        self.call(move |inner| {
+            let inbox = inner.inbox()?;
+            match inner.settings_note(&inbox)? {
+                Some((id, _)) => inner.send("POST", &format!("/comments/{id}"), Some(&json!({ "content": content })))?,
+                None => inner.send("POST", "/comments", Some(&json!({ "project_id": inbox, "content": content })))?,
+            };
+            Ok(())
+        })
+        .await
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct Comments {
     #[serde(default)]
@@ -930,6 +991,14 @@ mod tests {
             device: device.map(str::to_owned),
             added_at: Utc::now(),
         }
+    }
+
+    #[test]
+    fn settings_round_trip_through_a_comment() {
+        let mut settings = SharedSettings::default();
+        settings.set("switcher_shortcut", json!("Ctrl+`"), multitasker_core::Stamp::new(1, 0, "pc"));
+        assert_eq!(settings_of(&settings_note(&settings)), Some(settings));
+        assert_eq!(settings_of("A comment someone wrote with ```code```"), None);
     }
 
     #[test]

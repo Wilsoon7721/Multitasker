@@ -10,6 +10,7 @@ mod on_top;
 mod projects;
 mod reminders;
 mod settings;
+mod shared;
 mod switcher;
 mod syncing;
 mod tokens;
@@ -102,6 +103,7 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             move_old_data_dir(&data_dir);
             std::fs::create_dir_all(&data_dir)?;
+            shared::ensure(&data_dir);
 
             let db = Arc::new(SqliteDb::open(data_dir.join("multitasker.db"))?);
             let deliverables = Arc::new(multitasker_deliverables::Store::open(data_dir.join("deliverables"))?);
@@ -148,6 +150,7 @@ pub fn run() {
             windows::set_widget_visible(app.handle(), true)?;
             detection::start(app.handle(), detector);
             syncing::start(app.handle(), syncer);
+            shared::start(app.handle());
             reminders::start(app.handle());
             away::start(app.handle());
             on_top::start(app.handle());
@@ -156,7 +159,8 @@ pub fn run() {
             }
             updates::start(app.handle());
             if let Some(free) = switcher::start(app.handle(), prefs.switcher_shortcut.as_deref()) {
-                let _ = settings::update(&app.state::<AppState>().data_dir, |s| s.switcher_shortcut = Some(free));
+                // Only this computer has the usual hotkey taken, so the stand-in isn't shared.
+                let _ = settings::update_quiet(&app.state::<AppState>().data_dir, |s| s.switcher_shortcut = Some(free));
             }
             // Started by Windows at sign-in, it opens quietly to the tray and widget.
             if !updates::started_at_sign_in() {
@@ -255,6 +259,9 @@ pub fn run() {
             commands::task_source,
             commands::widget_opacity,
             commands::set_widget_opacity,
+            commands::settings_sync,
+            commands::day_plan,
+            commands::set_day_plan,
             commands::sign_in_wilsoon,
             commands::use_local_tasks,
             commands::connect_todoist,

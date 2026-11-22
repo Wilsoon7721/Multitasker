@@ -232,6 +232,9 @@ fn run_once(app: &AppHandle, syncer: &Syncer) {
             .map(|work| (report, work))
             .map_err(|e| e.to_string())
     });
+    if outcome.is_ok() {
+        crate::shared::sync_remote(app, remote.as_ref(), &me.id);
+    }
     match outcome {
         Ok((report, work)) => {
             if report.applied > 0 || work.learned > 0 || work.downloaded > 0 {

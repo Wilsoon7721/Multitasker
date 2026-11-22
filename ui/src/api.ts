@@ -349,6 +349,21 @@ const placeholder = (taskId: string, item: NewAttachment): Attachment => {
   };
 };
 
+export interface SettingsSync {
+  /** What carries them: the task list's name, or "your sync location". */
+  via: string;
+  last_synced: string | null;
+  error: string | null;
+}
+
+/** The tasks picked as what a day is for, shared between computers. */
+export interface DayPlan {
+  /** The local date it's for, e.g. "2026-11-22". */
+  day: string;
+  tasks: string[];
+  skipped: boolean;
+}
+
 export const api = {
   list: () => invoke<TaskView[]>('list_tasks'),
   create: (task: NewTask) => invoke<{ id: string }>('create_task', { task }),
@@ -489,6 +504,10 @@ export const api = {
     const picked = await open({ multiple: true, title });
     return picked ?? [];
   },
+  /** How sharing settings between computers is going; null when nothing carries them. */
+  settingsSync: () => invoke<SettingsSync | null>('settings_sync'),
+  dayPlan: () => invoke<DayPlan | null>('day_plan'),
+  setDayPlan: (plan: DayPlan) => invoke('set_day_plan', { plan }),
   openMain: () => invoke('open_main'),
   widgetVisible: () => invoke<boolean>('widget_visible'),
   /** Returns whether the widget is now visible. */
@@ -507,6 +526,12 @@ export const onTasksChanged = (handler: () => void) => subscribe('tasks-changed'
 export const onActivity = (handler: (snapshot: ActivitySnapshot) => void) => subscribe('activity', handler);
 
 /** Fires whenever sync starts, finishes or fails. */
+/** Fires when settings arrive from another computer, with the names of the ones that changed. */
+export const onSettingsSynced = (handler: (keys: string[]) => void) => subscribe('settings-synced', handler);
+
+/** Fires when the day's plan changes, here or on another computer. */
+export const onPlanChanged = (handler: () => void) => subscribe('plan-changed', handler);
+
 export const onSyncStatus = (handler: (status: SyncStatus) => void) => subscribe('sync-status', handler);
 
 /** Fires when the widget's background opacity changes, with the new percentage. */

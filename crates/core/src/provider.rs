@@ -29,6 +29,11 @@ pub trait TaskProvider: Send + Sync {
         None
     }
 
+    /// Where the task list keeps MultiTasker's shared settings, so they follow the person to every computer signed in to it.
+    fn settings(&self) -> Option<&dyn SettingsStore> {
+        None
+    }
+
     async fn list(&self) -> Result<Vec<Task>>;
 
     async fn create(&self, task: NewTask) -> Result<Task>;
@@ -111,4 +116,13 @@ pub trait WorkStore: Send + Sync {
 
     /// The file's content.
     async fn download(&self, file: &HandedInFile) -> Result<Vec<u8>>;
+}
+
+/// A task list that holds one copy of MultiTasker's shared settings; computers merge into it rather than overwrite it.
+#[async_trait]
+pub trait SettingsStore: Send + Sync {
+    /// The stored copy, or `None` before any computer has saved one.
+    async fn load_settings(&self) -> Result<Option<crate::SharedSettings>>;
+
+    async fn save_settings(&self, settings: &crate::SharedSettings) -> Result<()>;
 }

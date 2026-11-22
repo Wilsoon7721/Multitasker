@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use multitasker_core::{
     check_category, check_title, clean, Attachment, AttachmentKind, DeviceId, Error, ExtrasStore, NewTask, Result, Task,
-    CheckItem, LeftOff, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus,
+    CheckItem, LeftOff, SettingsStore, SharedSettings, TaskChanges, TaskExtras, TaskId, TaskProvider, TaskStatus,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -66,6 +66,10 @@ impl Inner {
         format!("{}/api/calendar/tasks/checklist", self.base)
     }
 
+    fn settings_url(&self) -> String {
+        format!("{}/api/calendar/tasks/settings", self.base)
+    }
+
     fn send(&self, method: &str, url: &str, body: Option<&Value>) -> Result<Value> {
         for attempt in 0..2 {
             let auth = format!("Bearer {}", self.bearer.token().map_err(Error::Storage)?);
@@ -73,7 +77,11 @@ impl Inner {
                 ("GET", _) => self.agent.get(url).header("authorization", &auth).call(),
                 ("DELETE", _) => self.agent.delete(url).header("authorization", &auth).call(),
                 (m, Some(body)) => {
-                    let request = if m == "PATCH" { self.agent.patch(url) } else { self.agent.post(url) };
+                    let request = match m {
+                        "PATCH" => self.agent.patch(url),
+                        "PUT" => self.agent.put(url),
+                        _ => self.agent.post(url),
+                    };
                     request
                         .header("authorization", &auth)
                         .header("content-type", "application/json")
@@ -282,6 +290,10 @@ impl TaskProvider for JavaDashboard {
         Some(self)
     }
 
+    fn settings(&self) -> Option<&dyn SettingsStore> {
+        Some(self)
+    }
+
     async fn list(&self) -> Result<Vec<Task>> {
         self.call(|inner| inner.remote().map(|tasks| tasks.iter().map(Task::from).collect())).await
     }
@@ -419,6 +431,30 @@ impl JavaDashboard {
             response
         })
         .await
+    }
+}
+
+#[async_trait]
+impl SettingsStore for JavaDashboard {
+    async fn load_settings(&self) -> Result<Option<SharedSettings>> {
+        self.call(|inner| {
+            let body = inner.send("GET", &inner.settings_url(), None).map_err(older_dashboard)?;
+            Ok(body.get("settings").and_then(|s| s.as_str()).map(SharedSettings::from_json))
+        })
+        .await
+    }
+
+    async fn save_settings(&self, settings: &SharedSettings) -> Result<()> {
+        let body = json!({ "settings": settings.to_json() });
+        self.call(move |inner| inner.send("PUT", &inner.settings_url(), Some(&body)).map(|_| ()).map_err(older_dashboard)).await
+    }
+}
+
+/// A dashboard from before settings were kept answers 404 for the address.
+fn older_dashboard(e: Error) -> Error {
+    match e {
+        Error::NotFound(_) => Error::Invalid("This JavaDashboard doesn't keep MultiTasker's settings yet.".into()),
+        e => e,
     }
 }
 
