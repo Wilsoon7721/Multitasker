@@ -47,6 +47,14 @@ jobs:
           releaseDraft: true
           includeUpdaterJson: true
 
+      - name: Use this version's release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          notes="docs/releases/${{ steps.tauri.outputs.appVersion }}.md"
+          if [ -f "$notes" ]; then gh release edit "v${{ steps.tauri.outputs.appVersion }}" --notes-file "$notes"; fi
+
       - name: Pack the extension for the stores
         run: npm run pack:extension
 

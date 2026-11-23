@@ -27,8 +27,9 @@ reinstalled from a build signed with a new key.
 ## Each release
 
 1. `npm run set-version -- 0.2.0` sets the version for the app, `package.json` and the extension.
-2. Commit, then tag and push: `git tag v0.2.0` and `git push origin main v0.2.0`.
-3. When the workflow finishes, check the draft release and publish it.
+2. Write what's new in `docs/releases/0.2.0.md`; the workflow uses it as the release's description.
+3. Commit, then tag and push: `git tag v0.2.0` and `git push origin main v0.2.0`.
+4. When the workflow finishes, check the draft release and publish it.
 
 ## Publishing the extension
 
@@ -38,9 +39,10 @@ extension its own id, which MultiTasker has to allow before the published extens
 1. Upload the zip to the [Chrome Web Store](https://chrome.google.com/webstore/devconsole) and
    [Edge Add-ons](https://partner.microsoft.com/dashboard/microsoftedge). Both ask for:
    - a privacy policy: the extension sends the address and title of the tab in front, and the pages you link, only to
-     MultiTasker on the same computer, and nothing anywhere else;
-   - why it needs each permission: `nativeMessaging` to talk to the MultiTasker app, and `tabs` to read the address and
-     title of the tab in front;
+     MultiTasker on the same computer, and nothing anywhere else. With reply notices on, it also tells MultiTasker when
+     an AI chat starts and finishes a reply, and on which tab; nothing from those pages leaves the computer;
+   - why it needs each permission: see the table in [browser-extension.md](browser-extension.md#permissions-as-explained-to-the-chrome-web-store),
+     which covers the optional ones that reply notices ask for;
    - a note that it needs the MultiTasker desktop app installed, and screenshots of the popup.
 2. Add each store's id to `EXTENSION_IDS` in [`src-tauri/src/bridge.rs`](../src-tauri/src/bridge.rs) and release
    MultiTasker. Once updated, it lets the published extension in too.
