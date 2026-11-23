@@ -35,6 +35,16 @@
     }
   }).observe(document.body, { subtree: true, childList: true, characterData: true });
 
+  // A reply only starts after you've typed or clicked in the chat: loading a conversation, restoring tabs when the
+  // browser starts and switching chats all fill the page the same way, but without you.
+  const ASKED_WITHIN = 60_000;
+  let lastTouched = 0;
+  const touched = (e) => {
+    if (e.isTrusted) lastTouched = Date.now();
+  };
+  document.addEventListener('keydown', touched, true);
+  document.addEventListener('pointerdown', touched, true);
+
   let growing = 0;
   let still = 0;
   let streaming = false;
@@ -66,7 +76,9 @@
 
     // The button can blink out between parts of a reply, so it has to stay gone for two looks in a row.
     stopGone = stopShown() ? 0 : stopGone + 1;
-    const now = stopGone < 2 || streaming;
+    const looksBusy = stopGone < 2 || streaming;
+    // Once a reply has started it's followed to the end, however long it takes.
+    const now = looksBusy && (busy || Date.now() - lastTouched < ASKED_WITHIN);
     if (now !== busy) {
       busy = now;
       tell({ busy });
