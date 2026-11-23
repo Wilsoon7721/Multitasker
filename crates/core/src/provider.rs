@@ -76,6 +76,9 @@ pub trait ExtrasStore: Send + Sync {
     /// Adds a finished stretch of work to the task's time spent.
     async fn add_worked(&self, id: &TaskId, secs: i64) -> Result<()>;
 
+    /// Sets the task's time spent outright, to correct time counted wrongly.
+    async fn set_worked(&self, id: &TaskId, secs: i64) -> Result<()>;
+
     /// Sets or clears the task's where-I-left-off note.
     async fn set_left_off(&self, id: &TaskId, note: Option<crate::LeftOff>) -> Result<()>;
 

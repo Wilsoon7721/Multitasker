@@ -423,6 +423,42 @@ impl StateStore for SqliteDb {
         rows.collect::<rusqlite::Result<_>>().map_err(storage)
     }
 
+    async fn trim_work(&self, provider: &str, task_id: &TaskId, secs: i64) -> Result<i64> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(storage)?;
+        let stretches: Vec<(String, DateTime<Utc>, DateTime<Utc>)> = {
+            let mut stmt = tx
+                .prepare(
+                    "SELECT id, started_at, ended_at FROM work_sessions WHERE provider = ?1 AND task_id = ?2
+                     ORDER BY ended_at DESC",
+                )
+                .map_err(storage)?;
+            let rows = stmt
+                .query_map(params![provider, task_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .map_err(storage)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(storage)?
+        };
+        let mut left = secs.max(0);
+        let mut taken = 0;
+        for (id, start, end) in stretches {
+            if left == 0 {
+                break;
+            }
+            let cut = (end - start).num_seconds().max(0).min(left);
+            if cut == 0 {
+                continue;
+            }
+            let ended_at = end - chrono::Duration::seconds(cut);
+            if sync::trim_session(&tx, &id, ended_at)? {
+                sync::record(&tx, Change::WorkTrimmed { id, ended_at })?;
+            }
+            left -= cut;
+            taken += cut;
+        }
+        tx.commit().map_err(storage)?;
+        Ok(taken)
+    }
+
     async fn worked(&self, provider: &str) -> Result<HashMap<TaskId, i64>> {
         let conn = self.conn();
         let mut stmt = conn

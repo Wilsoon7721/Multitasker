@@ -866,12 +866,14 @@ impl ExtrasStore for Notion {
             let columns = inner.columns()?;
             // Read fresh, so time another computer just added isn't overwritten.
             let total = columns.worked_secs(&inner.page(&id)?) + secs;
-            let minutes = (total as f64 / 60.0 * 100.0).round() / 100.0;
-            let mut properties = Map::new();
-            properties.insert(columns.minutes.clone(), json!({ "number": minutes }));
-            inner.set(&id, properties).map(|_| ())
+            inner.set_minutes(&columns, &id, total)
         })
         .await
+    }
+
+    async fn set_worked(&self, id: &TaskId, secs: i64) -> Result<()> {
+        let id = id.clone();
+        self.call(move |inner| inner.set_minutes(&inner.columns()?, &id, secs.max(0))).await
     }
 
     async fn set_left_off(&self, id: &TaskId, note: Option<LeftOff>) -> Result<()> {
@@ -976,6 +978,14 @@ fn handed_in_block(task_id: &str, block: &Value) -> Option<HandedInFile> {
 }
 
 impl Inner {
+    /// Writes a total time spent into the minutes column, to the hundredth of a minute.
+    fn set_minutes(&self, columns: &Columns, id: &str, secs: i64) -> Result<()> {
+        let minutes = (secs as f64 / 60.0 * 100.0).round() / 100.0;
+        let mut properties = Map::new();
+        properties.insert(columns.minutes.clone(), json!({ "number": minutes }));
+        self.set(id, properties).map(|_| ())
+    }
+
     fn settings_page(&self) -> Result<Option<String>> {
         let columns = self.columns()?;
         let body = json!({ "filter": { "property": columns.title, "title": { "equals": SETTINGS_TITLE } }, "page_size": 1 });

@@ -313,6 +313,12 @@ mockIPC(
       case 'switch_task':
         Object.assign(a, { id: a.taskId, inProgress: true });
       // falls through
+      case 'correct_worked': {
+        find(a.taskId as string).worked_secs = a.totalSecs as number;
+        changed();
+        return null;
+      }
+
       case 'set_in_progress': {
         const t = find(a.id as string);
         if (a.inProgress) {

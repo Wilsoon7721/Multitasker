@@ -140,7 +140,7 @@ fn mark(conn: &Connection, change: &Change, stamp: &Stamp) -> Result<()> {
         Change::Focus { provider, task_id, device, .. } => {
             set_clock(conn, "focus", &focus_key(provider, task_id, device), "", stamp)?
         }
-        Change::AttachmentAdded { .. } | Change::WorkLogged { .. } => {}
+        Change::AttachmentAdded { .. } | Change::WorkLogged { .. } | Change::WorkTrimmed { .. } => {}
         Change::LeftOff { provider, task_id, .. } => set_clock(conn, "left_off", &left_off_key(provider, task_id), "", stamp)?,
         Change::CheckAdded { .. } => {}
         Change::CheckSet { id, .. } => set_clock(conn, "check", id, "done", stamp)?,
@@ -260,6 +260,7 @@ fn apply(conn: &Connection, op: &Op) -> Result<bool> {
             }
             insert_work(conn, session)
         }
+        Change::WorkTrimmed { id, ended_at } => trim_session(conn, id, *ended_at),
     }
 }
 
@@ -288,6 +289,21 @@ pub(crate) fn insert_check(conn: &Connection, provider: &str, task_id: &str, ite
         )
         .map_err(storage)?;
     Ok(added > 0)
+}
+
+/// Ends a stretch of work earlier, never later and never before it began; returns whether it changed.
+pub(crate) fn trim_session(conn: &Connection, id: &str, ended_at: chrono::DateTime<chrono::Utc>) -> Result<bool> {
+    let current: Option<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = conn
+        .query_row("SELECT started_at, ended_at FROM work_sessions WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()
+        .map_err(storage)?;
+    let Some((start, end)) = current else { return Ok(false) };
+    let new_end = ended_at.max(start);
+    if new_end >= end {
+        return Ok(false);
+    }
+    conn.execute("UPDATE work_sessions SET ended_at = ?2 WHERE id = ?1", params![id, new_end]).map_err(storage)?;
+    Ok(true)
 }
 
 /// Stores a stretch of work unless it's already here; returns whether it was new.
@@ -585,6 +601,40 @@ mod tests {
         assert_eq!(b.apply_ops("pc-a", 1, &ops).unwrap(), 1);
         assert_eq!(b.apply_ops("pc-a", 1, &ops).unwrap(), 0);
         assert_eq!(b.cursor("pc-a").unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn corrected_time_is_taken_off_the_newest_stretches_everywhere() {
+        let (a, b) = pair().await;
+        let task = a.create(new("Tea")).await.unwrap();
+        let t0 = Utc::now() - chrono::Duration::hours(12);
+        let session = |id: &str, from: i64, to: i64| multitasker_core::WorkSession {
+            id: id.into(),
+            provider: PROVIDER_KEY.into(),
+            task_id: task.id.clone(),
+            device: "pc-a".into(),
+            started_at: t0 + chrono::Duration::minutes(from),
+            ended_at: t0 + chrono::Duration::minutes(to),
+            in_list: false,
+        };
+        // An hour of real work, then a stretch that ran on through the night.
+        a.log_work(session("early", 0, 60)).await.unwrap();
+        a.log_work(session("overnight", 120, 120 + 9 * 60)).await.unwrap();
+        ship(&a, "pc-a", &b);
+
+        let taken = a.trim_work(PROVIDER_KEY, &task.id, 9 * 3600 - 15 * 60).await.unwrap();
+        assert_eq!(taken, 9 * 3600 - 15 * 60);
+        ship(&a, "pc-a", &b);
+        for db in [&a, &b] {
+            assert_eq!(db.worked(PROVIDER_KEY).await.unwrap().get(&task.id), Some(&(75 * 60)), "an hour and a quarter left");
+            let kept = db.sessions(PROVIDER_KEY, t0, Utc::now()).await.unwrap();
+            let early = kept.iter().find(|s| s.id == "early").unwrap();
+            assert_eq!(early.ended_at, t0 + chrono::Duration::minutes(60), "the older stretch is left alone");
+        }
+
+        // Taking off more than there is stops at nothing, never below.
+        assert_eq!(a.trim_work(PROVIDER_KEY, &task.id, 10 * 3600).await.unwrap(), 75 * 60);
+        assert_eq!(a.worked(PROVIDER_KEY).await.unwrap().get(&task.id).copied().unwrap_or(0), 0);
     }
 
     #[tokio::test]

@@ -12,6 +12,7 @@ import { reopenable } from './PickUp';
 import { Checklist } from './Checklist';
 import { ProjectSection } from './ProjectSection';
 import { DueDateField } from './DueDateField';
+import { TimeCorrection } from './TimeCorrection';
 
 /** The side panel for one task. Fields save as you leave them. */
 export function TaskDetail(props: {
@@ -75,7 +76,12 @@ export function TaskDetail(props: {
             : task.in_progress
               ? `In progress · ${workedTime(task, now)} in total${startedOn ? ` · started on ${startedOn}` : ''}`
               : 'To do'}
-          {!task.in_progress && workedTime(task, now) && <span> · {workedTime(task, now)} spent</span>}
+          {!task.in_progress && workedTime(task, now) && (
+            <>
+              {' · '}
+              <TimeCorrection task={task} label={`${workedTime(task, now)} spent`} run={run} />
+            </>
+          )}
           {live && (
             <span className="detail-live">
               <span className="live-dot" /> Active now — {live.reason}

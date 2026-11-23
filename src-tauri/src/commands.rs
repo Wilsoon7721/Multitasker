@@ -1397,3 +1397,45 @@ pub fn relay_problem() -> Option<crate::relay_watch::RelayProblem> {
 pub fn dismiss_relay_problem(app: AppHandle) {
     crate::relay_watch::dismiss(&app);
 }
+
+/// Corrects a paused task's time spent to `total_secs`: the task list's own total, and the stretches kept here for the
+/// Time view, newest first, so each day shows what was really worked.
+#[tauri::command]
+pub async fn correct_worked(app: AppHandle, state: State<'_, AppState>, task_id: TaskId, total_secs: i64) -> CmdResult<()> {
+    let total = total_secs.clamp(0, 10 * 365 * 86_400);
+    let task = task_views(&state)
+        .await?
+        .into_iter()
+        .find(|t| t.task.id == task_id)
+        .ok_or("That task no longer exists.")?;
+    if task.in_progress {
+        return Err("Pause the task before correcting its time.".into());
+    }
+    let provider = state.provider();
+    let key = provider.key();
+    let change = total - task.worked_secs;
+
+    if change < 0 {
+        state.state.trim_work(key, &task_id, -change).await.map_err(err)?;
+    } else if change > 0 {
+        let now = Utc::now();
+        let session = WorkSession {
+            id: uuid::Uuid::new_v4().to_string(),
+            provider: key.to_owned(),
+            task_id: task_id.clone(),
+            device: state.device.id.clone(),
+            started_at: now - chrono::Duration::seconds(change),
+            ended_at: now,
+            in_list: provider.extras().is_some(),
+        };
+        state.state.log_work(session).await.map_err(err)?;
+    }
+
+    // A list that keeps its own total gets what's left once the time kept only here is counted.
+    if let Some(store) = provider.extras() {
+        let here = state.state.worked(key).await.map_err(err)?.remove(&task_id).unwrap_or(0);
+        store.set_worked(&task_id, (total - here).max(0)).await.map_err(err)?;
+    }
+    changed(&app);
+    Ok(())
+}

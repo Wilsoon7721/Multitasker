@@ -81,6 +81,10 @@ pub trait StateStore: Send + Sync {
     /// Finished stretches of work that overlap `from`..`to`, for seeing where time went.
     async fn sessions(&self, provider: &str, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<WorkSession>>;
 
+    /// Takes `secs` off a task's finished stretches of work, newest first, to correct time counted wrongly; returns
+    /// how much it could take off.
+    async fn trim_work(&self, provider: &str, task_id: &TaskId, secs: i64) -> Result<i64>;
+
     /// Seconds of finished work per task, across every computer, that the task list didn't count itself.
     async fn worked(&self, provider: &str) -> Result<std::collections::HashMap<TaskId, i64>>;
 

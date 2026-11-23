@@ -574,6 +574,8 @@ export const api = {
   },
   /** Whether Windhawk is installed or running here, which can stop the browser extension's relay. */
   windhawkPresent: () => invoke<boolean>('windhawk_present'),
+  /** Sets a paused task's time spent, taking any difference off its newest stretches of work. */
+  correctWorked: (taskId: string, totalSecs: number) => invoke('correct_worked', { taskId, totalSecs }),
   relayProblem: () => invoke<RelayProblem | null>('relay_problem'),
   dismissRelayProblem: () => invoke('dismiss_relay_problem'),
   openMain: () => invoke('open_main'),

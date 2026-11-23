@@ -274,6 +274,7 @@ pub fn run() {
             commands::windhawk_present,
             commands::relay_problem,
             commands::dismiss_relay_problem,
+            commands::correct_worked,
             commands::sign_in_wilsoon,
             commands::use_local_tasks,
             commands::connect_todoist,

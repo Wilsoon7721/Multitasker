@@ -760,6 +760,26 @@ impl ExtrasStore for Todoist {
         .await
     }
 
+    async fn set_worked(&self, id: &TaskId, secs: i64) -> Result<()> {
+        let id = id.clone();
+        let secs = secs.max(0);
+        self.call(move |inner| {
+            inner.forget_cache();
+            let snapshot = inner.snapshot()?;
+            let kept = snapshot.notes.iter().filter(|n| n.item_id == id).find_map(|n| match parse_note(n) {
+                Some(Mark::Time(_)) => Some(n.id.clone()),
+                _ => None,
+            });
+            match kept {
+                Some(comment) => inner.send("POST", &format!("/comments/{comment}"), Some(&json!({ "content": time_note(secs) })))?,
+                None => inner.send("POST", "/comments", Some(&json!({ "task_id": id, "content": time_note(secs) })))?,
+            };
+            inner.forget_cache();
+            Ok(())
+        })
+        .await
+    }
+
     async fn add_check(&self, task_id: &TaskId, text: &str) -> Result<CheckItem> {
         let body = json!({ "content": text, "parent_id": task_id });
         self.call(move |inner| {

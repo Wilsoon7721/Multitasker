@@ -71,8 +71,10 @@ pub enum Change {
     Focus { provider: String, task_id: TaskId, device: DeviceId, started_at: Option<DateTime<Utc>> },
     AttachmentAdded { attachment: Attachment },
     AttachmentRemoved { id: String },
-    /// A finished stretch of work; never changed once made.
+    /// A finished stretch of work.
     WorkLogged { session: crate::WorkSession },
+    /// A stretch of work cut short, to correct time counted wrongly; the earliest end anyone set wins.
+    WorkTrimmed { id: String, ended_at: DateTime<Utc> },
     /// A task's where-I-left-off note was set or cleared (`None`).
     LeftOff { provider: String, task_id: TaskId, note: Option<crate::LeftOff> },
     CheckAdded { provider: String, task_id: TaskId, item: crate::CheckItem },

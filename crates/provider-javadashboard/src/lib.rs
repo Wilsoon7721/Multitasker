@@ -408,6 +408,20 @@ impl ExtrasStore for JavaDashboard {
         .await
     }
 
+    async fn set_worked(&self, id: &TaskId, secs: i64) -> Result<()> {
+        let body = json!({ "id": id, "worked_seconds": secs });
+        self.call(move |inner| {
+            let response = inner.send("PATCH", &inner.url(), Some(&body))?;
+            inner.forget_cache();
+            // A dashboard from before corrections ignores the field, so the total it sends back is checked.
+            match response.pointer("/task/worked_seconds").and_then(|v| v.as_i64()) {
+                Some(total) if total == secs => Ok(()),
+                _ => Err(Error::Invalid("This JavaDashboard can't correct time spent yet.".into())),
+            }
+        })
+        .await
+    }
+
     async fn set_left_off(&self, id: &TaskId, note: Option<LeftOff>) -> Result<()> {
         let left_off = note.map(|n| json!({ "text": n.text, "device": n.device }));
         let body = json!({ "id": id, "left_off": left_off });
