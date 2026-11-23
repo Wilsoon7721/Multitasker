@@ -11,9 +11,8 @@ of sight.
 Early development. What works today:
 
 - A task list (add, edit, complete, delete) stored locally in SQLite, or taken from **Todoist** or a **Notion**
-  database with your own token (see [docs/task-lists.md](docs/task-lists.md)). Builds made with a WilsoonID
-  registration can also use a **JavaDashboard** task board
-  (see [docs/cloud-sign-in.md](docs/cloud-sign-in.md#wilsoonid-and-javadashboard)).
+  database with your own token. Builds made with a WilsoonID registration can also use a **JavaDashboard** task
+  board.
 - **Due dates with an optional time.** Timed tasks count down ("in 2h 15m") once they're within a day, and
   MultiTasker reminds you with a Windows notification beforehand (15 minutes by default) and when they're due.
 - Mark tasks **in progress**; they appear in an always-on-top widget pinned to the top-right of your screen, with how
@@ -30,8 +29,7 @@ Early development. What works today:
   for someone who isn't signed in. A file open elsewhere is handed in as soon as that program closes.
 - Expand the widget to see your to-do list and drag a task up into In Progress to start it.
 - A **browser extension** for Chrome, Edge and Brave links tabs, such as AI chats and docs, to tasks. While the
-  browser is in front, the linked tab counts as working on its task (see
-  [docs/browser-extension.md](docs/browser-extension.md)).
+  browser is in front, the linked tab counts as working on its task.
 - **Activity detection** (Windows): link apps, files and folders to a task, and MultiTasker notices when you're on
   them — from the window in front and from file saves. Tasks in progress show as *active now*. When a task's linked
   file, page or app stays open for 30 seconds (adjustable), MultiTasker starts that task, pausing what you were on, with
@@ -66,10 +64,9 @@ Early development. What works today:
 - **Linking as you go**: stay on a page that isn't linked to anything for two minutes while a task is in progress, and
   the widget offers to link it to that task (needs the browser extension).
 - **Installs like any app**: an installer that needs no admin rights, starts with Windows (quietly, to the tray and
-  widget) and updates itself from GitHub releases. See [docs/releasing.md](docs/releasing.md) for making a release.
+  widget) and updates itself from GitHub releases.
 - **Sync between computers**, three ways:
-  - sign in to **Google Drive** or **OneDrive**; MultiTasker only gets its own app folder (setting up the app
-    registrations: [docs/cloud-sign-in.md](docs/cloud-sign-in.md));
+  - sign in to **Google Drive** or **OneDrive**; MultiTasker only gets its own app folder;
   - a **shared folder** that a sync app (Dropbox and the like) carries while it's running;
   - an **S3-compatible bucket**: AWS S3, Cloudflare R2, Supabase Storage, Backblaze B2, Wasabi, DigitalOcean Spaces
     or MinIO.

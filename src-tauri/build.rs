@@ -1,6 +1,6 @@
 use std::path::Path;
 
-/// The app registrations official builds sign in with; see docs/cloud-sign-in.md.
+/// The app registrations official builds sign in with, read from the environment or `.env` at build time.
 const CLIENT_VARS: [&str; 4] = [
     "MULTITASKER_GOOGLE_CLIENT_ID",
     "MULTITASKER_GOOGLE_CLIENT_SECRET",

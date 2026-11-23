@@ -35,11 +35,11 @@ jobs:
           # Signs the update so installed copies trust it; the public half is in src-tauri/tauri.conf.json.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # The sign-in registrations official builds use (see docs/cloud-sign-in.md); a build without them still runs.
+          # The sign-in registrations official builds use; a build without them still runs.
+          # WILSOON_CLIENT_ID is left out on purpose: public builds don't offer JavaDashboard as a task list.
           MULTITASKER_GOOGLE_CLIENT_ID: ${{ secrets.MULTITASKER_GOOGLE_CLIENT_ID }}
           MULTITASKER_GOOGLE_CLIENT_SECRET: ${{ secrets.MULTITASKER_GOOGLE_CLIENT_SECRET }}
           MULTITASKER_MICROSOFT_CLIENT_ID: ${{ secrets.MULTITASKER_MICROSOFT_CLIENT_ID }}
-          WILSOON_CLIENT_ID: ${{ secrets.WILSOON_CLIENT_ID }}
         with:
           tagName: v__VERSION__
           releaseName: MultiTasker v__VERSION__
@@ -52,7 +52,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          notes="docs/releases/${{ steps.tauri.outputs.appVersion }}.md"
+          notes=".github/release-notes/${{ steps.tauri.outputs.appVersion }}.md"
           if [ -f "$notes" ]; then gh release edit "v${{ steps.tauri.outputs.appVersion }}" --notes-file "$notes"; fi
 
       - name: Pack the extension for the stores

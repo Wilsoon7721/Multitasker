@@ -57,7 +57,7 @@ impl Cloud {
     /// The registration to sign in with: one entered in Settings wins over the one this build was made with.
     pub fn app(self, client_id: Option<&str>) -> Result<OAuthApp, String> {
         let id = client_id.filter(|id| !id.is_empty()).or(self.built_in_client_id()).ok_or_else(|| {
-            format!("This build has no {} app registration; enter a client ID (see docs/cloud-sign-in.md).", self.label())
+            format!("This build has no {} app registration; enter a client ID from your own app registration.", self.label())
         })?;
         Ok(match self {
             Cloud::Google => {

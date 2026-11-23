@@ -1273,7 +1273,7 @@ function CloudSetup(props: {
         <div className="s3-form">
           <p className="settings-hint wide">
             This copy of MultiTasker wasn't built with a {info.name} app registration. Paste the client ID
-            {info.secret ? ' and secret' : ''} from your own (see docs/cloud-sign-in.md).
+            {info.secret ? ' and secret' : ''} from your own app registration.
           </p>
           <label className={`field${info.secret ? '' : ' wide'}`}>
             <span>Client ID</span>
