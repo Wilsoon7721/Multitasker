@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MultiTasker: keep what you're working on in front of you</title>
+    <meta
+      name="description"
+      content="MultiTasker pins every task you've started in a small widget at the top-right of your screen, for people on Windows who juggle several things at once."
+    />
+    <meta property="og:title" content="MultiTasker" />
+    <meta
+      property="og:description"
+      content="An always-on-top list of what you're working on, for people on Windows who juggle several things at once."
+    />
+    <meta property="og:image" content="https://multitasker.wilsoon.dev/assets/logo.png" />
+    <link rel="icon" href="assets/logo.png" />
+    <link rel="preload" href="fonts/familjen-grotesk-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./"><img src="assets/logo.png" alt="" /> MultiTasker</a>
+      <nav class="site-nav" aria-label="Site">
+        <a class="hide-small" href="https://github.com/Wilsoon7721/Multitasker">GitHub</a>
+        <a href="privacy/">Privacy</a>
+        <a class="button small" href="https://github.com/Wilsoon7721/Multitasker/releases/latest">Download</a>
+      </nav>
+    </header>
+
+    <main class="stage">
+      <div class="story">
+        <section class="hero" data-widget="start">
+          <h1>Keep what you're working on in front of you.</h1>
+          <p class="lead">
+            You start something, switch to something else, and forget the first thing exists until tomorrow. MultiTasker
+            pins every task you've started in a small widget at the top-right of your screen, so nothing in progress
+            slips out of sight.
+          </p>
+          <div class="actions">
+            <a class="button" href="https://github.com/Wilsoon7721/Multitasker/releases/latest">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></svg>
+              Download for Windows
+            </a>
+            <a class="button plain" href="https://github.com/Wilsoon7721/Multitasker">See the source</a>
+          </div>
+          <p class="fine">Free for Windows 10 and 11. Installs without admin rights and keeps itself up to date.</p>
+        </section>
+
+        <section class="feature" data-widget="notice">
+          <h2>It notices what you're on</h2>
+          <p>
+            Link the files, folders, apps and web pages a task uses. When one of them is in front, that task shows as
+            <strong>active now</strong>, and after a short wait it starts on its own. You never have to remember to
+            press start.
+          </p>
+          <p>
+            Step away from the computer and your tasks pause by themselves, so a lunch break or a night's sleep never
+            counts as work.
+          </p>
+        </section>
+
+        <section class="feature" data-widget="pickup">
+          <h2>Pick up where you left off</h2>
+          <p>
+            Pausing asks for one line on where you stopped. Starting again shows that line and offers to open everything
+            the task uses in one go: its files, its folders, and its pages, switching to browser tabs you already have
+            open instead of opening them twice.
+          </p>
+        </section>
+
+        <section class="feature" data-widget="wait">
+          <h2>Waiting on something? Get on with something else</h2>
+          <p>
+            Tell MultiTasker what you're waiting for: a build in a terminal, a render, an export, a download. It pauses
+            the task and lets you know the moment it's done, with a button straight back to it.
+          </p>
+        </section>
+
+        <section class="feature" data-widget="reply">
+          <h2>Know when the AI has answered</h2>
+          <p>
+            Long replies from Claude, ChatGPT, Gemini and other AI chats take a while. With the browser extension, you
+            can ask, go back to your work, and get a note when the reply has finished, if you've moved to another tab.
+          </p>
+        </section>
+
+        <section class="feature" data-widget="link">
+          <h2>Link the page you're on</h2>
+          <p>
+            The extension for Chrome, Edge and Brave adds the tab in front to any task, or starts a new task from it.
+            Stay on an unlinked page for a while with a task in progress, and the widget offers to link it for you.
+          </p>
+        </section>
+
+        <section class="feature" data-widget="plan">
+          <h2>Plan the day, then see where it went</h2>
+          <ul>
+            <li>Pick what today is for each morning; those tasks stay at the top of the list.</li>
+            <li>Break tasks into checklists, and see the next step right in the widget.</li>
+            <li>Add due times with reminders, and get a nudge for anything due soon that hasn't been started.</li>
+            <li>See how long each task took, today and this week.</li>
+            <li>Hand in finished work: MultiTasker keeps a copy of every version and checks it's ready first.</li>
+          </ul>
+        </section>
+
+        <section class="feature" data-widget="start">
+          <h2>Your tasks stay where they already are</h2>
+          <p>
+            Keep tasks on your computer, or use the ones you already have in <strong>Todoist</strong> or a
+            <strong>Notion</strong> database. Working on more than one computer? MultiTasker syncs through OneDrive,
+            Google Drive, a shared folder or S3-compatible storage that you choose, and your settings follow along.
+          </p>
+          <p>There's no MultiTasker account and no MultiTasker server. <a href="privacy/">Read the privacy policy</a>.</p>
+        </section>
+
+        <section class="closing" data-widget="start">
+          <h2>Try it on your next busy day.</h2>
+          <p>Download the installer, start a task, and get on with your day.</p>
+          <div class="actions">
+            <a class="button" href="https://github.com/Wilsoon7721/Multitasker/releases/latest">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></svg>
+              Download for Windows
+            </a>
+          </div>
+          <p class="fine">
+            The browser extension is on its way to the Chrome Web Store. Until then, it can be loaded from the
+            <a href="https://github.com/Wilsoon7721/Multitasker/tree/main/extension">source on GitHub</a>.
+          </p>
+        </section>
+      </div>
+
+      <aside class="rail" aria-label="The MultiTasker widget, as it looks on your screen">
+        <div class="widget" data-state="start" role="img" aria-label="The MultiTasker widget showing two tasks in progress and three to do">
+          <div class="w-head">
+            <strong>In progress</strong><span class="w-count both">2</span><span class="w-count one">1</span>
+            <span class="w-today" data-clock="11520">3h 12m today</span>
+          </div>
+          <div class="w-body">
+            <div class="w-note" data-note="notice">
+              <span class="w-live essay" style="margin-top: 5px"></span>
+              <span class="w-note-text">
+                <span class="w-note-title">Started “History essay”</span>
+                <span class="w-note-detail">essay-draft.docx is open</span>
+              </span>
+            </div>
+            <div class="w-note" data-note="pickup">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+              <span class="w-note-text">
+                <span class="w-note-title">Open its 3 files and 2 pages?</span>
+                <span class="w-note-detail">Left off: halfway through section 3</span>
+              </span>
+              <span class="w-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-3H5a2 2 0 0 0-2 2Z" /></svg></span>
+            </div>
+            <div class="w-note" data-note="wait">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" /></svg>
+              <span class="w-note-text">
+                <span class="w-note-title">Build is done</span>
+                <span class="w-note-detail">Back to “Release build”?</span>
+              </span>
+              <span class="w-go"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3l14 9-14 9z" /></svg></span>
+            </div>
+            <div class="w-note" data-note="reply">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" /></svg>
+              <span class="w-note-text">
+                <span class="w-note-title">ChatGPT replied</span>
+                <span class="w-note-detail">Back to “History essay”?</span>
+              </span>
+              <span class="w-go"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3l14 9-14 9z" /></svg></span>
+            </div>
+            <div class="w-note" data-note="link">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2" /><path d="M15 7h2a5 5 0 1 1 0 10h-2" /><path d="M8 12h8" /></svg>
+              <span class="w-note-text">
+                <span class="w-note-title">Link “Lecture 7 recap”?</span>
+                <span class="w-note-detail">To “History essay”, so it counts as working on it</span>
+              </span>
+              <span class="w-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2" /><path d="M15 7h2a5 5 0 1 1 0 10h-2" /><path d="M8 12h8" /></svg></span>
+            </div>
+            <div class="w-note" data-note="plan">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2m-7.07-2.93 1.41-1.41M17.66 6.34l1.41-1.41M2 12h2m16 0h2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41" /></svg>
+              <span class="w-note-text">
+                <span class="w-note-title">What's today for?</span>
+                <span class="w-note-detail">Pick a few tasks; they stay at the top of your list</span>
+              </span>
+            </div>
+
+            <div class="w-row essay">
+              <span class="w-check"></span>
+              <span class="w-task">
+                <span class="w-title"><span class="w-live essay"></span>History essay</span>
+                <span class="w-meta"><span class="w-time" data-clock="2520">42m</span><span>2/5 steps</span><span>Due Fri</span></span>
+                <span class="w-step">Write the conclusion</span>
+              </span>
+              <span class="w-pause"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg></span>
+            </div>
+            <div class="w-row release">
+              <span class="w-check"></span>
+              <span class="w-task">
+                <span class="w-title">Release build</span>
+                <span class="w-meta"><span class="w-time" data-clock="1080">18m</span><span>Dev</span></span>
+              </span>
+              <span class="w-pause"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg></span>
+            </div>
+            <div class="w-wait">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14M5 2h14" /><path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22" /><path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2" /></svg>
+              <span>Waiting on <strong style="color: var(--w-text)">npm run build</strong> for Release build</span>
+            </div>
+
+            <div class="w-todo">
+              <div class="w-todo-head">To do <span class="w-count">3</span></div>
+              <div class="w-todo-row"><svg class="w-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2m16 0h2" /></svg>Lab report</div>
+              <div class="w-todo-row">Read chapter 5</div>
+              <div class="w-todo-row"><svg class="w-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2m16 0h2" /></svg>Plan the presentation</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="site-footer">
+      <nav aria-label="Footer">
+        <a href="privacy/">Privacy policy</a>
+        <a href="https://github.com/Wilsoon7721/Multitasker">Source on GitHub</a>
+        <a href="https://github.com/Wilsoon7721/Multitasker/releases">All releases</a>
+        <a href="https://github.com/Wilsoon7721/Multitasker/issues">Report a problem</a>
+      </nav>
+      <p>MultiTasker is open source and made for Windows.</p>
+    </footer>
+
+    <script src="site.js" defer></script>
+  </body>
+</html>

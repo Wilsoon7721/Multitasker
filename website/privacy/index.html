@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy policy: MultiTasker</title>
+    <meta
+      name="description"
+      content="What MultiTasker, its browser extension and this website do with your information: it stays on your computer and in the services you choose."
+    />
+    <link rel="icon" href="../assets/logo.png" />
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../"><img src="../assets/logo.png" alt="" /> MultiTasker</a>
+      <nav class="site-nav" aria-label="Site">
+        <a class="hide-small" href="https://github.com/Wilsoon7721/Multitasker">GitHub</a>
+        <a href="./" aria-current="page">Privacy</a>
+        <a class="button small" href="https://github.com/Wilsoon7721/Multitasker/releases/latest">Download</a>
+      </nav>
+    </header>
+
+    <main class="document">
+      <h1>Privacy policy</h1>
+      <p class="updated">Last updated 23 November 2026</p>
+
+      <p class="summary">
+        MultiTasker has no account and no server of its own. What it knows about your tasks and what you're working on
+        stays on your computer, or goes to the services you choose to connect, such as Todoist, Notion or your own cloud
+        storage. Nothing is sold, shared for advertising, or used to track you.
+      </p>
+
+      <p>
+        This policy covers the MultiTasker app for Windows, the MultiTasker browser extension for Chrome, Edge and Brave,
+        and this website. MultiTasker is open source, so you can check everything described here in
+        <a href="https://github.com/Wilsoon7721/Multitasker">its source code</a>.
+      </p>
+
+      <h2>The app</h2>
+
+      <h3>Your tasks</h3>
+      <p>
+        Tasks, checklists, notes on where you left off, time spent and the files and links you attach are kept in a
+        database on your computer. If you choose to use Todoist or a Notion database instead, MultiTasker reads and
+        writes your tasks there, through those services' own APIs, with the token you give it. Their own privacy policies
+        then apply to what's stored there.
+      </p>
+
+      <h3>Noticing what you're working on</h3>
+      <p>
+        So it can tell which task you're on, MultiTasker looks at which program and window is in front, the files you
+        save in folders you've linked to a task, and whether you've touched the keyboard or mouse recently. This happens
+        on your computer only. None of it is recorded or sent anywhere; only the outcome (which task is in progress, and
+        for how long) is kept with your tasks. You can turn this off in Settings.
+      </p>
+
+      <h3>Syncing between computers</h3>
+      <p>
+        Syncing is off until you turn it on. When you do, MultiTasker writes your tasks and settings to the place you
+        choose: a folder carried by a sync app, OneDrive, Google Drive, or S3-compatible storage. With OneDrive and Google
+        Drive it can only reach its own app folder, not your other files. MultiTasker talks to these services directly
+        from your computer; nothing passes through anyone else.
+      </p>
+
+      <h3>Handed-in work</h3>
+      <p>
+        When you hand in a file, MultiTasker keeps a copy on your computer, and in your task list or sync location if you
+        use one, so you have every version. When it checks that a link you're handing in can be opened by others, it
+        opens that link the way a visitor without your sign-in would.
+      </p>
+
+      <h3>Passwords and tokens</h3>
+      <p>
+        Sign-ins and tokens for the services you connect are kept in Windows Credential Manager, not in MultiTasker's own
+        files, and are only ever sent to the service they belong to.
+      </p>
+
+      <h3>Updates</h3>
+      <p>
+        The app checks GitHub for a newer version when it starts and every six hours. Like any visit to a website, this
+        lets GitHub see your IP address. No information about you or your tasks is included.
+      </p>
+
+      <h3>Diagnostics</h3>
+      <p>
+        MultiTasker doesn't collect analytics or crash reports. A small log of the browser connection is kept on your
+        computer to help work out problems; it stays there unless you choose to share it.
+      </p>
+
+      <h2>The browser extension</h2>
+      <p>
+        The extension only ever talks to the MultiTasker app on the same computer, through the browser's native
+        messaging. It doesn't send anything to any server.
+      </p>
+      <ul>
+        <li>
+          It tells the app the address and title of the tab in front, so the app can tell which task you're on and
+          offer to link the page. When you link a page, its address and title are kept with that task.
+        </li>
+        <li>
+          When you start a task, it can switch to that task's pages, or open them, at the app's request.
+        </li>
+        <li>
+          <strong>Reply notices</strong> are off until you turn them on in the extension's popup, which is when the
+          browser asks for the extra permissions they need. Then, on the AI chat sites listed below, the extension watches
+          whether a reply is being written and notices when requests to those sites start and finish. It never reads,
+          changes or blocks those requests or their contents, and nothing from those pages leaves your computer: the app
+          only learns that a reply started and finished, and on which tab. Turning reply notices off gives the
+          permissions back.
+        </li>
+        <li>
+          It keeps a small record on your computer of when it last noticed a reply on each of those sites, so it can tell
+          you if one of them has changed in a way it can't follow.
+        </li>
+      </ul>
+      <p>
+        The AI chat sites reply notices work on are claude.ai, chatgpt.com, chat.openai.com, gemini.google.com,
+        aistudio.google.com, perplexity.ai, copilot.microsoft.com, chat.deepseek.com and grok.com.
+      </p>
+
+      <h3>Permissions it asks for</h3>
+      <ul>
+        <li><code>nativeMessaging</code>: to talk to the MultiTasker app on your computer.</li>
+        <li><code>tabs</code>: to read the address and title of the tab in front, and to switch to a task's tabs.</li>
+        <li><code>storage</code>: for the record of noticed replies, kept on your computer.</li>
+        <li>
+          <code>scripting</code>, <code>webRequest</code> and access to the AI chat sites above: only once you turn on
+          reply notices, and only to tell when a reply is finished.
+        </li>
+      </ul>
+
+      <h2>This website</h2>
+      <p>
+        This website is a set of static pages. It uses no cookies, no analytics and no tracking, and its fonts are served
+        from this site rather than a font service. The company hosting it may keep standard server logs, such as IP
+        addresses and the pages requested, for running and protecting the site. Downloads come from GitHub, under
+        GitHub's own privacy policy.
+      </p>
+
+      <h2>Children</h2>
+      <p>MultiTasker isn't directed at children, and it doesn't knowingly collect anything from anyone.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>
+        If what MultiTasker does with your information changes, this page will be updated before the change is released,
+        and the date at the top will change. Past versions are in the project's history on GitHub.
+      </p>
+
+      <h2>Questions</h2>
+      <p>
+        Ask anything about this policy, or about MultiTasker and your information, by
+        <a href="https://github.com/Wilsoon7721/Multitasker/issues">opening an issue on GitHub</a>.
+      </p>
+    </main>
+
+    <footer class="site-footer">
+      <nav aria-label="Footer">
+        <a href="../">Home</a>
+        <a href="https://github.com/Wilsoon7721/Multitasker">Source on GitHub</a>
+        <a href="https://github.com/Wilsoon7721/Multitasker/releases">All releases</a>
+        <a href="https://github.com/Wilsoon7721/Multitasker/issues">Report a problem</a>
+      </nav>
+      <p>MultiTasker is open source and made for Windows.</p>
+    </footer>
+    <script src="../site.js" defer></script>
+  </body>
+</html>
