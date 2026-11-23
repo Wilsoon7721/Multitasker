@@ -62,7 +62,11 @@ fn check(app: &AppHandle, file: &Path, last_here: &mut Option<DateTime<Utc>>) {
     let limit = settings::load(&state.data_dir).pause_after_away.filter(|m| *m > 0);
 
     if let Some(since) = limit.and_then(|m| away_since(now, idle, *last_here, Duration::minutes(m.into()))) {
-        pause(app, &state, since);
+        // Right after waking up the network may not be back. Until the tasks are paused, the last sign of life stays
+        // put, so the time away is still noticed on the next check instead of being counted as work.
+        if !pause(app, &state, since) {
+            return;
+        }
     }
 
     let present = now - idle;
@@ -72,19 +76,31 @@ fn check(app: &AppHandle, file: &Path, last_here: &mut Option<DateTime<Utc>>) {
     }
 }
 
-fn pause(app: &AppHandle, state: &AppState, since: DateTime<Utc>) {
-    let Ok(tasks) = tauri::async_runtime::block_on(task_views(state)) else { return };
+/// Pauses this computer's tasks as of when the person left; returns whether every one that needed it was paused.
+fn pause(app: &AppHandle, state: &AppState, since: DateTime<Utc>) -> bool {
+    let tasks = match tauri::async_runtime::block_on(task_views(state)) {
+        Ok(tasks) => tasks,
+        Err(e) => {
+            eprintln!("couldn't check what to pause while away, trying again shortly: {e}");
+            return false;
+        }
+    };
     let mut paused = Vec::new();
+    let mut all = true;
     for t in to_pause(&tasks, &state.device.id, since) {
         let stopped = tauri::async_runtime::block_on(commands::stop_task(app, state, &t.task.id, since));
         match stopped {
             Ok(()) => paused.push(Paused { task_id: t.task.id.clone(), title: t.task.title.clone(), since }),
-            Err(e) => eprintln!("couldn't pause {} while away: {e}", t.task.id),
+            Err(e) => {
+                eprintln!("couldn't pause {} while away, trying again shortly: {e}", t.task.id);
+                all = false;
+            }
         }
     }
     if !paused.is_empty() {
         state.detector.add_paused(app, paused);
     }
+    all
 }
 
 #[cfg(test)]
