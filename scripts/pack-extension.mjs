@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
@@ -17,11 +17,8 @@ delete manifest.key;
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
 const zip = join(out, `multitasker-extension-${manifest.version}.zip`);
-execFileSync(
-  'powershell',
-  ['-NoProfile', '-Command', `Compress-Archive -Path '${staging}\\*' -DestinationPath '${zip}'`],
-  {
-    stdio: 'inherit',
-  },
-);
+// Windows' own tar writes zip paths with forward slashes (Compress-Archive writes backslashes the stores can't read);
+// it's named in full because a Git Bash on the PATH brings GNU tar, which can't write zips.
+const tar = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
+execFileSync(tar, ['-a', '-c', '-f', zip, '-C', staging, ...readdirSync(staging)], { stdio: 'inherit' });
 console.log(`Packed ${zip}`);
