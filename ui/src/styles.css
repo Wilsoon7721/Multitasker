@@ -3278,3 +3278,31 @@ button.secondary.small {
 .notice-card-status:empty {
   display: none;
 }
+
+.check-list li.saving {
+  opacity: 0.6;
+}
+
+/* ───────────── Due date field ───────────── */
+
+.due-field {
+  position: relative;
+}
+
+/* While empty, "Due date" stands where the browser would show dd/mm/yyyy; picking a date shows the date instead. */
+.due-placeholder {
+  position: absolute;
+  inset: 0 10px 0 30px;
+  display: flex;
+  align-items: center;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.due-field.empty input[type='date']:not(:focus)::-webkit-datetime-edit {
+  color: transparent;
+}
+
+.due-field.empty:focus-within .due-placeholder {
+  display: none;
+}

@@ -1,4 +1,4 @@
-import { CalendarDays, Clock, CornerDownLeft, Plus, Tag, X } from 'lucide-react';
+import { Clock, CornerDownLeft, Plus, Tag, X } from 'lucide-react';
 import { useRef, useState, type Dispatch, type FormEvent, type KeyboardEvent, type SetStateAction } from 'react';
 import { api, type NewAttachment } from '../api';
 import type { Run } from '../useTasks';
@@ -6,6 +6,7 @@ import { AttachButtons, KindIcon, pendingLabel } from './Attachments';
 import { AutoTextarea } from './AutoTextarea';
 import { toDueAt } from '../time';
 import { useTaskSource } from '../useTaskSource';
+import { DueDateField } from './DueDateField';
 
 /** The add-task card; files dropped on it wait in `pending` until the task is created. */
 export function Composer(props: {
@@ -140,10 +141,7 @@ export function Composer(props: {
                 aria-label="Category"
               />
             </label>
-            <label className={`field-pill${due ? '' : ' empty'}`} title="Due date">
-              <CalendarDays size={14} />
-              <input type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Due date" />
-            </label>
+            <DueDateField value={due} onChange={setDue} />
             {due && timesAllowed && (
               <label className={`field-pill${dueTime ? '' : ' empty'}`} title="Due time (optional)">
                 <Clock size={14} />

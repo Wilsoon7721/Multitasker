@@ -1,4 +1,4 @@
-import { CalendarDays, Clock, FolderOpen, PackageCheck, NotebookPen, Pause, Play, Tag, Trash2, X } from 'lucide-react';
+import { Clock, FolderOpen, PackageCheck, NotebookPen, Pause, Play, Tag, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, type Activity, type TaskChanges, type TaskView } from '../api';
 import { localDate, localTime, toDueAt, workedTime } from '../time';
@@ -11,6 +11,7 @@ import { DeliverableList } from './Deliverables';
 import { reopenable } from './PickUp';
 import { Checklist } from './Checklist';
 import { ProjectSection } from './ProjectSection';
+import { DueDateField } from './DueDateField';
 
 /** The side panel for one task. Fields save as you leave them. */
 export function TaskDetail(props: {
@@ -121,19 +122,13 @@ export function TaskDetail(props: {
               aria-label="Category"
             />
           </label>
-          <label className={`field-pill${dueDate ? '' : ' empty'}`} title="Due date">
-            <CalendarDays size={14} />
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => {
-                const date = e.target.value;
-                if (!date) save({ due_date: null });
-                else save(dueTime ? { due_date: date, due_at: toDueAt(date, dueTime) } : { due_date: date });
-              }}
-              aria-label="Due date"
-            />
-          </label>
+          <DueDateField
+            value={dueDate}
+            onChange={(date) => {
+              if (!date) save({ due_date: null });
+              else save(dueTime ? { due_date: date, due_at: toDueAt(date, dueTime) } : { due_date: date });
+            }}
+          />
           {dueDate && timesAllowed && (
             <label className={`field-pill${dueTime ? '' : ' empty'}`} title="Due time (optional)">
               <Clock size={14} />
