@@ -9,6 +9,7 @@ mod here;
 mod jobs;
 mod on_top;
 mod projects;
+mod relay_watch;
 mod reminders;
 mod settings;
 mod shared;
@@ -153,6 +154,7 @@ pub fn run() {
             syncing::start(app.handle(), syncer);
             shared::start(app.handle());
             jobs::start(app.handle());
+            relay_watch::start(app.handle());
             reminders::start(app.handle());
             away::start(app.handle());
             on_top::start(app.handle());
@@ -270,6 +272,8 @@ pub fn run() {
             commands::forget_job,
             commands::back_to_job,
             commands::windhawk_present,
+            commands::relay_problem,
+            commands::dismiss_relay_problem,
             commands::sign_in_wilsoon,
             commands::use_local_tasks,
             commands::connect_todoist,

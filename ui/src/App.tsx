@@ -31,6 +31,7 @@ import { useDevices } from './useDevices';
 import { useTasks } from './useTasks';
 import { ErrorNote } from './components/ErrorNote';
 import { WindhawkNote } from './components/WindhawkNote';
+import { RelayProblemNote } from './components/RelayProblemNote';
 import { useContextMenu, type MenuEntry } from './components/ContextMenu';
 import { OPEN_TASK_KEY, OPEN_VIEW_KEY, usePlan } from './usePlan';
 import { pathItems, taskZone, useFileDrop } from './useFileDrop';
@@ -256,6 +257,7 @@ export function App() {
               )}
             </header>
 
+            <RelayProblemNote />
             <WindhawkNote />
 
             {error && (

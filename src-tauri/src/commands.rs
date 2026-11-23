@@ -1383,3 +1383,14 @@ pub fn windhawk_present() -> bool {
         .any(|dir| std::path::Path::new(&dir).join("Windhawk").join("windhawk.exe").is_file());
     installed || multitasker_activity::is_process_running("windhawk.exe").unwrap_or(false)
 }
+
+/// The browser relay started but never connected, and what had loaded its own code into it.
+#[tauri::command]
+pub fn relay_problem() -> Option<crate::relay_watch::RelayProblem> {
+    crate::relay_watch::problem()
+}
+
+#[tauri::command]
+pub fn dismiss_relay_problem(app: AppHandle) {
+    crate::relay_watch::dismiss(&app);
+}

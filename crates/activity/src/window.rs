@@ -1,7 +1,7 @@
 #[cfg(windows)]
 pub use imp::{
     app_windows, foreground_is_fullscreen, foreground_window, idle_time, is_process_running, process_alive,
-    process_windows, tree_cpu_time,
+    process_modules, process_windows, processes_named, tree_cpu_time,
 };
 
 /// The window in front and the program that owns it.
@@ -32,6 +32,32 @@ pub struct ProcessWindow {
     pub exe: String,
     pub name: String,
     pub title: String,
+}
+
+/// A program running under a given name, and when it started.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunningProcess {
+    pub pid: u32,
+    pub started: std::time::SystemTime,
+}
+
+/// A file of code loaded into a process, with what its version info says it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedModule {
+    pub path: String,
+    pub product: Option<String>,
+    pub company: Option<String>,
+    pub description: Option<String>,
+}
+
+#[cfg(not(windows))]
+pub fn processes_named(_exe: &str) -> Vec<RunningProcess> {
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+pub fn process_modules(_pid: u32) -> Option<Vec<LoadedModule>> {
+    None
 }
 
 #[cfg(not(windows))]
@@ -84,7 +110,8 @@ mod imp {
     use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows_sys::Win32::Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+        CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, Process32FirstW, Process32NextW, MODULEENTRY32W,
+        PROCESSENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS,
     };
     use windows_sys::Win32::System::SystemInformation::GetTickCount;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
@@ -98,7 +125,7 @@ mod imp {
         GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW,
     };
 
-    use super::{AppWindow, ForegroundWindow, ProcessWindow};
+    use super::{AppWindow, ForegroundWindow, LoadedModule, ProcessWindow, RunningProcess};
 
     /// Hosts the windows of Store apps; the real app is a child window's process.
     const FRAME_HOST: &str = "ApplicationFrameHost.exe";
@@ -384,12 +411,88 @@ mod imp {
 
     /// The program's FileDescription from its version info, falling back to its file name.
     fn describe(exe_path: &str) -> String {
-        version_description(exe_path)
-            .filter(|d| !d.trim().is_empty())
+        version_string(exe_path, "FileDescription")
             .unwrap_or_else(|| Path::new(exe_path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default())
     }
 
-    fn version_description(exe_path: &str) -> Option<String> {
+    /// Every process running under a file name, e.g. `multitasker-host.exe`, with when each started.
+    pub fn processes_named(exe: &str) -> Vec<RunningProcess> {
+        let mut pids = Vec::new();
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot.is_null() || snapshot as isize == -1 {
+                return Vec::new();
+            }
+            let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+            let mut more = Process32FirstW(snapshot, &mut entry) != 0;
+            while more {
+                let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                if String::from_utf16_lossy(&entry.szExeFile[..len]).eq_ignore_ascii_case(exe) {
+                    pids.push(entry.th32ProcessID);
+                }
+                more = Process32NextW(snapshot, &mut entry) != 0;
+            }
+            CloseHandle(snapshot);
+        }
+        pids.into_iter().filter_map(|pid| Some(RunningProcess { pid, started: started_at(pid)? })).collect()
+    }
+
+    fn started_at(pid: u32) -> Option<std::time::SystemTime> {
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                return None;
+            }
+            let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+            let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+            let ok = GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user);
+            CloseHandle(handle);
+            if ok == 0 {
+                return None;
+            }
+            // Counted in 100-nanosecond steps from 1601, 11,644,473,600 seconds before 1970.
+            let ticks = ((created.dwHighDateTime as u64) << 32) | created.dwLowDateTime as u64;
+            let unix = (ticks / 10).checked_sub(11_644_473_600_000_000)?;
+            Some(std::time::UNIX_EPOCH + std::time::Duration::from_micros(unix))
+        }
+    }
+
+    /// The files of code loaded into a process, in load order; `None` if it can't be looked into.
+    pub fn process_modules(pid: u32) -> Option<Vec<LoadedModule>> {
+        let mut paths = Vec::new();
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+            if snapshot.is_null() || snapshot as isize == -1 {
+                return None;
+            }
+            let mut entry = MODULEENTRY32W { dwSize: std::mem::size_of::<MODULEENTRY32W>() as u32, ..Default::default() };
+            let mut more = Module32FirstW(snapshot, &mut entry) != 0;
+            while more {
+                let len = entry.szExePath.iter().position(|&c| c == 0).unwrap_or(entry.szExePath.len());
+                paths.push(String::from_utf16_lossy(&entry.szExePath[..len]));
+                more = Module32NextW(snapshot, &mut entry) != 0;
+            }
+            CloseHandle(snapshot);
+        }
+        Some(
+            paths
+                .into_iter()
+                .map(|path| LoadedModule {
+                    product: version_string(&path, "ProductName"),
+                    company: version_string(&path, "CompanyName"),
+                    description: version_string(&path, "FileDescription"),
+                    path,
+                })
+                .collect(),
+        )
+    }
+
+    /// One field of a file's version info, such as "ProductName", if it has it.
+    fn version_string(exe_path: &str, field: &str) -> Option<String> {
+        version_value(exe_path, field).filter(|v| !v.trim().is_empty())
+    }
+
+    fn version_value(exe_path: &str, field: &str) -> Option<String> {
         let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
         let path = wide(exe_path);
         unsafe {
@@ -417,7 +520,7 @@ mod imp {
                 }
                 _ => (0x0409, 0x04b0),
             };
-            let (ptr, len) = query(&format!("\\StringFileInfo\\{lang:04x}{codepage:04x}\\FileDescription"))?;
+            let (ptr, len) = query(&format!("\\StringFileInfo\\{lang:04x}{codepage:04x}\\{field}"))?;
             Some(until_nul(std::slice::from_raw_parts(ptr as *const u16, len as usize)))
         }
     }
@@ -475,6 +578,19 @@ mod imp {
             for w in process_windows() {
                 assert!(w.pid != 0 && !w.exe.is_empty());
             }
+        }
+
+        #[test]
+        fn lists_processes_by_name_and_what_they_loaded() {
+            let me = std::env::current_exe().unwrap();
+            let name = me.file_name().unwrap().to_str().unwrap();
+            let found = processes_named(name);
+            let mine = found.iter().find(|p| p.pid == std::process::id()).expect("finds itself");
+            assert!(mine.started <= std::time::SystemTime::now());
+            let modules = process_modules(std::process::id()).unwrap();
+            assert!(modules.iter().any(|m| m.path.to_lowercase().ends_with("kernel32.dll")));
+            let kernel = modules.iter().find(|m| m.path.to_lowercase().ends_with("ntdll.dll")).unwrap();
+            assert!(kernel.company.as_deref().is_some_and(|c| c.contains("Microsoft")));
         }
     }
 }

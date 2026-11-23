@@ -168,8 +168,35 @@ async fn answer(app: &AppHandle, line: &str) -> String {
     reply.to_string()
 }
 
-/// What a relay says first, so the app knows it can be sent messages unasked.
+/// What a relay says first, so the app knows it can be sent messages unasked. Newer relays add their process id.
 const RELAY_HELLO: &str = r#"{"relay":2}"#;
+
+/// The relay's hello: the version, and which process it is, so the app can tell a relay that never got going.
+fn hello_line() -> String {
+    json!({ "relay": 2, "pid": std::process::id() }).to_string()
+}
+
+/// Whether a line is a relay's hello, and the relay's process id if it said.
+fn read_hello(line: &str) -> Option<Option<u32>> {
+    let line = line.trim();
+    if line == RELAY_HELLO {
+        return Some(None);
+    }
+    let value: Value = serde_json::from_str(line).ok()?;
+    (value.get("relay")?.as_u64()? == 2 && value.get("id").is_none())
+        .then(|| value.get("pid").and_then(|p| p.as_u64()).map(|p| p as u32))
+}
+
+/// Relay processes connected to the app now, so one that's running but never connected can be spotted.
+static CONNECTED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+/// Older relays connect without saying which process they are; they're counted, so they aren't taken for stuck ones.
+static UNNAMED: Mutex<usize> = Mutex::new(0);
+
+/// The relay processes connected now, and how many connected without saying which they are.
+pub fn connected_relays() -> (Vec<u32>, usize) {
+    (CONNECTED.lock().unwrap_or_else(|e| e.into_inner()).clone(), *UNNAMED.lock().unwrap_or_else(|e| e.into_inner()))
+}
 
 /// Each connected extension's outgoing line queue, so MultiTasker can tell it things unasked.
 static EXTENSIONS: Mutex<Vec<tokio::sync::mpsc::UnboundedSender<String>>> = Mutex::new(Vec::new());
@@ -235,12 +262,18 @@ pub fn serve(app: &AppHandle) {
                     }
                 });
                 let mut lines = BufReader::new(read).lines();
+                let mut relay_pid = None;
                 while let Ok(Some(line)) = lines.next_line().await {
                     // Only a relay that says it passes on messages sent unasked gets them; an older one would take one
                     // for the answer to its next question.
-                    if line.trim() == RELAY_HELLO {
+                    if let Some(pid) = read_hello(&line) {
                         eprintln!("browser relay connected");
                         EXTENSIONS.lock().unwrap_or_else(|e| e.into_inner()).push(tx.clone());
+                        match pid {
+                            Some(pid) => CONNECTED.lock().unwrap_or_else(|e| e.into_inner()).push(pid),
+                            None => *UNNAMED.lock().unwrap_or_else(|e| e.into_inner()) += 1,
+                        }
+                        relay_pid = Some(pid);
                         continue;
                     }
                     if tx.send(answer(&app, &line).await).is_err() {
@@ -249,6 +282,19 @@ pub fn serve(app: &AppHandle) {
                 }
                 // The relay is gone; a message sent to it now would vanish without a word.
                 EXTENSIONS.lock().unwrap_or_else(|e| e.into_inner()).retain(|s| !s.same_channel(&tx));
+                match relay_pid {
+                    Some(Some(pid)) => {
+                        let mut connected = CONNECTED.lock().unwrap_or_else(|e| e.into_inner());
+                        if let Some(i) = connected.iter().position(|p| *p == pid) {
+                            connected.remove(i);
+                        }
+                    }
+                    Some(None) => {
+                        let mut unnamed = UNNAMED.lock().unwrap_or_else(|e| e.into_inner());
+                        *unnamed = unnamed.saturating_sub(1);
+                    }
+                    None => {}
+                }
                 eprintln!("browser relay disconnected");
             });
         }
@@ -379,7 +425,7 @@ async fn attach(
     use tokio::io::{AsyncBufReadExt, BufReader};
 
     let (read, mut write) = tokio::io::split(client);
-    write_line(&mut write, RELAY_HELLO.as_bytes()).await.map_err(|e| e.to_string())?;
+    write_line(&mut write, hello_line().as_bytes()).await.map_err(|e| e.to_string())?;
     let generation = {
         let mut held = link.lock().await;
         held.generation += 1;
@@ -570,6 +616,14 @@ mod tests {
         assert!(matches!(e.request, Request::Link { ref task_id, .. } if task_id == "t1"));
         let e: Envelope = serde_json::from_str(r#"{"type":"active_tab","url":null}"#).unwrap();
         assert!(matches!(e.request, Request::ActiveTab { url: None, .. }));
+    }
+
+    #[test]
+    fn knows_a_relays_hello_from_a_request() {
+        assert_eq!(read_hello(r#"{"relay":2}"#), Some(None));
+        assert_eq!(read_hello(&hello_line()), Some(Some(std::process::id())));
+        assert_eq!(read_hello(r#"{"id":3,"type":"tasks"}"#), None);
+        assert_eq!(read_hello(r#"{"relay":1}"#), None);
     }
 
     #[test]

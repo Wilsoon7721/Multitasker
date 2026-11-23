@@ -388,6 +388,14 @@ export interface Job {
   how: string | null;
 }
 
+/** The browser's relay started but never connected, and what had loaded its code into it. */
+export interface RelayProblem {
+  since: string;
+  suspects: { name: string; files: string[] }[];
+  restarts: number;
+  gave_up: boolean;
+}
+
 export const api = {
   list: () => invoke<TaskView[]>('list_tasks'),
   create: (task: NewTask) => invoke<{ id: string }>('create_task', { task }),
@@ -546,6 +554,8 @@ export const api = {
   },
   /** Whether Windhawk is installed or running here, which can stop the browser extension's relay. */
   windhawkPresent: () => invoke<boolean>('windhawk_present'),
+  relayProblem: () => invoke<RelayProblem | null>('relay_problem'),
+  dismissRelayProblem: () => invoke('dismiss_relay_problem'),
   openMain: () => invoke('open_main'),
   widgetVisible: () => invoke<boolean>('widget_visible'),
   /** Returns whether the widget is now visible. */
@@ -572,6 +582,9 @@ export const onPlanChanged = (handler: () => void) => subscribe('plan-changed', 
 
 /** Fires when something a task waits on starts, finishes or is let go. */
 export const onJobsChanged = (handler: () => void) => subscribe('jobs-changed', handler);
+
+/** Fires when the browser's relay gets stuck, or works again. */
+export const onRelayProblem = (handler: () => void) => subscribe('relay-problem', handler);
 
 export const onSyncStatus = (handler: (status: SyncStatus) => void) => subscribe('sync-status', handler);
 

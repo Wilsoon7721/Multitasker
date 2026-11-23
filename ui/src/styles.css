@@ -3257,3 +3257,24 @@ button.secondary.small {
   margin: 4px 6px;
   background: var(--border);
 }
+
+.notice-card-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--text-2);
+}
+
+.notice-card-files {
+  color: var(--text-3);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.notice-card-status {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.notice-card-status:empty {
+  display: none;
+}

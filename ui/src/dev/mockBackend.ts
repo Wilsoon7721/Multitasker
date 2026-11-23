@@ -783,6 +783,26 @@ mockIPC(
         setTimeout(() => void emit('widget-visibility', widgetVisible), 0);
         return widgetVisible;
 
+      // ?relay=stuck shows the notice for a browser relay that got stuck, with Windhawk in it.
+      case 'relay_problem':
+        return new URLSearchParams(location.search).get('relay') === 'stuck'
+          ? {
+              since: new Date().toISOString(),
+              suspects: [
+                {
+                  name: 'Windhawk',
+                  files: ['windhawk.dll', 'explorer-details-better-file-sizes_1.5.1.dll', 'libc++.whl'],
+                },
+              ],
+              restarts: 1,
+              gave_up: false,
+            }
+          : null;
+
+      case 'dismiss_relay_problem':
+      case 'windhawk_present':
+        return false;
+
       default:
         // Window and plugin calls (minimize, setSize, dialogs...) do nothing in the browser.
         if (cmd.startsWith('plugin:')) return null;
