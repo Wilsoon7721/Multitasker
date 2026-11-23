@@ -703,7 +703,7 @@ function AppSection({ run }: { run: Run }) {
         <span>
           <span className="choice-title">Start with Windows</span>
           <span className="choice-detail">
-            {info && !info.enabled
+            {info && !info.installed
               ? 'Only for installed copies; this development build never starts on its own.'
               : 'Opens quietly to the tray and the widget when you sign in.'}
           </span>
@@ -713,7 +713,7 @@ function AppSection({ run }: { run: Run }) {
           role="switch"
           className="switch"
           checked={!!startup}
-          disabled={startup === null || !info?.enabled}
+          disabled={startup === null || !info?.installed}
           onChange={(e) => {
             const on = e.target.checked;
             setStartup(on);
@@ -758,9 +758,11 @@ function AppSection({ run }: { run: Run }) {
               ? `Version ${info.ready} is downloaded. Restarting installs it.`
               : upToDate
                 ? "You're up to date."
-                : info && !info.enabled
-                  ? "Development builds don't update themselves."
-                  : 'Updates download in the background, and install when you restart.'}
+                : info?.private
+                  ? "This private build doesn't update itself; install new versions by hand."
+                  : info && !info.enabled
+                    ? "Development builds don't update themselves."
+                    : 'Updates download in the background, and install when you restart.'}
           </span>
         </span>
         {info?.ready ? (

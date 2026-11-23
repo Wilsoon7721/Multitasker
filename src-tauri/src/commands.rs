@@ -967,6 +967,9 @@ pub fn update_info(app: AppHandle) -> crate::updates::UpdateInfo {
 /// Looks for a newer version now; returns whether one is downloaded and ready.
 #[tauri::command]
 pub async fn check_for_updates(app: AppHandle) -> CmdResult<bool> {
+    if crate::updates::private_build() {
+        return Err("This private build doesn't update itself; install new versions by hand.".into());
+    }
     if !crate::updates::enabled() {
         return Err("Development builds don't update themselves.".into());
     }

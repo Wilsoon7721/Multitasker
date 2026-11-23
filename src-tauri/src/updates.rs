@@ -29,18 +29,39 @@ pub struct UpdateInfo {
     pub current: String,
     /// The version downloaded and ready, if there is one.
     pub ready: Option<String>,
-    /// Whether this build updates itself; development builds don't.
+    /// Whether this build updates itself; development and private builds don't.
     pub enabled: bool,
+    /// An installed copy rather than a development build, so it can start with Windows.
+    pub installed: bool,
+    /// Built with a WilsoonID registration, so it's updated by hand.
+    pub private: bool,
 }
 
 pub fn info(app: &AppHandle) -> UpdateInfo {
     let ready = READY.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|r| r.update.version.clone());
-    UpdateInfo { current: app.package_info().version.to_string(), ready, enabled: enabled() }
+    UpdateInfo {
+        current: app.package_info().version.to_string(),
+        ready,
+        enabled: enabled(),
+        installed: installed(),
+        private: private_build(),
+    }
 }
 
-/// Only installed builds update themselves or start with Windows; a development build would register itself instead.
-pub fn enabled() -> bool {
+/// Only installed copies start with Windows; a development build would register itself instead.
+pub fn installed() -> bool {
     !cfg!(debug_assertions)
+}
+
+/// A build with a WilsoonID registration is a private one: the public releases leave it out, so updating from them would
+/// take JavaDashboard away.
+pub fn private_build() -> bool {
+    option_env!("WILSOON_CLIENT_ID").is_some_and(|id| !id.is_empty())
+}
+
+/// Whether this copy updates itself from public releases.
+pub fn enabled() -> bool {
+    installed() && !private_build()
 }
 
 /// Whether Windows started MultiTasker at sign-in.
@@ -50,7 +71,7 @@ pub fn started_at_sign_in() -> bool {
 
 /// Makes starting with Windows match the setting.
 pub fn apply_autostart(app: &AppHandle, on: bool) -> Result<(), String> {
-    if !enabled() {
+    if !installed() {
         return Ok(());
     }
     let launcher = app.autolaunch();

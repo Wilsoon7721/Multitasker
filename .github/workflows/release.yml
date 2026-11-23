@@ -62,3 +62,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "v${{ steps.tauri.outputs.appVersion }}" "dist-extension/multitasker-extension-${{ steps.tauri.outputs.appVersion }}.zip" --clobber
+
+      # The private build: the same version with JavaDashboard, attached to this run rather than the release, so it
+      # isn't on the Releases page. It never updates itself, since the public releases it would update to leave it out.
+      - name: Build the private version
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          MULTITASKER_GOOGLE_CLIENT_ID: ${{ secrets.MULTITASKER_GOOGLE_CLIENT_ID }}
+          MULTITASKER_GOOGLE_CLIENT_SECRET: ${{ secrets.MULTITASKER_GOOGLE_CLIENT_SECRET }}
+          MULTITASKER_MICROSOFT_CLIENT_ID: ${{ secrets.MULTITASKER_MICROSOFT_CLIENT_ID }}
+          WILSOON_CLIENT_ID: ${{ secrets.WILSOON_CLIENT_ID }}
+        run: npx tauri build
+
+      - name: Keep the private installer with this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: multitasker-private-${{ steps.tauri.outputs.appVersion }}
+          path: target/release/bundle/nsis/*-setup.exe
+          retention-days: 30

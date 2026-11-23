@@ -149,8 +149,12 @@ export interface WorkSession {
 export interface UpdateInfo {
   current: string;
   ready: string | null;
-  /** Development builds don't update themselves or start with Windows. */
+  /** Whether it updates itself; development and private builds don't. */
   enabled: boolean;
+  /** An installed copy, which can start with Windows. */
+  installed: boolean;
+  /** Built with a WilsoonID registration, so updated by hand. */
+  private: boolean;
 }
 
 /** Whether the widget stays above other windows, and when it steps aside. */
