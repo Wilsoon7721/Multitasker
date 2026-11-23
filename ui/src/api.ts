@@ -129,6 +129,10 @@ export interface RunView {
 }
 
 /** One step of a task's checklist. */
+/** A step being added has a stand-in id until the task list gives it its own; it can't be ticked or removed yet. */
+const PENDING_CHECK = 'pending:';
+export const isPendingCheck = (item: CheckItem) => item.id.startsWith(PENDING_CHECK);
+
 export interface CheckItem {
   id: string;
   text: string;
@@ -481,7 +485,19 @@ export const api = {
   acceptLinkOffer: () => invoke('accept_link_offer'),
   refuseLinkOffer: () => invoke('refuse_link_offer'),
   setLeftOff: (taskId: string, text: string) => invoke('set_left_off', { taskId, text }),
-  addCheck: (taskId: string, text: string) => invoke('add_check', { taskId, text }),
+  /** Shows the step straight away under a stand-in id (see `isPendingCheck`) until the task list has it. */
+  addCheck: (taskId: string, text: string) => {
+    const item: CheckItem = {
+      id: `${PENDING_CHECK}${crypto.randomUUID()}`,
+      text,
+      done: false,
+      added_at: new Date().toISOString(),
+    };
+    return optimistic(
+      editTask(taskId, (t) => ({ ...t, checklist: [...t.checklist, item] })),
+      () => invoke('add_check', { taskId, text }),
+    );
+  },
   setCheck: (taskId: string, id: string, done: boolean) =>
     optimistic(
       editTask(taskId, (t) => ({ ...t, checklist: t.checklist.map((c) => (c.id === id ? { ...c, done } : c)) })),

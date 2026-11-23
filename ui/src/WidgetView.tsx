@@ -19,7 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { api, onWidgetAppearance, type TaskView } from './api';
+import { api, isPendingCheck, onWidgetAppearance, type TaskView } from './api';
 import { AppPicker } from './components/AppPicker';
 import { CheckButton } from './components/CheckButton';
 import { DueNudge, nudgeFor } from './components/DueNudge';
@@ -508,6 +508,7 @@ export function WidgetView() {
                               <button
                                 className="check-box small"
                                 onClick={() => void run(() => api.setCheck(t.id, nextStep(t)!.id, true))}
+                                disabled={isPendingCheck(nextStep(t)!)}
                                 aria-label={`Mark “${nextStep(t)!.text}” done`}
                                 title="Done with this step"
                               />

@@ -1,6 +1,6 @@
 import { Check, ListChecks, Plus, X } from 'lucide-react';
 import { useState } from 'react';
-import { api, type CheckItem, type TaskView } from '../api';
+import { api, isPendingCheck, type CheckItem, type TaskView } from '../api';
 import type { Run } from '../useTasks';
 
 /** "3/7" for a checklist, or nothing when there isn't one. */
@@ -15,18 +15,15 @@ export const nextStep = (task: TaskView): CheckItem | null => task.checklist.fin
 /** A task's steps, ticked off as they're done; they live in the task list itself where it has its own. */
 export function Checklist({ task, run }: { task: TaskView; run: Run }) {
   const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
   const count = checkCount(task);
 
+  // The step shows at once, so the next can be typed straight away; one that fails to save comes back to the box.
   const add = async () => {
     const step = text.trim();
-    if (!step || busy) return;
-    // The box stays usable while a step saves, so the next one can be typed straight away.
-    setBusy(true);
+    if (!step) return;
     setText('');
     const ok = await run(() => api.addCheck(task.id, step));
-    setBusy(false);
-    if (!ok) setText(step);
+    if (!ok) setText((current) => current || step);
   };
 
   return (
@@ -37,9 +34,10 @@ export function Checklist({ task, run }: { task: TaskView; run: Run }) {
       {task.checklist.length > 0 && (
         <ul className="check-list">
           {task.checklist.map((c) => (
-            <li key={c.id} className={c.done ? 'done' : ''}>
+            <li key={c.id} className={`${c.done ? 'done' : ''}${isPendingCheck(c) ? ' saving' : ''}`}>
               <button
                 className={`check-box${c.done ? ' on' : ''}`}
+                disabled={isPendingCheck(c)}
                 onClick={() => void run(() => api.setCheck(task.id, c.id, !c.done))}
                 aria-label={c.done ? `Mark “${c.text}” not done` : `Mark “${c.text}” done`}
                 aria-pressed={c.done}
@@ -49,6 +47,7 @@ export function Checklist({ task, run }: { task: TaskView; run: Run }) {
               <span className="check-text">{c.text}</span>
               <button
                 className="icon-btn check-remove"
+                disabled={isPendingCheck(c)}
                 onClick={() => void run(() => api.removeCheck(task.id, c.id))}
                 aria-label={`Remove “${c.text}”`}
                 title="Remove this step"
