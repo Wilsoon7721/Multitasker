@@ -15,8 +15,12 @@ fn main() {
 
     for var in CLIENT_VARS {
         println!("cargo:rerun-if-env-changed={var}");
-        // A real environment variable (as CI sets) wins over the .env file.
-        let value = std::env::var(var).ok().filter(|v| !v.is_empty()).or_else(|| dotenv_value(&from_file, var));
+        // A real environment variable (as CI sets) wins over the .env file, and one set empty leaves it out, so a
+        // public build can be made here with WILSOON_CLIENT_ID= even when .env has it.
+        let value = match std::env::var(var) {
+            Ok(v) => Some(v).filter(|v| !v.is_empty()),
+            Err(_) => dotenv_value(&from_file, var),
+        };
         if let Some(value) = value {
             println!("cargo:rustc-env={var}={value}");
         }

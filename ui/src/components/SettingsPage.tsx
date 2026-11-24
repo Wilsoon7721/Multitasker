@@ -409,7 +409,8 @@ function TaskListSection({ run }: { run: Run }) {
   const connected = source.kind !== 'local' && source.active !== 'sqlite';
   const account = source.kind !== 'local' ? source.account : null;
   // Only builds made with a WilsoonID registration can use JavaDashboard.
-  const offerDashboard = source.wilsoon_available || source.kind === 'java_dashboard';
+  // Only builds that can sign in to WilsoonID offer JavaDashboard; public builds never show it.
+  const offerDashboard = source.wilsoon_available;
 
   const signIn = async () => {
     setWaiting(true);

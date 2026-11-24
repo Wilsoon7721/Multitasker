@@ -1147,8 +1147,15 @@ pub struct TaskSourceView {
 #[tauri::command]
 pub fn task_source(state: State<'_, AppState>) -> TaskSourceView {
     let provider = state.provider();
+    let mut source = settings::load(&state.data_dir).tasks;
+    // A build without a WilsoonID registration (the public one) never offers JavaDashboard. A choice of it made in a
+    // private build sharing these settings shows as tasks on this computer, which is what's in use, and is left as it
+    // is for the private build.
+    if matches!(source, settings::TaskSource::JavaDashboard { .. }) && !wilsoon::is_available() {
+        source = settings::TaskSource::Local;
+    }
     TaskSourceView {
-        source: settings::load(&state.data_dir).tasks,
+        source,
         active: provider.key().to_owned(),
         supports_due_time: provider.supports_due_time(),
         wilsoon_available: wilsoon::is_available(),
