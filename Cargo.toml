@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/core", "crates/provider-sqlite", "crates/provider-javadashboard", "crates/provider-todoist", "crates/provider-notion", "crates/deliverables", "crates/activity", "crates/sync", "src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 repository = "https://github.com/Wilsoon7721/Multitasker"
 

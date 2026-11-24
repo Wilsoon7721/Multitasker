@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MultiTasker",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Link browser tabs, such as AI chats and docs, to your MultiTasker tasks and get back to them in one click.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwGfpQ/hzjMK6EmvshPPzotkI+gOep3Oj3p9IlL7XhWHI2ngvhAvUep4Kh6iC6HJrpCS9aPqoNHb946DXg6ss6YNa4UoG27bGRLH4lR8C1A0vLBGRwpE49oK96Y52aT/u5q340o0IMgDRxI4+nt7ghCRU2Z0Qx3dLIQ22MAQnht1ATHWfo5btXIf5SxPlUazudD69bILfulliQxmslL+yB+zDWQBREFodeOKLwooJzDkPTLjRMJpRyPiDI/PITPuNtPCFjvTWex6PsyuzEqILtEjg2GWG907FgVWjGRZNAKCDFI4mPCHPTvsdiqXg16005oteNyveAoEe1XSUYgUGvQIDAQAB",
   "permissions": ["nativeMessaging", "tabs", "storage"],
