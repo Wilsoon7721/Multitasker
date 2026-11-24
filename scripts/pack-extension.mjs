@@ -1,5 +1,16 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
@@ -22,3 +33,48 @@ const zip = join(out, `multitasker-extension-${manifest.version}.zip`);
 const tar = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
 execFileSync(tar, ['-a', '-c', '-f', zip, '-C', staging, ...readdirSync(staging)], { stdio: 'inherit' });
 console.log(`Packed ${zip}`);
+
+// Signed for the Chrome Web Store's verified uploads, with the key CI passes in or the one kept in .secrets.
+const localKey = join(root, '.secrets', 'extension-signing.pem');
+const signingKey =
+  process.env.MULTITASKER_EXTENSION_SIGNING_KEY || (existsSync(localKey) ? readFileSync(localKey, 'utf8') : '');
+if (!signingKey.trim()) {
+  console.log('No signing key, so only the zip was made.');
+} else {
+  const browser = [
+    process.env.CHROME_PATH,
+    join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    join(
+      process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)',
+      'Microsoft',
+      'Edge',
+      'Application',
+      'msedge.exe',
+    ),
+  ].find((path) => path && existsSync(path));
+  if (!browser) throw new Error('Signing needs Chrome or Edge; set CHROME_PATH to one.');
+
+  // The key only touches disk for as long as packing takes, outside the project. A profile of its own keeps a browser
+  // that's already open from taking the job and returning before the package is written.
+  const scratch = mkdtempSync(join(tmpdir(), 'multitasker-sign-'));
+  const keyFile = join(scratch, 'key.pem');
+  writeFileSync(keyFile, signingKey);
+  try {
+    execFileSync(
+      browser,
+      [
+        `--pack-extension=${staging}`,
+        `--pack-extension-key=${keyFile}`,
+        `--user-data-dir=${join(scratch, 'profile')}`,
+        '--no-message-box',
+      ],
+      { stdio: 'inherit' },
+    );
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+  // The browser writes the package beside the folder it packed, named after it.
+  const crx = join(out, `multitasker-extension-${manifest.version}.crx`);
+  renameSync(`${staging}.crx`, crx);
+  console.log(`Signed ${crx}`);
+}

@@ -56,12 +56,18 @@ jobs:
           if [ -f "$notes" ]; then gh release edit "v${{ steps.tauri.outputs.appVersion }}" --notes-file "$notes"; fi
 
       - name: Pack the extension for the stores
+        env:
+          # Signs the .crx for the Chrome Web Store's verified uploads; without it, only the zip is made.
+          MULTITASKER_EXTENSION_SIGNING_KEY: ${{ secrets.EXTENSION_SIGNING_KEY }}
         run: npm run pack:extension
 
       - name: Add the extension to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "v${{ steps.tauri.outputs.appVersion }}" "dist-extension/multitasker-extension-${{ steps.tauri.outputs.appVersion }}.zip" --clobber
+        shell: bash
+        run: |
+          shopt -s nullglob
+          gh release upload "v${{ steps.tauri.outputs.appVersion }}" dist-extension/multitasker-extension-*.zip dist-extension/multitasker-extension-*.crx --clobber
 
       # The private build: the same version with JavaDashboard, attached to this run rather than the release, so it
       # isn't on the Releases page. It never updates itself, since the public releases it would update to leave it out.
