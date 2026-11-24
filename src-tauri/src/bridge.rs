@@ -14,7 +14,11 @@ use crate::AppState;
 /// The browser extension's host name, as Chrome and Edge know it.
 pub const HOST: &str = "dev.wilsoon.multitasker";
 /// The extension's ids: the one the key in `extension/manifest.json` fixes for unpacked copies, then each store's own.
-pub const EXTENSION_IDS: &[&str] = &["fldigbhidkmfhlgplcmgjmbhbgkdmebj"];
+pub const EXTENSION_IDS: &[&str] = &[
+    "fldigbhidkmfhlgplcmgjmbhbgkdmebj",
+    // The Chrome Web Store's.
+    "chdeojkfbpkbgkbmakhlcjccfcedmema",
+];
 /// Where the running app listens for the relay; only this computer can connect.
 const PIPE: &str = r"\\.\pipe\dev.wilsoon.multitasker";
 /// Chrome caps a message to the extension at 1 MB.
