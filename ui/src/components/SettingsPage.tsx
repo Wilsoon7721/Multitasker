@@ -1062,7 +1062,7 @@ function DetectionSection({ run }: { run: Run }) {
           <span className="choice-title">Pause when I'm away</span>
           <span className="choice-detail">
             Pauses what's in progress on this computer after a while with no keyboard or mouse, or while it sleeps.
-            Coming back offers to resume.
+            Coming back offers to resume. Time with the computer off is never counted, even when set to Never.
           </span>
         </span>
         <select

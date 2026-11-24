@@ -15,13 +15,22 @@ const CHECK_EVERY: StdDuration = StdDuration::from_secs(20);
 /// When someone last touched this computer, kept so time asleep or with MultiTasker closed counts as away.
 const LAST_HERE: &str = "last-here.txt";
 
-/// Since when nobody has been at this computer, if for at least `limit`; a jump past `last_here` means it slept or MultiTasker was closed.
-fn away_since(now: DateTime<Utc>, idle: Duration, last_here: Option<DateTime<Utc>>, limit: Duration) -> Option<DateTime<Utc>> {
+/// How long the computer can be off, asleep or without MultiTasker before its tasks are paused, when pausing while idle is off.
+const OFF_LIMIT_MINUTES: u32 = 15;
+
+/// Since when nobody has been at this computer: idle for `idle_limit`, or a jump of `off_limit` past `last_here` (asleep or closed).
+fn away_since(
+    now: DateTime<Utc>,
+    idle: Duration,
+    last_here: Option<DateTime<Utc>>,
+    idle_limit: Option<Duration>,
+    off_limit: Duration,
+) -> Option<DateTime<Utc>> {
     let present = now - idle;
-    if idle >= limit {
+    if idle_limit.is_some_and(|limit| idle >= limit) {
         return Some(present);
     }
-    last_here.filter(|h| present - *h >= limit)
+    last_here.filter(|h| present - *h >= off_limit)
 }
 
 /// Tasks in progress on this computer that were started before the person left.
@@ -59,9 +68,12 @@ fn check(app: &AppHandle, file: &Path, last_here: &mut Option<DateTime<Utc>>) {
     let state = app.state::<AppState>();
     let now = Utc::now();
     let idle = Duration::from_std(idle_time()).unwrap_or_default();
-    let limit = settings::load(&state.data_dir).pause_after_away.filter(|m| *m > 0);
+    let setting = settings::load(&state.data_dir).pause_after_away.filter(|m| *m > 0);
+    let idle_limit = setting.map(|m| Duration::minutes(m.into()));
+    // Time with the computer off is never work, so it's noticed even when pausing while idle is turned off.
+    let off_limit = Duration::minutes(setting.unwrap_or(OFF_LIMIT_MINUTES).into());
 
-    if let Some(since) = limit.and_then(|m| away_since(now, idle, *last_here, Duration::minutes(m.into()))) {
+    if let Some(since) = away_since(now, idle, *last_here, idle_limit, off_limit) {
         // Right after waking up the network may not be back. Until the tasks are paused, the last sign of life stays
         // put, so the time away is still noticed on the next check instead of being counted as work.
         if !pause(app, &state, since) {
@@ -115,11 +127,20 @@ mod tests {
     #[test]
     fn notices_time_away() {
         let limit = Duration::minutes(15);
-        assert_eq!(away_since(at(30), Duration::minutes(5), Some(at(24)), limit), None, "still here");
-        assert_eq!(away_since(at(30), Duration::minutes(20), Some(at(9)), limit), Some(at(10)), "idle for a while");
+        let on = Some(limit);
+        assert_eq!(away_since(at(30), Duration::minutes(5), Some(at(24)), on, limit), None, "still here");
+        assert_eq!(away_since(at(30), Duration::minutes(20), Some(at(9)), on, limit), Some(at(10)), "idle for a while");
         // Back from sleep or a night with MultiTasker closed: input is fresh, but the last sign of life is old.
-        assert_eq!(away_since(at(600), Duration::seconds(3), Some(at(10)), limit), Some(at(10)));
-        assert_eq!(away_since(at(30), Duration::zero(), None, limit), None, "first run knows nothing yet");
+        assert_eq!(away_since(at(600), Duration::seconds(3), Some(at(10)), on, limit), Some(at(10)));
+        assert_eq!(away_since(at(30), Duration::zero(), None, on, limit), None, "first run knows nothing yet");
+    }
+
+    #[test]
+    fn notices_time_off_even_when_idle_pausing_is_off() {
+        let limit = Duration::minutes(15);
+        assert_eq!(away_since(at(30), Duration::minutes(20), Some(at(9)), None, limit), None, "idle doesn't count");
+        assert_eq!(away_since(at(600), Duration::seconds(3), Some(at(10)), None, limit), Some(at(10)), "a night off");
+        assert_eq!(away_since(at(12), Duration::seconds(3), Some(at(10)), None, limit), None, "a quick restart");
     }
 
     #[test]
