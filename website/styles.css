@@ -573,8 +573,7 @@ p {
   display: flex;
 }
 
-.widget[data-state='wait'] .w-row.release,
-.widget[data-state='pickup'] .w-row.release {
+.widget[data-state='wait'] .w-row.release {
   display: none;
 }
 
